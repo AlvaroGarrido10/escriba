@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>TranscripcionesAG — Configuración</title>
+<style>
+  :root { --vino: #5d2a42; --ok: #2e7d32; --err: #c0392b; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; max-width: 620px; margin: 36px auto; color: #241d21; padding: 0 18px; }
+  h1 { color: var(--vino); font-size: 23px; margin-bottom: 4px; }
+  .sub { color: #7b6b73; margin-bottom: 26px; }
+  .paso { border: 1px solid #e6dce1; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; background: #fff; }
+  .paso h2 { font-size: 15px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .paso h2 .n { background: var(--vino); color: #fff; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; flex: none; }
+  .paso p { margin: 4px 0 10px; font-size: 13px; color: #6d5f66; }
+  .paso.listo { border-color: #b9dfb8; background: #f4fbf4; }
+  input[type=password], input[type=text] { width: 100%; padding: 10px; border: 1px solid #bbb; border-radius: 8px; font-size: 13px; }
+  button { padding: 10px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 13.5px; background: var(--vino); color: #fff; }
+  button.sec { background: #fff; border: 1px solid var(--vino); color: var(--vino); }
+  .estado { font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .estado.ok { color: var(--ok); } .estado.err { color: var(--err); }
+  a { color: var(--vino); }
+  details { margin-top: 18px; }
+  summary { cursor: pointer; color: #7b6b73; font-size: 13px; }
+  .avz { padding-top: 12px; }
+  .avz label { display: block; font-size: 12.5px; font-weight: 600; margin: 10px 0 4px; }
+  textarea { width: 100%; height: 70px; padding: 8px; border: 1px solid #bbb; border-radius: 8px; font-size: 12.5px; resize: vertical; }
+  .par { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+  small { color: #8b7c83; }
+</style>
+</head>
+<body>
+  <h1>🎙️ TranscripcionesAG</h1>
+  <div class="sub">Dos pasos y listo. Se guarda todo solo.</div>
+
+  <div class="paso" id="p1">
+    <h2><span class="n">1</span> Pega tu clave de Google Gemini</h2>
+    <p>Es gratis: entra en <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> → «Create API key» → cópiala y pégala aquí.</p>
+    <input type="password" id="geminiKey" placeholder="Pega aquí la clave" autocomplete="off">
+    <div class="estado" id="e1"></div>
+  </div>
+
+  <div class="paso" id="p2">
+    <h2><span class="n">2</span> Permite el micrófono</h2>
+    <p>Necesario para grabarte a ti (en reuniones online y presenciales).</p>
+    <button id="btnMic">🎙️ Permitir micrófono</button>
+    <div class="estado" id="e2"></div>
+  </div>
+
+  <div class="estado ok" id="final" style="font-size:14px;font-weight:600"></div>
+
+  <details>
+    <summary>Opciones avanzadas (glosario, GPT y Claude)</summary>
+    <div class="avz">
+      <label>Glosario — nombres propios y jerga que la IA debe escribir bien</label>
+      <textarea id="glosario" placeholder="Ej: nombres de tu empresa, clientes, productos y siglas de tu sector, separados por comas"></textarea>
+      <small>Mejora mucho la transcripción de nombres. Se usa también al generar el acta.</small>
+
+      <label>Modelo de Gemini</label>
+      <input type="text" id="geminiModel" readonly>
+      <small>Se elige automáticamente el que funcione con tu clave.</small>
+
+      <label>OpenAI — GPT (opcional, solo para el botón «Analizar con GPT»)</label>
+      <div class="par">
+        <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off">
+        <input type="text" id="openaiModel" placeholder="gpt-4o">
+      </div>
+
+      <label>Anthropic — Claude (opcional, para «Analizar con Claude»)</label>
+      <div class="par">
+        <input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off">
+        <input type="text" id="claudeModel" placeholder="claude-sonnet-5">
+      </div>
+      <div class="estado" id="e3"></div>
+    </div>
+  </details>
+
+  <script src="options.js"></script>
+</body>
+</html>

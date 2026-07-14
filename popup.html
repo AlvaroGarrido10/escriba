@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --vino: #5d2a42; --vino2: #7c3a58; }
+  body { font-family: "Segoe UI", Arial, sans-serif; width: 360px; margin: 0; background: #faf7f9; color: #222; }
+  header { background: var(--vino); color: #fff; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+  header b { font-size: 14px; }
+  header a { color: #f0d9e4; font-size: 11px; text-decoration: none; cursor: pointer; }
+  main { padding: 12px; }
+  .modo { display: flex; gap: 6px; margin-bottom: 10px; }
+  .modo label { flex: 1; border: 2px solid #ddd; border-radius: 8px; padding: 7px 4px; text-align: center; cursor: pointer; font-size: 11px; background: #fff; }
+  .modo input { display: none; }
+  .modo label.sel { border-color: var(--vino); background: #f7edf2; font-weight: 600; }
+  #btnRec { width: 100%; padding: 13px; font-size: 15px; border: none; border-radius: 10px; cursor: pointer; color: #fff; background: var(--vino); }
+  #btnRec.grabando { background: #c0392b; animation: pulso 1.6s infinite; }
+  @keyframes pulso { 50% { opacity: .75; } }
+  #timer { text-align: center; font-size: 22px; font-variant-numeric: tabular-nums; margin: 6px 0 2px; color: var(--vino); }
+  #estado { text-align: center; min-height: 18px; font-size: 12px; color: #555; margin-bottom: 6px; }
+  h3 { font-size: 12px; color: var(--vino); margin: 12px 0 6px; border-bottom: 1px solid #e5d5dd; padding-bottom: 3px; }
+  .item { background: #fff; border: 1px solid #e2d5db; border-radius: 8px; padding: 8px; margin-bottom: 6px; font-size: 12px; }
+  .item .tit { font-weight: 600; margin-bottom: 2px; }
+  .item .fec { color: #888; font-size: 11px; }
+  .item .acc { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .item .acc button { font-size: 10.5px; padding: 4px 7px; border: 1px solid var(--vino); background: #fff; color: var(--vino); border-radius: 6px; cursor: pointer; }
+  .item .acc button:hover { background: #f7edf2; }
+  .item .acc button.ia { border-color: #2e5f7d; color: #2e5f7d; }
+  #detalle { display: none; }
+  #detalle textarea { width: 100%; height: 150px; font-size: 11px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+  #detalle .volver { margin: 6px 0; font-size: 11px; color: var(--vino); cursor: pointer; }
+  .badge-estado { font-size: 10px; padding: 1px 6px; border-radius: 6px; }
+  .ok { background: #cdeacc; } .err { background: #f5c6cb; } .proc { background: #fff3b8; }
+</style>
+</head>
+<body>
+<header>
+  <b>🎙️ TranscripcionesAG</b>
+  <a id="lnkOpc">⚙️ Opciones</a>
+</header>
+<main>
+  <div id="panelGrabar">
+    <div class="modo">
+      <label id="lblTab"><input type="radio" name="modo" value="tab_mic" checked><span>🖥️+🎙️ Pestaña + micro</span></label>
+      <label><input type="radio" name="modo" value="mic"><span>🎙️ Solo micro</span></label>
+    </div>
+    <button id="btnRec">⏺ Empezar a grabar</button>
+    <div id="timer">00:00</div>
+    <div id="estado"></div>
+    <div style="font-size:10.5px;color:#999;text-align:center">Puedes cerrar este panel: la grabación sigue (verás 🔴 REC en el icono).</div>
+    <div style="text-align:center;margin-top:8px"><button id="btnDiag" style="font-size:11px;padding:5px 10px;border:1px solid #bbb;background:#fff;color:#555;border-radius:6px;cursor:pointer">🩺 Diagnóstico</button></div>
+    <pre id="diag" style="display:none;background:#2b2229;color:#e8dfe4;font-size:10.5px;padding:8px;border-radius:6px;white-space:pre-wrap;margin-top:6px;max-height:220px;overflow:auto"></pre>
+
+    <h3>Historial</h3>
+    <div id="historial"></div>
+  </div>
+
+  <div id="detalle">
+    <div class="volver">← Volver</div>
+    <div class="tit" id="detTitulo" style="font-weight:600;font-size:12px;margin-bottom:4px"></div>
+    <textarea id="detTexto" readonly></textarea>
+    <div class="acc" style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
+      <button id="detCopiar">📋 Copiar</button>
+      <button id="detDescargar">💾 .md</button>
+      <button class="ia" data-prov="gemini">✨ Analizar Gemini</button>
+      <button class="ia" data-prov="gpt">🤖 Analizar GPT</button>
+      <button class="ia" data-prov="claude">🧠 Analizar Claude</button>
+    </div>
+    <div id="detEstado" style="font-size:11px;color:#555;min-height:16px;margin-top:4px"></div>
+  </div>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>

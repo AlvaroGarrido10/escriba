@@ -1,4 +1,4 @@
-// TranscripcionesAG — configuración: valida la clave, elige modelo y guarda sola.
+// TranscriptorGod — configuración: valida la clave, elige modelo y guarda sola.
 
 const DEFAULTS = {
   geminiKey: "", geminiModel: "",

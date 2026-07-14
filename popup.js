@@ -1,4 +1,4 @@
-// TranscripcionesAG v2 — popup: control de grabación + historial + análisis IA.
+// TranscriptorGod v2 — popup: control de grabación + historial + análisis IA.
 
 const $ = (id) => document.getElementById(id);
 let timerInt = null, itemAbierto = null, verAnalisis = null, ultimoIdVisto = null;
@@ -96,7 +96,7 @@ $("btnDiag").onclick = async () => {
   out.style.display = "block";
   const log = [];
   const escribe = (l) => { log.push(l); out.textContent = log.join("\n"); };
-  escribe("🩺 Diagnóstico TranscripcionesAG\n");
+  escribe("🩺 Diagnóstico TranscriptorGod\n");
 
   // 1. Configuración
   const cfg = await chrome.storage.sync.get({ geminiKey: "", geminiModel: "gemini-flash-lite-latest" });

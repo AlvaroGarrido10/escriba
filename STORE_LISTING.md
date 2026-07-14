@@ -1,13 +1,13 @@
 # Textos para la ficha de Chrome Web Store (cuando toque publicar)
 
 ## Nombre
-TranscripcionesAG — Transcribe tus reuniones con IA
+TranscriptorGod — Transcribe tus reuniones con IA
 
 ## Descripción corta (132 caracteres máx.)
 Graba Meet/Teams o reuniones presenciales y obtén transcripción y actas con IA. Sin cuenta, sin suscripción: con tus claves API.
 
 ## Descripción larga
-🎙️ TranscripcionesAG graba tus reuniones desde Chrome y te da la transcripción completa al momento — y con un clic, el acta: resumen ejecutivo, decisiones, tareas y temas abiertos.
+🎙️ TranscriptorGod graba tus reuniones desde Chrome y te da la transcripción completa al momento — y con un clic, el acta: resumen ejecutivo, decisiones, tareas y temas abiertos.
 
 ✅ SIN SUSCRIPCIÓN NI CUENTA
 A diferencia de otros servicios, no hay planes de pago ni registro. Usas tu propia clave API gratuita de Google Gemini (y opcionalmente OpenAI o Anthropic para los análisis). Tu audio va directo de tu navegador a la IA que TÚ eliges — sin servidores intermedios.

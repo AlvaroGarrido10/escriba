@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "TranscripcionesAG",
-  "version": "2.0.6",
+  "name": "TranscriptorGod",
+  "version": "2.1.0",
   "description": "Graba tus reuniones (Meet, Teams o presenciales), transcríbelas con IA y genera actas con Gemini, GPT o Claude.",
   "permissions": [
     "tabCapture",
@@ -19,7 +19,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "TranscripcionesAG",
+    "default_title": "TranscriptorGod",
     "default_popup": "popup.html"
   },
   "options_page": "options.html",

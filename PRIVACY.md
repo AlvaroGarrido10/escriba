@@ -1,8 +1,8 @@
-# Política de privacidad — TranscripcionesAG
+# Política de privacidad — TranscriptorGod
 
 **Última actualización: 13/07/2026**
 
-TranscripcionesAG es una extensión de Chrome que graba reuniones y las transcribe/analiza usando servicios de IA con las claves API del propio usuario.
+TranscriptorGod es una extensión de Chrome que graba reuniones y las transcribe/analiza usando servicios de IA con las claves API del propio usuario.
 
 ## Qué datos se tratan y dónde
 

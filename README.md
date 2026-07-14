@@ -1,4 +1,4 @@
-# 🎙️ TranscripcionesAG
+# 🎙️ TranscriptorGod
 
 Graba tus reuniones desde Chrome y obtén la **transcripción completa con IA** al parar. Sin cuotas, sin suscripciones: solo tu clave gratuita de Google Gemini.
 
@@ -10,8 +10,8 @@ Graba tus reuniones desde Chrome y obtén la **transcripción completa con IA** 
 
 1. Abre Chrome y ve a `chrome://extensions`
 2. Activa el **Modo desarrollador** (interruptor arriba a la derecha).
-3. Pulsa **«Cargar descomprimida»** y elige esta carpeta (`C:\TranscripcionesAG`).
-4. Ancla el icono: puzzle 🧩 de la barra → chincheta 📌 junto a TranscripcionesAG.
+3. Pulsa **«Cargar descomprimida»** y elige esta carpeta (`C:\TranscriptorGod`).
+4. Ancla el icono: puzzle 🧩 de la barra → chincheta 📌 junto a TranscriptorGod.
 
 ## Configuración (1 minuto, una vez)
 

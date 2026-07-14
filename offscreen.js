@@ -1,4 +1,4 @@
-// TranscripcionesAG — documento offscreen: SOLO graba y llama a Gemini.
+// TranscriptorGod — documento offscreen: SOLO graba y llama a Gemini.
 // OJO: en un offscreen document NO existe chrome.storage ni chrome.downloads.
 // Todo lo que necesite almacenamiento o descargas se pide al service worker
 // (background.js) por mensajes.

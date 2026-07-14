@@ -1,4 +1,4 @@
-// TranscripcionesAG v2 — service worker orquestador.
+// TranscriptorGod v2 — service worker orquestador.
 // El popup manda órdenes; la grabación/transcripción vive en un documento
 // offscreen (sobrevive aunque el popup se cierre). Estado en storage.session.
 

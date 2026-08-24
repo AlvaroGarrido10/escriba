@@ -40,8 +40,13 @@
 </header>
 <main>
   <div id="panelGrabar">
+    <div id="avisoMic" style="display:none;font-size:11px;line-height:1.4;background:#fff4e5;border:1px solid #f0c48a;color:#7a4a00;border-radius:6px;padding:7px 9px;margin-bottom:8px">
+      ⚠️ <b>El micrófono no está autorizado.</b> <span id="avisoMicTxt">Solo se grabará la pestaña: tu voz no saldrá en la transcripción.</span>
+      <div style="text-align:center;margin-top:6px"><button id="btnArreglaMic" style="font-size:11px;padding:4px 9px;border:1px solid #d09a4a;background:#fff;color:#7a4a00;border-radius:5px;cursor:pointer">Autorizar micrófono</button></div>
+    </div>
     <div class="modo">
       <label id="lblTab"><input type="radio" name="modo" value="tab_mic" checked><span>🖥️+🎙️ Pestaña + micro</span></label>
+      <label><input type="radio" name="modo" value="pc_mic"><span>💻+🎙️ Todo el PC + micro</span></label>
       <label><input type="radio" name="modo" value="mic"><span>🎙️ Solo micro</span></label>
     </div>
     <button id="btnRec">⏺ Empezar a grabar</button>
@@ -51,7 +56,11 @@
     <div style="text-align:center;margin-top:8px"><button id="btnDiag" style="font-size:11px;padding:5px 10px;border:1px solid #bbb;background:#fff;color:#555;border-radius:6px;cursor:pointer">🩺 Diagnóstico</button></div>
     <pre id="diag" style="display:none;background:#2b2229;color:#e8dfe4;font-size:10.5px;padding:8px;border-radius:6px;white-space:pre-wrap;margin-top:6px;max-height:220px;overflow:auto"></pre>
 
-    <h3>Historial</h3>
+    <h3 style="display:flex;align-items:center;justify-content:space-between">
+      <span>Historial</span>
+      <button id="btnBorrarTodo" style="font-size:10.5px;font-weight:400;padding:3px 8px;border:1px solid #d3b3bf;background:#fff;color:#8c3b57;border-radius:5px;cursor:pointer">🗑 Borrar todo</button>
+    </h3>
+    <div id="confirmaTodo" style="display:none;font-size:11px;line-height:1.45;background:#fdecef;border:1px solid #e6a9ba;color:#7d2d43;border-radius:6px;padding:8px 9px;margin-bottom:8px"></div>
     <div id="historial"></div>
   </div>
 

@@ -49,6 +49,20 @@
 
   <div class="estado ok" id="final" style="font-size:14px;font-weight:600"></div>
 
+  <div class="paso" id="p3" style="margin-top:14px">
+    <h2>🧹 Cuántas transcripciones conservar</h2>
+    <p>Al terminar cada reunión se borran las más antiguas, tanto del historial como
+       de <code>Descargas/reuniones</code>. Solo se tocan ficheros descargados por esta extensión.</p>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:8px">
+      <input type="radio" name="reten" id="retenN" value="n"> Conservar solo las últimas
+      <input type="number" id="limite" min="1" max="200" value="10" style="width:70px;padding:6px;border:1px solid #bbb;border-radius:7px">
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
+      <input type="radio" name="reten" id="retenTodo" value="todo"> Guardarlas todas (no borrar nada solo)
+    </label>
+    <div class="estado" id="e4"></div>
+  </div>
+
   <details>
     <summary>Opciones avanzadas (glosario, GPT y Claude)</summary>
     <div class="avz">

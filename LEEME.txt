@@ -1,0 +1,51 @@
+TRANSCRIPTORGOD — instalar en 2 minutos
+========================================
+
+1. Descomprime esta carpeta donde quieras (por ejemplo C:\TranscriptorGod).
+   IMPORTANTE: no la borres luego; Chrome la necesita ahí.
+
+2. Abre Chrome y escribe en la barra de direcciones:  chrome://extensions
+   - Activa el interruptor "Modo de desarrollador" (arriba a la derecha).
+   - Pulsa "Cargar descomprimida" y elige la carpeta que acabas de descomprimir.
+   - Aparecerá el icono del micrófono. Si no lo ves, pulsa el puzzle de la barra
+     y clava la chincheta junto a TranscriptorGod.
+
+3. Configúrala (una sola vez):
+   - Clic DERECHO en el icono del micrófono -> Opciones.
+   - Consigue tu clave GRATIS en https://aistudio.google.com/apikey
+     ("Create API key" -> copiar) y pégala. Se valida sola (se pone en verde).
+   - Pulsa "Permitir micrófono" y acepta.
+
+YA ESTÁ. Para grabar una reunión, elige modo:
+   - "Pestaña + micro": lo normal para Meet/Teams. Ponte EN esa pestaña, clic al
+     icono y "Empezar a grabar". Un solo clic, pero graba ESA pestaña: si te
+     equivocas de ventana, no coge nada.
+   - "Todo el PC + micro": coge el audio de todo el ordenador, venga de donde venga.
+     Chrome te pedirá elegir pantalla cada vez: elige PANTALLA COMPLETA y marca
+     abajo "Compartir también el audio del sistema" (si no la marcas, no hay audio).
+     Verás la barra de "Estás compartiendo tu pantalla" mientras grabas.
+   - "Solo micro": reuniones presenciales.
+   - Al terminar: "Parar y transcribir". La grabación se trocea en tramos de 5 min
+     y se transcriben uno a uno: verás el avance ("3/12 tramos"). Una reunión de
+     una hora tarda un par de minutos. Al acabar tienes la transcripción en el
+     panel y un .md en Descargas/reuniones.
+   - Si algún tramo falla (Google se satura), se reintenta solo; si aun así no sale,
+     ese hueco queda marcado en el .md y su audio se guarda en
+     Descargas/reuniones/audio_<fecha>/ para no perderlo.
+   - Botones "Analizar": te genera el acta (resumen, decisiones, tareas) con Gemini,
+     GPT o Claude.
+
+Cada persona usa su propia clave (gratis). Tu audio va solo a Google, no hay servidores
+por medio.
+
+LIMPIEZA
+   - En Opciones eliges cuántas transcripciones conservar (por defecto las 10
+     últimas). Al terminar cada reunión, las más viejas se borran solas, tanto del
+     historial como de Descargas/reuniones. También puedes decir "guardarlas todas".
+   - En el historial: 🗑 en cada una para borrarla, o "🗑 Borrar todo" arriba.
+     Siempre pregunta antes, y si esa reunión tenía audio de respaldo guardado te
+     deja decidir aparte si lo borras también.
+   - Solo se borran ficheros descargados por esta extensión. No puede tocar nada
+     más de tu carpeta de Descargas.
+
+¿Algo no va? Botón "Diagnóstico" en el panel: dice exactamente qué falla.

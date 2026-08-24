@@ -99,6 +99,27 @@ function listo() {
   }
 }
 
+// --- retención: cuántas transcripciones conservar ---
+// limite = 0 significa "guardarlas todas".
+(async () => {
+  const { limite } = await chrome.storage.sync.get({ limite: 10 });
+  $("retenTodo").checked = limite === 0;
+  $("retenN").checked = limite !== 0;
+  $("limite").value = limite || 10;
+})();
+
+function guardaRetencion() {
+  const todo = $("retenTodo").checked;
+  const n = Math.max(1, Math.min(200, parseInt($("limite").value, 10) || 10));
+  $("limite").value = n;
+  chrome.storage.sync.set({ limite: todo ? 0 : n });
+  pinta("e4", todo ? "Guardado ✓ — no se borrará nada automáticamente"
+                   : `Guardado ✓ — se conservarán las ${n} últimas`, true);
+}
+$("retenTodo").addEventListener("change", guardaRetencion);
+$("retenN").addEventListener("change", guardaRetencion);
+$("limite").addEventListener("input", () => { $("retenN").checked = true; guardaRetencion(); });
+
 // --- avanzado: se guarda solo ---
 for (const id of ["glosario", "openaiKey", "openaiModel", "claudeKey", "claudeModel"]) {
   $(id).addEventListener("input", () => {

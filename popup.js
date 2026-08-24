@@ -4,6 +4,30 @@ const $ = (id) => document.getElementById(id);
 let timerInt = null, itemAbierto = null, verAnalisis = null, ultimoIdVisto = null;
 
 $("lnkOpc").onclick = () => chrome.runtime.openOptionsPage();
+$("btnArreglaMic").onclick = () => chrome.runtime.openOptionsPage();
+
+// El permiso de micrófono se concede al ORIGEN de la extensión, y solo lo puede
+// pedir la página de Opciones: el documento offscreen que graba no puede enseñar
+// el diálogo, así que sin permiso previo falla con "NotAllowedError: Permission
+// dismissed" y la grabación sale sin tu voz. Mejor avisar antes de grabar.
+let micOk = true;
+async function revisaMicro() {
+  try {
+    const p = await navigator.permissions.query({ name: "microphone" });
+    micOk = p.state === "granted";
+    p.onchange = () => { micOk = p.state === "granted"; pintaAvisoMic(); };
+  } catch (_) {
+    micOk = true; // si no se puede consultar, no dar la lata
+  }
+  pintaAvisoMic();
+}
+function pintaAvisoMic() {
+  const modo = document.querySelector(".modo input:checked").value;
+  $("avisoMicTxt").textContent = modo === "mic"
+    ? "En modo «Solo micro» no se grabará nada."
+    : "Solo se grabará la pestaña: tu voz no saldrá en la transcripción.";
+  $("avisoMic").style.display = micOk ? "none" : "block";
+}
 document.querySelectorAll(".modo input").forEach(r => r.addEventListener("change", pintaModo));
 function pintaModo() {
   document.querySelectorAll(".modo label").forEach(l => l.classList.remove("sel"));
@@ -17,6 +41,10 @@ chrome.storage.onChanged.addListener((cambios, area) => {
     const nuevos = cambios.historial.newValue || [];
     pintaHistorial();
     const ultimo = nuevos[0];
+    // Mientras trocea y transcribe, ir cantando por dónde va.
+    if (ultimo && ultimo.estado === "transcribiendo" && ultimo.progreso) {
+      $("estado").textContent = `⏳ Transcribiendo… ${ultimo.progreso}`;
+    }
     // Si la última grabación acaba de terminar, ábrela automáticamente.
     if (ultimo && ultimo.estado !== "transcribiendo" && ultimo.id !== ultimoIdVisto && $("detalle").style.display !== "block") {
       ultimoIdVisto = ultimo.id;
@@ -38,6 +66,7 @@ async function init() {
     $("btnRec").onclick = () => chrome.runtime.openOptionsPage();
     return;
   }
+  await revisaMicro();
   const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
   if (s && s.grabando) modoGrabando(s.t0);
   else pintaObjetivo(s && s.objetivo);
@@ -49,7 +78,12 @@ async function init() {
 // Muestra qué pestaña se va a grabar y avisa si no está sonando.
 function pintaObjetivo(obj) {
   const modo = document.querySelector(".modo input:checked").value;
-  if (modo !== "tab_mic") { $("estado").textContent = "🎙️ Se grabará solo tu micrófono."; return; }
+  if (modo === "mic") { $("estado").textContent = "🎙️ Se grabará solo tu micrófono."; return; }
+  if (modo === "pc_mic") {
+    $("estado").innerHTML = "💻 Se grabará <b>todo el audio del PC</b> + tu micro.<br>"
+      + '<span style="font-size:10.5px;color:#777">Al empezar, Chrome te pedirá elegir pantalla: elige <b>pantalla completa</b> y marca <b>«Compartir también el audio del sistema»</b>.</span>';
+    return;
+  }
   if (!obj) { $("estado").innerHTML = "⚠️ No hay ninguna pestaña con audio. Abre la reunión o usa «Solo micro»."; return; }
   const t = obj.titulo.length > 34 ? obj.titulo.slice(0, 34) + "…" : obj.titulo;
   $("estado").innerHTML = obj.suena
@@ -57,6 +91,7 @@ function pintaObjetivo(obj) {
     : `⚠️ <b>${esc(t)}</b> no está sonando. Dale al play en la reunión (o usa «Solo micro»).`;
 }
 document.querySelectorAll(".modo input").forEach(r => r.addEventListener("change", async () => {
+  pintaAvisoMic();
   const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
   if (!s.grabando) pintaObjetivo(s.objetivo);
 }));
@@ -99,7 +134,7 @@ $("btnDiag").onclick = async () => {
   escribe("🩺 Diagnóstico TranscriptorGod\n");
 
   // 1. Configuración
-  const cfg = await chrome.storage.sync.get({ geminiKey: "", geminiModel: "gemini-flash-lite-latest" });
+  const cfg = await chrome.storage.sync.get({ geminiKey: "", geminiModel: "gemini-flash-latest" });
   escribe(cfg.geminiKey ? `1. Clave guardada .......... OK (${cfg.geminiKey.slice(0, 6)}…)` : "1. Clave guardada .......... FALTA → ve a Opciones");
   escribe(`   Modelo: ${cfg.geminiModel}`);
 
@@ -125,10 +160,18 @@ $("btnDiag").onclick = async () => {
     escribe("   → FALLA: " + ((r && r.error) || "sin respuesta del grabador"));
   } else {
     escribe(`   → Audio capturado: ${(r.bytes / 1024).toFixed(0)} KB  (${r.fuentes})`);
+    if (r.niveles) escribe(`   → Niveles: ${r.niveles}`);
     if (!r.bytes) escribe("   ⚠️ 0 KB: no entra sonido. En modo pestaña, la pestaña debe estar sonando.");
-    escribe("5. Transcripción de prueba .. " + (r.transcripcion ? "OK" : "FALLA"));
-    if (r.transcripcion) escribe("   Texto: " + r.transcripcion.slice(0, 90));
-    if (r.errorTranscripcion) escribe("   → " + r.errorTranscripcion.slice(0, 160));
+    if (r.silencio) {
+      escribe("   ⚠️ SILENCIO: se graba, pero no entra voz por ninguna fuente.");
+      escribe("      Habla al micro mientras dura la prueba, o pon la reunión a sonar.");
+      escribe("5. Transcripción de prueba .. NO PROBADA (no se manda silencio a Gemini:");
+      escribe("      con audio mudo se inventa una reunión entera).");
+    } else {
+      escribe("5. Transcripción de prueba .. " + (r.transcripcion ? "OK" : "FALLA"));
+      if (r.transcripcion) escribe("   Texto: " + r.transcripcion.slice(0, 90));
+      if (r.errorTranscripcion) escribe("   → " + r.errorTranscripcion.slice(0, 160));
+    }
   }
   escribe("\nCopia esto y pásaselo a quien te ayude.");
 };
@@ -144,22 +187,64 @@ async function pintaHistorial() {
     div.className = "item";
     const badge = h.estado === "ok" ? '<span class="badge-estado ok">lista</span>'
       : h.estado === "error" ? '<span class="badge-estado err">error</span>'
-      : '<span class="badge-estado proc">transcribiendo…</span>';
+      : `<span class="badge-estado proc">transcribiendo… ${esc(h.progreso || "")}</span>`;
     div.innerHTML = `<div class="tit">${esc(h.titulo)} ${badge}</div><div class="fec">${h.fecha}</div><div class="acc"></div>`;
     const acc = div.querySelector(".acc");
     if (h.estado !== "transcribiendo") {
       boton(acc, h.estado === "ok" ? "📄 Ver transcripción" : "⚠️ Ver error", () => abrirDetalle(h, false));
       for (const prov of Object.keys(h.analisis || {})) boton(acc, "🔎 Análisis " + prov, () => abrirDetalle(h, prov));
-      boton(acc, "🗑", async () => {
-        const { historial } = await chrome.storage.local.get({ historial: [] });
-        await chrome.storage.local.set({ historial: historial.filter(x => x.id !== h.id) });
-        pintaHistorial();
-      });
+      boton(acc, "🗑", () => pideBorrar(acc, h));
     }
     cont.appendChild(div);
   }
 }
 function boton(parent, txt, fn) { const b = document.createElement("button"); b.textContent = txt; b.onclick = fn; parent.appendChild(b); }
+
+// Borrar es irreversible, así que siempre se pregunta primero — y el audio de
+// respaldo se pregunta aparte, que es lo único que no se puede regenerar.
+function pideBorrar(acc, h) {
+  const nAudio = (h.filesAudio || []).length;
+  acc.innerHTML = "";
+  const caja = document.createElement("div");
+  caja.style.cssText = "font-size:11px;line-height:1.45;background:#fdecef;border:1px solid #e6a9ba;color:#7d2d43;border-radius:6px;padding:7px 8px;width:100%";
+  caja.innerHTML = "<b>¿Borrar esta transcripción?</b><br>Se borrará también su <code>.md</code> de Descargas/reuniones."
+    + (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" class="cbAudio" checked> Borrar también su audio de respaldo (${nAudio} fichero${nAudio > 1 ? "s" : ""})</label>` : "");
+  const fila = document.createElement("div");
+  fila.style.cssText = "display:flex;gap:4px;margin-top:6px";
+  boton(fila, "Sí, borrar", async () => {
+    const cb = caja.querySelector(".cbAudio");
+    await chrome.runtime.sendMessage({ target: "bg", cmd: "borrar", ids: [h.id], conAudio: !!(cb && cb.checked) });
+    pintaHistorial();
+  });
+  boton(fila, "Cancelar", () => pintaHistorial());
+  caja.appendChild(fila);
+  acc.appendChild(caja);
+}
+
+$("btnBorrarTodo").onclick = async () => {
+  const caja = $("confirmaTodo");
+  if (caja.style.display === "block") { caja.style.display = "none"; return; }
+  const { historial } = await chrome.storage.local.get({ historial: [] });
+  if (!historial.length) return;
+  const nAudio = historial.reduce((a, h) => a + (h.filesAudio || []).length, 0);
+  caja.style.display = "block";
+  caja.innerHTML = `<b>¿Borrar las ${historial.length} transcripciones?</b><br>`
+    + "Se borrarán del historial y sus <code>.md</code> de Descargas/reuniones. No hay vuelta atrás."
+    + (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" id="cbAudioTodo" checked> Borrar también el audio de respaldo (${nAudio} fichero${nAudio > 1 ? "s" : ""})</label>` : "");
+  const fila = document.createElement("div");
+  fila.style.cssText = "display:flex;gap:4px;margin-top:6px";
+  boton(fila, "Sí, borrar todo", async () => {
+    const cb = $("cbAudioTodo");
+    const r = await chrome.runtime.sendMessage({
+      target: "bg", cmd: "borrar", ids: historial.map((h) => h.id), conAudio: !!(cb && cb.checked),
+    });
+    caja.style.display = "none";
+    pintaHistorial();
+    $("estado").textContent = `🗑 Borradas ${r.entradas} transcripciones y ${r.ficheros} ficheros.`;
+  });
+  boton(fila, "Cancelar", () => { caja.style.display = "none"; });
+  caja.appendChild(fila);
+};
 function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
 
 // ---------- Detalle + análisis ----------
@@ -224,9 +309,35 @@ Devuelve en markdown, en español:
 (cifras, fechas, referencias, nombres de sistemas mencionados)`;
 }
 
+// Las tres APIs devuelven 429/503 de vez en cuando. Sin esto, un pico de carga
+// de un segundo se lleva por delante el acta de una reunión de una hora.
+const ESPERAS_IA = [3000, 8000, 20000];
+async function fetchIA(nombre, url, opts) {
+  let ultimo = null;
+  for (let intento = 0; ; intento++) {
+    let r;
+    try {
+      r = await fetch(url, opts);
+    } catch (e) {
+      ultimo = new Error(`${nombre}: sin conexión (${(e && e.message) || e})`);
+      if (intento < ESPERAS_IA.length) { await new Promise((s) => setTimeout(s, ESPERAS_IA[intento])); continue; }
+      throw ultimo;
+    }
+    if (r.ok) return r;
+    const txt = (await r.text()).slice(0, 200);
+    ultimo = new Error(`${nombre} HTTP ${r.status}: ${txt}`);
+    if ([408, 429, 500, 502, 503, 504].includes(r.status) && intento < ESPERAS_IA.length) {
+      $("detEstado").textContent = `⏳ ${nombre} saturado, reintentando (${intento + 1}/${ESPERAS_IA.length})…`;
+      await new Promise((s) => setTimeout(s, ESPERAS_IA[intento]));
+      continue;
+    }
+    throw ultimo;
+  }
+}
+
 async function analizar(prov, transcript) {
   const cfgd = await chrome.storage.sync.get({
-    geminiKey: "", geminiModel: "gemini-flash-lite-latest",
+    geminiKey: "", geminiModel: "gemini-flash-latest",
     openaiKey: "", openaiModel: "gpt-4o",
     claudeKey: "", claudeModel: "claude-sonnet-5",
     glosario: "",
@@ -235,27 +346,29 @@ async function analizar(prov, transcript) {
 
   if (prov === "gemini") {
     if (!cfgd.geminiKey) throw new Error("Falta la clave de Gemini en Opciones.");
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfgd.geminiModel}:generateContent`, {
+    const r = await fetchIA("Gemini", `https://generativelanguage.googleapis.com/v1beta/models/${cfgd.geminiModel}:generateContent`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": cfgd.geminiKey },
-      body: JSON.stringify({ contents: [{ parts: [{ text: sys + "\n\n---TRANSCRIPCIÓN---\n" + transcript }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 8192 } }),
+      // Margen amplio: en los modelos "thinking" el razonamiento también gasta
+      // de aquí, y con 8192 el acta salía vacía o cortada.
+      body: JSON.stringify({ contents: [{ parts: [{ text: sys + "\n\n---TRANSCRIPCIÓN---\n" + transcript }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 32768 } }),
     });
-    if (!r.ok) throw new Error("Gemini HTTP " + r.status + ": " + (await r.text()).slice(0, 150));
     const d = await r.json();
-    return (d.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim();
+    const txt = (d.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim();
+    if (!txt) throw new Error("Gemini devolvió un acta vacía (finishReason: " + (d.candidates?.[0]?.finishReason || "?") + ")");
+    return txt;
 
   } else if (prov === "gpt") {
     if (!cfgd.openaiKey) throw new Error("Falta la clave de OpenAI en Opciones.");
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    const r = await fetchIA("OpenAI", "https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfgd.openaiKey },
       body: JSON.stringify({ model: cfgd.openaiModel, messages: [{ role: "system", content: sys }, { role: "user", content: transcript }], temperature: 0.3 }),
     });
-    if (!r.ok) throw new Error("OpenAI HTTP " + r.status + ": " + (await r.text()).slice(0, 150));
     return (await r.json()).choices[0].message.content.trim();
 
   } else if (prov === "claude") {
     if (!cfgd.claudeKey) throw new Error("Falta la clave de Anthropic en Opciones.");
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    const r = await fetchIA("Anthropic", "https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -265,7 +378,6 @@ async function analizar(prov, transcript) {
       },
       body: JSON.stringify({ model: cfgd.claudeModel, max_tokens: 8192, system: sys, messages: [{ role: "user", content: transcript }] }),
     });
-    if (!r.ok) throw new Error("Anthropic HTTP " + r.status + ": " + (await r.text()).slice(0, 150));
     const d = await r.json();
     return d.content.map(c => c.text || "").join("").trim();
   }

@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "TranscriptorGod",
-  "version": "2.1.0",
+  "version": "2.5.0",
   "description": "Graba tus reuniones (Meet, Teams o presenciales), transcríbelas con IA y genera actas con Gemini, GPT o Claude.",
   "permissions": [
     "tabCapture",
+    "desktopCapture",
     "downloads",
     "storage",
     "activeTab",

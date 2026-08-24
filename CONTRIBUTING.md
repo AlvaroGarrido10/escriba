@@ -1,11 +1,11 @@
-# Desarrollar en TranscriptorGod
+# Desarrollar en Escriba
 
 Extensión de Chrome (Manifest V3). No hay build ni dependencias: se edita el código y se recarga. Cualquiera con el repo puede tocar y probar en 2 minutos.
 
 ## Poner en marcha
 
 ```bash
-git clone https://github.com/AlvaroGarrido10/TranscriptorGod.git
+git clone https://github.com/AlvaroGarrido10/escriba.git
 ```
 
 1. Chrome → `chrome://extensions` → activa **Modo de desarrollador**
@@ -25,6 +25,23 @@ Cada persona usa **su propia clave**: no hay servidores ni secretos en el repo.
 | `offscreen.js` | Documento offscreen: graba el audio (pestaña + micro) y llama a Gemini. Sobrevive al cierre del popup |
 | `popup.js/html` | Panel: grabar/parar, historial, ver transcripción, analizar con IA, diagnóstico |
 | `options.js/html` | Configuración: valida la clave, elige modelo compatible y pide permiso de micrófono |
+| `config.js` | Dónde vive cada ajuste, y la migración de las claves de `sync` a `local`. Lo cargan el popup, las opciones y el service worker (`importScripts`) |
+| `tests/` | Suite en Node con el navegador simulado. `npm test` |
+
+### Tests
+
+```bash
+npm test
+```
+
+No hay dependencias que instalar. La suite carga los ficheros reales de la
+extensión con `vm.runInContext` y les inyecta stubs de `chrome`,
+`MediaRecorder`, `AudioContext`, `FileReader` y `fetch` (`tests/stubs.js`). Los
+almacenes simulados son asíncronos a propósito: es lo que hace que las carreras
+de escritura se reproduzcan.
+
+Los casos marcados **REGRESIÓN** cubren un fallo que llegó a estar en uso. Si
+uno se pone rojo, ese fallo ha vuelto — no lo relajes, arregla el código.
 
 ### Reglas del terreno (aprendidas a golpes)
 
@@ -42,8 +59,8 @@ Cada persona usa **su propia clave**: no hay servidores ni secretos en el repo.
 
 ## Publicar una versión
 
-1. Sube el número en `manifest.json` (la Store rechaza versiones repetidas).
-2. Zip con: `manifest.json`, `background.js`, `offscreen.*`, `popup.*`, `options.*`, `icon*.png` (sin docs ni zips).
+1. Sube el número en `manifest.json` **y en `package.json`**: el CI falla si no coinciden, y la Store rechaza versiones repetidas.
+2. Zip con: `manifest.json`, `background.js`, `config.js`, `offscreen.*`, `popup.*`, `options.*`, `icon*.png` (sin docs, ni tests, ni zips). **Ojo con `config.js`**: sin él, el popup y las opciones se quedan sin `leerConfig` y la extensión no arranca.
 3. [Chrome Web Store Developer Console](https://chrome.google.com/webstore/devconsole) → el elemento → **Paquete** → subir → **Enviar a revisión**.
 
 Textos de la ficha y justificación de permisos: `STORE_LISTING.md`. Política de privacidad: `PRIVACY.md`.

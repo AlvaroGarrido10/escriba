@@ -1,14 +1,14 @@
-TRANSCRIPTORGOD — instalar en 2 minutos
+ESCRIBA — instalar en 2 minutos
 ========================================
 
-1. Descomprime esta carpeta donde quieras (por ejemplo C:\TranscriptorGod).
+1. Descomprime esta carpeta donde quieras (por ejemplo C:\Escriba).
    IMPORTANTE: no la borres luego; Chrome la necesita ahí.
 
 2. Abre Chrome y escribe en la barra de direcciones:  chrome://extensions
    - Activa el interruptor "Modo de desarrollador" (arriba a la derecha).
    - Pulsa "Cargar descomprimida" y elige la carpeta que acabas de descomprimir.
    - Aparecerá el icono del micrófono. Si no lo ves, pulsa el puzzle de la barra
-     y clava la chincheta junto a TranscriptorGod.
+     y clava la chincheta junto a Escriba.
 
 3. Configúrala (una sola vez):
    - Clic DERECHO en el icono del micrófono -> Opciones.

@@ -1,14 +1,14 @@
-# Política de privacidad — TranscriptorGod
+# Política de privacidad — Escriba
 
 **Última actualización: 13/07/2026**
 
-TranscriptorGod es una extensión de Chrome que graba reuniones y las transcribe/analiza usando servicios de IA con las claves API del propio usuario.
+Escriba es una extensión de Chrome que graba reuniones y las transcribe/analiza usando servicios de IA con las claves API del propio usuario.
 
 ## Qué datos se tratan y dónde
 
 - **Audio de la reunión** (pestaña y/o micrófono): se graba localmente en tu navegador. Al parar la grabación, el audio se envía **directamente desde tu navegador a la API de Google Gemini** usando **tu propia clave API**, con el único fin de generar la transcripción. La extensión no tiene servidores propios: el audio no pasa por ningún sistema del desarrollador.
 - **Transcripciones y análisis**: se guardan localmente en tu navegador (historial de la extensión) y en tu carpeta de Descargas. Si pulsas «Analizar», el texto de la transcripción se envía al proveedor de IA que elijas (Google Gemini, OpenAI o Anthropic), siempre con tu propia clave.
-- **Claves API**: se guardan en el almacenamiento de tu navegador (chrome.storage). Nunca se envían al desarrollador.
+- **Claves API**: se guardan en `chrome.storage.local`, es decir, **solo en el equipo donde las escribiste**. No se sincronizan con tu cuenta de Google ni con tus otros navegadores, y nunca se envían al desarrollador. Si usabas una versión anterior a la 3.0.0, que las guardaba en `chrome.storage.sync`, la extensión las traslada a almacenamiento local y las borra del sincronizado la primera vez que se abre.
 
 ## Qué datos NO se tratan
 

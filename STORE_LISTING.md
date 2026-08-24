@@ -37,7 +37,7 @@ Productividad / Herramientas
 
 ## Pendiente antes de enviar
 1. Cuenta de desarrollador Chrome Web Store (5 USD, una vez): https://chrome.google.com/webstore/devconsole
-2. Publicar PRIVACY.md en una URL pública (GitHub Pages / ditaytech.com) y ponerla en la ficha.
+2. Publicar PRIVACY.md en una URL pública (GitHub Pages) y ponerla en la ficha.
 3. 3-5 capturas de pantalla 1280×800 (popup grabando, historial, análisis).
-4. Quitar del glosario por defecto los términos internos de Ditay (dejar genérico) — el glosario del equipo se comparte aparte.
+4. ~~Glosario por defecto genérico~~ — hecho: viene vacío.
 5. Probado en reuniones reales ≥1 semana.

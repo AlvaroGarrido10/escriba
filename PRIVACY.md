@@ -28,4 +28,4 @@ El uso de las APIs de Google Gemini, OpenAI y Anthropic está sujeto a las polí
 
 ## Contacto
 
-Para cualquier consulta sobre esta política: alvaro.garrido@ditaytech.com
+Para cualquier consulta sobre esta política: alvarogarrido98@hotmail.com

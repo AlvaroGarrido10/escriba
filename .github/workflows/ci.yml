@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # Sin dependencias: no hay npm install que hacer.
+      - name: Suite
+        run: npm test
+
+  manifiesto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # La versión del manifest es la que ve Chrome. Si se queda atrás respecto
+      # a package.json, se publica una build creyendo que es otra.
+      - name: La versión del manifest coincide con la de package.json
+        run: |
+          m=$(node -p "require('./manifest.json').version")
+          p=$(node -p "require('./package.json').version")
+          echo "manifest=$m package=$p"
+          test "$m" = "$p"
+      - name: El manifest es JSON válido y declara los permisos esperados
+        run: |
+          node -e "
+            const m = require('./manifest.json');
+            const req = ['tabCapture','desktopCapture','downloads','storage','offscreen','unlimitedStorage'];
+            const faltan = req.filter(p => !m.permissions.includes(p));
+            if (faltan.length) { console.error('faltan permisos:', faltan); process.exit(1); }
+            if (m.manifest_version !== 3) { console.error('debe ser MV3'); process.exit(1); }
+          "

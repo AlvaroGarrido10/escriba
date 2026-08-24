@@ -1,4 +1,4 @@
-// TranscriptorGod v2 — popup: control de grabación + historial + análisis IA.
+// Escriba — popup: control de grabación + historial + análisis IA.
 
 const $ = (id) => document.getElementById(id);
 let timerInt = null, itemAbierto = null, verAnalisis = null, ultimoIdVisto = null;
@@ -59,7 +59,7 @@ chrome.storage.onChanged.addListener((cambios, area) => {
 init();
 async function init() {
   // Primer uso: sin clave no se puede transcribir → llevar a la configuración.
-  const { geminiKey } = await chrome.storage.sync.get({ geminiKey: "" });
+  const { geminiKey } = await leerConfig();
   if (!geminiKey) {
     $("estado").innerHTML = '⚠️ Falta configurar la clave (1 min).';
     $("btnRec").textContent = "⚙️ Configurar ahora";
@@ -131,10 +131,10 @@ $("btnDiag").onclick = async () => {
   out.style.display = "block";
   const log = [];
   const escribe = (l) => { log.push(l); out.textContent = log.join("\n"); };
-  escribe("🩺 Diagnóstico TranscriptorGod\n");
+  escribe("🩺 Diagnóstico de Escriba\n");
 
   // 1. Configuración
-  const cfg = await chrome.storage.sync.get({ geminiKey: "", geminiModel: "gemini-flash-latest" });
+  const cfg = await leerConfig();
   escribe(cfg.geminiKey ? `1. Clave guardada .......... OK (${cfg.geminiKey.slice(0, 6)}…)` : "1. Clave guardada .......... FALTA → ve a Opciones");
   escribe(`   Modelo: ${cfg.geminiModel}`);
 
@@ -274,14 +274,23 @@ document.querySelectorAll("button.ia").forEach(b => b.onclick = async () => {
   $("detEstado").textContent = `⏳ Analizando con ${prov}…`;
   try {
     const analisis = await analizar(prov, itemAbierto.transcript);
-    const { historial } = await chrome.storage.local.get({ historial: [] });
-    const i = historial.findIndex(x => x.id === itemAbierto.id);
-    historial[i].analisis = historial[i].analisis || {};
-    historial[i].analisis[prov] = analisis;
-    await chrome.storage.local.set({ historial });
-    itemAbierto = historial[i];
-    abrirDetalle(itemAbierto, prov);
-    $("detEstado").textContent = "✅ Análisis listo (guardado en el historial).";
+    // Lo guarda el service worker: escribe por la misma cola que el progreso de
+    // la transcripción, así dos escrituras a la vez no se pisan.
+    const r = await chrome.runtime.sendMessage({
+      target: "bg", cmd: "histAnalisis", id: itemAbierto.id, prov, texto: analisis,
+    });
+    if (r && r.ok && r.item) {
+      itemAbierto = r.item;
+      abrirDetalle(itemAbierto, prov);
+      $("detEstado").textContent = "✅ Análisis listo (guardado en el historial).";
+    } else {
+      // El análisis está hecho y pagado: se enseña aunque no se haya podido
+      // guardar, en vez de perderlo.
+      itemAbierto = { ...itemAbierto, analisis: { ...(itemAbierto.analisis || {}), [prov]: analisis } };
+      abrirDetalle(itemAbierto, prov);
+      $("detEstado").textContent = "⚠️ " + ((r && r.error) || "No se pudo guardar en el historial") +
+        " — cópialo o descárgalo ahora.";
+    }
   } catch (e) {
     $("detEstado").textContent = "❌ " + (e.message || e);
   }
@@ -336,12 +345,7 @@ async function fetchIA(nombre, url, opts) {
 }
 
 async function analizar(prov, transcript) {
-  const cfgd = await chrome.storage.sync.get({
-    geminiKey: "", geminiModel: "gemini-flash-latest",
-    openaiKey: "", openaiModel: "gpt-4o",
-    claudeKey: "", claudeModel: "claude-sonnet-5",
-    glosario: "",
-  });
+  const cfgd = await leerConfig();
   const sys = promptAnalisis(cfgd.glosario);
 
   if (prov === "gemini") {
@@ -364,7 +368,13 @@ async function analizar(prov, transcript) {
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfgd.openaiKey },
       body: JSON.stringify({ model: cfgd.openaiModel, messages: [{ role: "system", content: sys }, { role: "user", content: transcript }], temperature: 0.3 }),
     });
-    return (await r.json()).choices[0].message.content.trim();
+    // Un 200 no garantiza que venga acta: un filtro de contenido o un modelo
+    // inexistente devuelven un cuerpo sin `choices`. Sin esta comprobación
+    // salía un TypeError que no le dice nada a nadie.
+    const d = await r.json();
+    const txt = (d.choices?.[0]?.message?.content || "").trim();
+    if (!txt) throw new Error("OpenAI devolvió un acta vacía" + motivo(d.choices?.[0]?.finish_reason, d));
+    return txt;
 
   } else if (prov === "claude") {
     if (!cfgd.claudeKey) throw new Error("Falta la clave de Anthropic en Opciones.");
@@ -376,10 +386,22 @@ async function analizar(prov, transcript) {
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true",
       },
-      body: JSON.stringify({ model: cfgd.claudeModel, max_tokens: 8192, system: sys, messages: [{ role: "user", content: transcript }] }),
+      // 16384, no 8192: con el tope antiguo el acta de una reunión larga salía
+      // cortada solo en Claude, mientras Gemini iba con 32768.
+      body: JSON.stringify({ model: cfgd.claudeModel, max_tokens: 16384, system: sys, messages: [{ role: "user", content: transcript }] }),
     });
     const d = await r.json();
-    return d.content.map(c => c.text || "").join("").trim();
+    const txt = (Array.isArray(d.content) ? d.content : []).map((c) => c.text || "").join("").trim();
+    if (!txt) throw new Error("Anthropic devolvió un acta vacía" + motivo(d.stop_reason, d));
+    return txt;
   }
   throw new Error("Proveedor desconocido");
+}
+
+// Añade el motivo que dé la API, si lo da: sin esto un acta vacía no se
+// distingue de un fallo de red.
+function motivo(razon, cuerpo) {
+  if (razon) return ` (motivo: ${razon})`;
+  const err = cuerpo && cuerpo.error && (cuerpo.error.message || cuerpo.error.type);
+  return err ? ` (${String(err).slice(0, 120)})` : "";
 }

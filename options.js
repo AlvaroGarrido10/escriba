@@ -1,11 +1,5 @@
-// TranscriptorGod — configuración: valida la clave, elige modelo y guarda sola.
+// Escriba — configuración: valida la clave, elige modelo y guarda sola.
 
-const DEFAULTS = {
-  geminiKey: "", geminiModel: "",
-  openaiKey: "", openaiModel: "gpt-4o",
-  claudeKey: "", claudeModel: "claude-sonnet-5",
-  glosario: "",
-};
 const $ = (id) => document.getElementById(id);
 const BASE = "https://generativelanguage.googleapis.com";
 // Orden de preferencia: calidad/latencia razonables y disponibles para claves nuevas.
@@ -20,12 +14,13 @@ function pinta(id, txt, ok) {
 let guardando = null;
 async function guarda(campos) {
   clearTimeout(guardando);
-  guardando = setTimeout(() => chrome.storage.sync.set(campos), 200);
+  guardando = setTimeout(() => guardarConfig(campos), 200);
 }
 
 // --- carga inicial ---
 (async () => {
-  const d = await chrome.storage.sync.get(DEFAULTS);
+  await migrarConfig();
+  const d = await leerConfig();
   for (const k of ["geminiKey", "geminiModel", "openaiKey", "openaiModel", "claudeKey", "claudeModel", "glosario"]) $(k).value = d[k] || "";
   if (d.geminiKey) validarClave(d.geminiKey, d.geminiModel);
   revisarMicro();
@@ -64,7 +59,7 @@ async function validarClave(key, modeloGuardado) {
     if (!elegido) throw new Error("La clave funciona, pero ningún modelo está disponible ahora mismo. Reintenta en unos minutos.");
 
     $("geminiModel").value = elegido;
-    await chrome.storage.sync.set({ geminiKey: key, geminiModel: elegido });
+    await guardarConfig({ geminiKey: key, geminiModel: elegido });
     $("p1").classList.add("listo");
     pinta("e1", `✅ Clave válida · modelo: ${elegido}`, true);
     listo();
@@ -102,7 +97,7 @@ function listo() {
 // --- retención: cuántas transcripciones conservar ---
 // limite = 0 significa "guardarlas todas".
 (async () => {
-  const { limite } = await chrome.storage.sync.get({ limite: 10 });
+  const { limite } = await leerConfig();
   $("retenTodo").checked = limite === 0;
   $("retenN").checked = limite !== 0;
   $("limite").value = limite || 10;
@@ -112,7 +107,7 @@ function guardaRetencion() {
   const todo = $("retenTodo").checked;
   const n = Math.max(1, Math.min(200, parseInt($("limite").value, 10) || 10));
   $("limite").value = n;
-  chrome.storage.sync.set({ limite: todo ? 0 : n });
+  guardarConfig({ limite: todo ? 0 : n });
   pinta("e4", todo ? "Guardado ✓ — no se borrará nada automáticamente"
                    : `Guardado ✓ — se conservarán las ${n} últimas`, true);
 }

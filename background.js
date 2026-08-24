@@ -1,9 +1,42 @@
-// TranscriptorGod v2 — service worker orquestador.
+// Escriba — service worker orquestador.
 // El popup manda órdenes; la grabación/transcripción vive en un documento
 // offscreen (sobrevive aunque el popup se cierre). Estado en storage.session.
 
+importScripts("config.js");
+
 const OFFSCREEN_URL = "offscreen.html";
 const TOPE_HISTORIAL = 100;
+
+// Las claves de API vivían en storage.sync, que las replica a la cuenta de
+// Google del usuario. Se traen a local en cuanto arranca la extensión.
+chrome.runtime.onInstalled.addListener(() => { migrarConfig().catch(() => {}); });
+chrome.runtime.onStartup.addListener(() => { migrarConfig().catch(() => {}); });
+
+// TODAS las escrituras del historial pasan por esta cola. `storage.local` no
+// tiene transacciones y hay hasta tres escritores a la vez: los dos
+// trabajadores que transcriben tramos y el popup guardando un análisis. Sin
+// serializar, un read-modify-write pisa al otro y se pierde el progreso —o el
+// análisis, que ya se ha pagado—.
+let colaHist = Promise.resolve();
+function enCola(fn) {
+  const r = colaHist.then(fn, fn);
+  colaHist = r.then(() => {}, () => {});
+  return r;
+}
+
+// storage.local tiene cuota. Con el permiso unlimitedStorage no debería
+// saltar, pero si salta hay que decirlo: fallar en silencio deja al usuario
+// creyendo que su transcripción está guardada cuando no lo está.
+async function guardarHistorial(historial) {
+  try {
+    await chrome.storage.local.set({ historial });
+    return { ok: true };
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    console.error("Escriba: no se pudo guardar el historial:", msg);
+    return { ok: false, error: "No se pudo guardar en el almacenamiento local: " + msg };
+  }
+}
 
 async function ensureOffscreen() {
   if (!(await chrome.offscreen.hasDocument())) {
@@ -61,13 +94,14 @@ async function borrar(idsHist, conAudio) {
   const fuera = new Set(idsHist);
   const ficheros = await borraFicherosDe(historial.filter((x) => fuera.has(x.id)), conAudio);
   const quedan = historial.filter((x) => !fuera.has(x.id));
-  await chrome.storage.local.set({ historial: quedan });
+  const g = await guardarHistorial(quedan);
+  if (!g.ok) return { ok: false, error: g.error, entradas: 0, ficheros };
   return { ok: true, entradas: historial.length - quedan.length, ficheros };
 }
 
 // Aplica el límite configurado: deja las N más recientes y borra el resto.
 async function podar() {
-  const { limite } = await chrome.storage.sync.get({ limite: 10 });
+  const { limite } = await leerConfig(); // config.js decide en qué almacén vive
   if (!limite) return { ok: true, entradas: 0, ficheros: 0 }; // 0 = guardarlas todas
   const { historial } = await chrome.storage.local.get({ historial: [] });
   if (historial.length <= limite) return { ok: true, entradas: 0, ficheros: 0 };
@@ -186,34 +220,50 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, id: dlId });
 
       } else if (msg.cmd === "borrar") {
-        sendResponse(await borrar(msg.ids || [], msg.conAudio));
+        sendResponse(await enCola(() => borrar(msg.ids || [], msg.conAudio)));
 
       } else if (msg.cmd === "podar") {
-        sendResponse(await podar());
+        sendResponse(await enCola(() => podar()));
 
       // El documento offscreen no tiene chrome.storage: se lo servimos nosotros.
       } else if (msg.cmd === "cfg") {
-        sendResponse(await chrome.storage.sync.get({ geminiKey: "", geminiModel: "gemini-flash-latest", glosario: "" }));
+        sendResponse(await leerConfig());
 
       } else if (msg.cmd === "histCrear") {
-        const { historial } = await chrome.storage.local.get({ historial: [] });
-        historial.unshift(msg.item);
-        // Tope duro aunque el usuario elija «guardarlas todas»: storage.local no
-        // es infinito. Lo que se cae por aquí se borra también del disco, para
-        // no dejar ficheros huérfanos que ya nadie puede listar.
-        const sobran = historial.slice(TOPE_HISTORIAL);
-        await chrome.storage.local.set({ historial: historial.slice(0, TOPE_HISTORIAL) });
-        if (sobran.length) await borraFicherosDe(sobran, true);
-        sendResponse({ ok: true });
+        sendResponse(await enCola(async () => {
+          const { historial } = await chrome.storage.local.get({ historial: [] });
+          historial.unshift(msg.item);
+          // Tope duro aunque el usuario elija «guardarlas todas»: storage.local
+          // no es infinito. Lo que se cae por aquí se borra también del disco,
+          // para no dejar ficheros huérfanos que ya nadie puede listar.
+          const sobran = historial.slice(TOPE_HISTORIAL);
+          const g = await guardarHistorial(historial.slice(0, TOPE_HISTORIAL));
+          if (sobran.length) await borraFicherosDe(sobran, true);
+          return g;
+        }));
 
       } else if (msg.cmd === "histActualizar") {
-        const { historial } = await chrome.storage.local.get({ historial: [] });
-        const i = historial.findIndex((h) => h.id === msg.id);
-        if (i >= 0) {
+        sendResponse(await enCola(async () => {
+          const { historial } = await chrome.storage.local.get({ historial: [] });
+          const i = historial.findIndex((h) => h.id === msg.id);
+          if (i < 0) return { ok: false, error: "La entrada ya no está en el historial." };
           Object.assign(historial[i], msg.cambios);
-          await chrome.storage.local.set({ historial });
-        }
-        sendResponse({ ok: true });
+          return guardarHistorial(historial);
+        }));
+
+      // El análisis lo pide el popup, pero lo escribe el service worker: así
+      // pasa por la misma cola que el progreso de la transcripción.
+      } else if (msg.cmd === "histAnalisis") {
+        sendResponse(await enCola(async () => {
+          const { historial } = await chrome.storage.local.get({ historial: [] });
+          const i = historial.findIndex((h) => h.id === msg.id);
+          // La entrada pudo podarse mientras corría el análisis. Se dice, en vez
+          // de reventar con un TypeError y perder un análisis ya pagado.
+          if (i < 0) return { ok: false, error: "Esa transcripción ya no está en el historial; el análisis no se ha podido guardar." };
+          historial[i].analisis = { ...(historial[i].analisis || {}), [msg.prov]: msg.texto };
+          const g = await guardarHistorial(historial);
+          return g.ok ? { ok: true, item: historial[i] } : g;
+        }));
 
       } else {
         sendResponse({ ok: false, error: "Orden desconocida: " + msg.cmd });

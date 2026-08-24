@@ -1,4 +1,4 @@
-// TranscriptorGod — documento offscreen: SOLO graba y llama a Gemini.
+// Escriba — documento offscreen: SOLO graba y llama a Gemini.
 // OJO: en un offscreen document NO existe chrome.storage ni chrome.downloads.
 // Todo lo que necesite almacenamiento o descargas se pide al service worker
 // (background.js) por mensajes.
@@ -18,9 +18,12 @@ const MODELOS_RESERVA = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flas
 
 let mediaRecorder = null, streams = [], audioCtx = null, rotaTimer = null;
 let tramos = [], trozosTramo = [], tabTitle = "", medidores = [], errorMic = "";
+let medidas = [];          // medidas exactas de tramo aún en vuelo
+let ctxDecode = null;      // contexto dedicado a decodificar, aparte del de grabación
 // Por debajo de este pico un tramo es silencio digital. NO se manda al modelo:
 // Gemini, ante silencio, se inventa una reunion entera de cero.
 const PICO_SILENCIO = 0.005;
+const UMBRAL_VOZ = 0.008;  // rms por encima del cual una ventana cuenta como voz
 let finalizando = false, yaProcesado = true, tInicio = 0;
 // true entre que se pide parar un tramo y llega su onstop: en esa ventana el
 // recorder ya no está "recording" pero su audio todavía no está en `tramos`.
@@ -130,6 +133,7 @@ async function start({ modo, streamId, tabTitle: tt }) {
 
   tramos = [];
   trozosTramo = [];
+  medidas = [];
   finalizando = false;
   yaProcesado = false;
   tInicio = Date.now();
@@ -149,7 +153,22 @@ function arrancaTramo(stream) {
     const blob = new Blob(trozosTramo, { type: "audio/webm" });
     trozosTramo = [];
     const nivel = cierraMedidaTramo(); // siempre, aunque el blob venga vacío
-    if (blob.size) tramos.push({ blob, pico: nivel.pico, voz: nivel.voz });
+    if (blob.size) {
+      // El nivel del analizador vale para el informe por fuente, pero NO para
+      // decidir si un tramo es silencio: solo mira 42 ms de cada segundo, así
+      // que una intervención corta se le escapa entera. Sobre ese dato se
+      // descartaban tramos con voz sin llegar a preguntar al modelo.
+      const entrada = { blob, pico: nivel.pico, voz: nivel.voz };
+      tramos.push(entrada); // se encola YA: así el orden de los tramos es el real
+      // La medida exacta va en paralelo. Retrasar aquí el arranque del tramo
+      // siguiente dejaría un hueco sin grabar en la reunión.
+      medidas.push(medirExacto(blob).then((m) => {
+        if (m) { entrada.pico = m.pico; entrada.voz = m.voz; }
+        // Si no se pudo decodificar, se manda igual: mejor gastar 3 céntimos
+        // que tirar un tramo que quizá tenía voz.
+        else entrada.pico = Math.max(entrada.pico, PICO_SILENCIO);
+      }, () => { entrada.pico = Math.max(entrada.pico, PICO_SILENCIO); }));
+    }
     if (finalizando) procesar();
     else arrancaTramo(stream); // siguiente tramo, la grabación no se interrumpe
   };
@@ -211,6 +230,29 @@ function cierraMedidaTramo() {
   return { pico, voz };
 }
 
+// Medida EXACTA del tramo ya grabado: decodifica el .webm y recorre todas las
+// muestras en ventanas de 20 ms. Es la única cifra sobre la que se decide
+// descartar un tramo, porque es la única que ve el audio entero. Se usa un
+// AudioContext propio, a 16 kHz: decodificar no necesita más y así no depende
+// del contexto de grabación, que se cierra al terminar.
+async function medirExacto(blob) {
+  if (!ctxDecode) ctxDecode = new AudioContext({ sampleRate: 16000 });
+  const audio = await ctxDecode.decodeAudioData(await blob.arrayBuffer());
+  const datos = audio.getChannelData(0);
+  const ventana = Math.max(1, Math.round(audio.sampleRate * 0.02));
+  let pico = 0, conVoz = 0, ventanas = 0;
+  for (let i = 0; i < datos.length; i += ventana) {
+    const fin = Math.min(i + ventana, datos.length);
+    let s = 0;
+    for (let j = i; j < fin; j++) s += datos[j] * datos[j];
+    const rms = Math.sqrt(s / (fin - i));
+    if (rms > pico) pico = rms;
+    if (rms > UMBRAL_VOZ) conVoz++;
+    ventanas++;
+  }
+  return { pico, voz: ventanas ? conVoz / ventanas : 0 };
+}
+
 // Resumen de niveles + aviso si una fuente no ha sonado en toda la reunión.
 function informeAudio() {
   const partes = [], mudas = [];
@@ -241,6 +283,11 @@ async function procesar() {
   const audio = informeAudio();
   streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
   if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
+
+  // Ningún tramo se descarta antes de que su medida exacta esté hecha.
+  await Promise.all(medidas);
+  medidas = [];
+  if (ctxDecode) { try { await ctxDecode.close(); } catch (_) {} ctxDecode = null; }
 
   const partes = tramos.slice();
   tramos = [];
@@ -460,26 +507,36 @@ async function transcribirGemini(blob, idx = 1, total = 1) {
   const preferido = (cfg && cfg.geminiModel) || MODELOS_RESERVA[0];
   const modelos = [preferido, ...MODELOS_RESERVA.filter((m) => m !== preferido)];
 
-  const parteAudio = await prepararAudio(blob, key);
+  const { parte: parteAudio, fileName } = await prepararAudio(blob, key);
   const prompt = construirPrompt((cfg && cfg.glosario) || "", idx, total);
 
-  let ultimo = null;
-  for (const modelo of modelos) {
-    for (let intento = 0; ; intento++) {
-      try {
-        return await generar(key, modelo, prompt, parteAudio);
-      } catch (e) {
-        ultimo = e;
-        if (e.fatal) throw e;
-        if (e.reintentable && intento < ESPERAS.length) {
-          await espera(e.esperaMs || ESPERAS[intento]);
-          continue;
+  try {
+    let ultimo = null;
+    for (const modelo of modelos) {
+      for (let intento = 0; ; intento++) {
+        try {
+          return await generar(key, modelo, prompt, parteAudio);
+        } catch (e) {
+          ultimo = e;
+          if (e.fatal) throw e;
+          if (e.reintentable && intento < ESPERAS.length) {
+            await espera(e.esperaMs || ESPERAS[intento]);
+            continue;
+          }
+          break; // agotado con este modelo → probar el siguiente de reserva
         }
-        break; // agotado con este modelo → probar el siguiente de reserva
       }
     }
+    throw ultimo || new Error("No se pudo transcribir el tramo.");
+  } finally {
+    // Lo subido por Files API caduca a las 48 h, pero mientras tanto ocupa
+    // cuota de la clave del usuario. Se borra en cuanto deja de hacer falta.
+    if (fileName) {
+      try {
+        await fetch(`${BASE}/v1beta/${fileName}`, { method: "DELETE", headers: { "x-goog-api-key": key } });
+      } catch (_) { /* si no se puede, caducará solo */ }
+    }
   }
-  throw ultimo || new Error("No se pudo transcribir el tramo.");
 }
 
 async function generar(key, modelo, prompt, parteAudio) {
@@ -526,9 +583,11 @@ async function generar(key, modelo, prompt, parteAudio) {
 }
 
 // Audio pequeño va en el propio cuerpo; grande, por la Files API.
+// Devuelve la parte lista para la petición y, si se subió por Files API, el
+// nombre del fichero remoto para poder borrarlo después.
 async function prepararAudio(blob, key) {
   if (blob.size < LIMITE_INLINE) {
-    return { inline_data: { mime_type: "audio/webm", data: (await blobADataUrl(blob)).split(",")[1] } };
+    return { parte: { inline_data: { mime_type: "audio/webm", data: (await blobADataUrl(blob)).split(",")[1] } }, fileName: "" };
   }
   const auth = { "x-goog-api-key": key };
   const up = await fetch(`${BASE}/upload/v1beta/files`, {
@@ -547,7 +606,7 @@ async function prepararAudio(blob, key) {
     file = await (await fetch(`${BASE}/v1beta/${file.name}`, { headers: auth })).json();
   }
   if (file.state !== "ACTIVE") throw new Error("Gemini no procesó el audio (estado " + file.state + ").");
-  return { file_data: { mime_type: "audio/webm", file_uri: file.uri } };
+  return { parte: { file_data: { mime_type: "audio/webm", file_uri: file.uri } }, fileName: file.name };
 }
 
 // --- utilidades ---

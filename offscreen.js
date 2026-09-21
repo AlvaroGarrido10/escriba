@@ -7,8 +7,14 @@
 // minutos y cada tramo se transcribe por separado. Con la reunión entera en una
 // sola llamada el modelo se rendía a los pocos minutos (y el fallo de una
 // llamada se llevaba por delante la reunión completa).
+//
+// Cada tramo se guarda en IndexedDB (comun.js) en cuanto se cierra, y solo se
+// borra cuando su texto ya está en el historial. Así un fallo de transcripción,
+// o un cierre de Chrome a mitad de reunión, no se lleva el audio por delante: el
+// mismo motor (transcribirReunion) sirve para la primera pasada, para los
+// reintentos y para los archivos importados.
 
-const MS_TRAMO = 5 * 60 * 1000;       // duración de cada tramo de grabación
+const MS_TRAMO = DURACION_TRAMO_S * 1000; // duración de cada tramo de grabación
 const CONCURRENCIA = 2;               // tramos transcribiéndose a la vez
 const ESPERAS = [3000, 8000, 20000];  // backoff entre reintentos de un tramo
 const LIMITE_INLINE = 6 * 1048576;    // por encima, subida por Files API
@@ -16,26 +22,43 @@ const BASE = "https://generativelanguage.googleapis.com";
 // Si el modelo elegido falla, se prueban estos por orden antes de rendirse.
 const MODELOS_RESERVA = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"];
 
-let mediaRecorder = null, streams = [], audioCtx = null, rotaTimer = null;
+let mediaRecorder = null, streams = [], audioCtx = null, rotaTimer = null, parcialTimer = null;
+const MS_PARCIAL = 30 * 1000;         // cada cuánto se guarda el tramo que se está grabando
 let tramos = [], trozosTramo = [], tabTitle = "", medidores = [], errorMic = "";
 let medidas = [];          // medidas exactas de tramo aún en vuelo
 let ctxDecode = null;      // contexto dedicado a decodificar, aparte del de grabación
-// Por debajo de este pico un tramo es silencio digital. NO se manda al modelo:
-// Gemini, ante silencio, se inventa una reunion entera de cero.
-const PICO_SILENCIO = 0.005;
-const UMBRAL_VOZ = 0.008;  // rms por encima del cual una ventana cuenta como voz
+// PICO_SILENCIO y UMBRAL_VOZ viven en comun.js: la página de importar los usa igual.
 let finalizando = false, yaProcesado = true, tInicio = 0;
 // true entre que se pide parar un tramo y llega su onstop: en esa ventana el
 // recorder ya no está "recording" pero su audio todavía no está en `tramos`.
 let cierreEnCurso = false;
+let reunionActual = null;  // id en el historial de la grabación en marcha
+let cerrando = false;      // procesar() en marcha, antes de que empiece la ronda
+// Copia en memoria de los tramos de ESTA sesión, por si IndexedDB falla (cuota,
+// disco lleno): la primera pasada puede seguir aunque no se haya podido guardar.
+const memoria = new Map();
+const enCurso = new Set(); // reuniones con una ronda de transcripción en marcha
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.target !== "offscreen") return false;
   (async () => {
     try {
-      if (msg.cmd === "start") { await start(msg); sendResponse({ ok: true }); }
+      if (msg.cmd === "start") { await start(msg); sendResponse({ ok: true, id: reunionActual }); }
       else if (msg.cmd === "stop") { stop(); sendResponse({ ok: true }); }
       else if (msg.cmd === "selftest") { sendResponse(await selftest(msg)); }
+      else if (msg.cmd === "transcribir") {
+        // Se responde YA: una ronda puede durar minutos y quien la pide (una
+        // alarma, el popup) no tiene por qué esperar.
+        const yaEnCurso = enCurso.has(msg.id);
+        if (!yaEnCurso) transcribirReunion(msg.id).catch((e) => console.error("Escriba: ronda fallida", e));
+        sendResponse({ ok: true, yaEnCurso });
+      }
+      else if (msg.cmd === "estado") {
+        // Mientras se cierra una grabación (medir tramos, pasar la entrada a
+        // «transcribiendo») sigue contando como viva: si no, el service worker
+        // la tomaría por una grabación interrumpida.
+        sendResponse({ ok: true, grabandoId: yaProcesado && !cerrando ? null : reunionActual, enCurso: [...enCurso] });
+      }
       else sendResponse({ ok: false, error: "orden desconocida" });
     } catch (e) { sendResponse({ ok: false, error: (e && e.message) || String(e) }); }
   })();
@@ -44,12 +67,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // --- puentes hacia el service worker (única vía a storage/downloads) ---
 const aBg = (cmd, extra = {}) => chrome.runtime.sendMessage({ target: "bg", cmd, ...extra });
-const leerConfig = () => aBg("cfg");
 const histCrear = (item) => aBg("histCrear", { item });
 const histActualizar = (id, cambios) => aBg("histActualizar", { id, cambios });
+const histTramo = (id, i, datos) => aBg("histTramo", { id, i, datos });
 const descargar = (url, filename) => aBg("descargar", { url, filename });
 const avisar = (ok) => { try { aBg("listo", { ok }); } catch (_) {} };
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// La configuración llega por mensaje desde el service worker. Si ese mensaje
+// falla o vuelve vacío (el service worker se estaba reiniciando, por ejemplo),
+// la 3.0 lo tomaba por «no hay clave» y daba por perdidos todos los tramos. Aquí
+// se reintenta, y si aun así no llega, se dice que es un fallo interno.
+async function leerConfig() {
+  let ultimo = null;
+  for (const ms of [0, 500, 2000, 5000]) {
+    if (ms) await espera(ms);
+    try {
+      const c = await aBg("cfg");
+      if (c && typeof c === "object" && "geminiKey" in c) return c;
+      ultimo = new Error("respuesta sin configuración: " + String(JSON.stringify(c)).slice(0, 120));
+    } catch (e) { ultimo = e; }
+  }
+  throw marcar(new Error("No se pudo leer la configuración de Escriba (" + ((ultimo && ultimo.message) || ultimo) + ")"),
+    { codigo: "interno" });
+}
 
 // --- grabación ---
 async function start({ modo, streamId, tabTitle: tt }) {
@@ -135,8 +176,18 @@ async function start({ modo, streamId, tabTitle: tt }) {
   trozosTramo = [];
   medidas = [];
   finalizando = false;
-  yaProcesado = false;
   tInicio = Date.now();
+  // La entrada del historial nace YA, no al terminar: si Chrome se cierra a
+  // mitad de reunión, el service worker la encuentra en «grabando» al volver y
+  // transcribe lo que haya quedado guardado.
+  reunionActual = tInicio;
+  try {
+    await histCrear(entradaNueva());
+  } catch (e) {
+    // Sin entrada se graba igual: procesar() la crea al terminar si no existe.
+    console.warn("Escriba: no se pudo crear la entrada al empezar:", e);
+  }
+  yaProcesado = false;
   arrancaTramo(destino.stream);
   rotaTimer = setInterval(cortaTramo, MS_TRAMO);
 }
@@ -148,7 +199,16 @@ function arrancaTramo(stream) {
     mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 64000,
   });
   mediaRecorder.ondataavailable = (e) => { if (e.data.size) trozosTramo.push(e.data); };
+  // Lo que va del tramo en curso se guarda cada 30 s. Si Chrome se cierra a
+  // mitad, se recupera todo menos el último medio minuto (sin esto se perdía el
+  // tramo entero: hasta 5 minutos, o la reunión completa si era corta). El
+  // índice es el que tendrá el tramo al cerrarse; el guardado final lo pisa.
+  clearInterval(parcialTimer);
+  parcialTimer = setInterval(() => {
+    if (trozosTramo.length) guardaAudio(reunionActual, tramos.length, new Blob(trozosTramo, { type: "audio/webm" }));
+  }, MS_PARCIAL);
   mediaRecorder.onstop = () => {
+    clearInterval(parcialTimer);
     cierreEnCurso = false;
     const blob = new Blob(trozosTramo, { type: "audio/webm" });
     trozosTramo = [];
@@ -160,6 +220,7 @@ function arrancaTramo(stream) {
       // descartaban tramos con voz sin llegar a preguntar al modelo.
       const entrada = { blob, pico: nivel.pico, voz: nivel.voz };
       tramos.push(entrada); // se encola YA: así el orden de los tramos es el real
+      guardaAudio(reunionActual, tramos.length - 1, blob);
       // La medida exacta va en paralelo. Retrasar aquí el arranque del tramo
       // siguiente dejaría un hueco sin grabar en la reunión.
       medidas.push(medirExacto(blob).then((m) => {
@@ -238,19 +299,7 @@ function cierraMedidaTramo() {
 async function medirExacto(blob) {
   if (!ctxDecode) ctxDecode = new AudioContext({ sampleRate: 16000 });
   const audio = await ctxDecode.decodeAudioData(await blob.arrayBuffer());
-  const datos = audio.getChannelData(0);
-  const ventana = Math.max(1, Math.round(audio.sampleRate * 0.02));
-  let pico = 0, conVoz = 0, ventanas = 0;
-  for (let i = 0; i < datos.length; i += ventana) {
-    const fin = Math.min(i + ventana, datos.length);
-    let s = 0;
-    for (let j = i; j < fin; j++) s += datos[j] * datos[j];
-    const rms = Math.sqrt(s / (fin - i));
-    if (rms > pico) pico = rms;
-    if (rms > UMBRAL_VOZ) conVoz++;
-    ventanas++;
-  }
-  return { pico, voz: ventanas ? conVoz / ventanas : 0 };
+  return medirMuestras(audio.getChannelData(0), audio.sampleRate, UMBRAL_VOZ);
 }
 
 // Resumen de niveles + aviso si una fuente no ha sonado en toda la reunión.
@@ -274,10 +323,57 @@ function informeAudio() {
   return { linea: partes.join(" · "), alerta };
 }
 
+function entradaNueva() {
+  const f = fechaBonita(reunionActual);
+  return {
+    id: reunionActual, fecha: f.legible, titulo: tabTitle || "Reunión", origen: "grabacion",
+    estado: "grabando", progreso: "", transcript: "", analisis: {}, tramos: [], meta: { fichero: f.fichero },
+  };
+}
+
+// Guarda un tramo recién grabado. Si IndexedDB falla, queda al menos en memoria
+// para la primera pasada; lo que no se puede es parar la grabación por esto.
+function guardaAudio(id, idx, blob) {
+  const clave = id + ":" + idx;
+  memoria.set(clave, blob);
+  if (!audios) return;
+  audios.guardar(id, idx, blob).then(
+    // Ya está en disco: no hace falta retenerlo en memoria (una reunión de dos
+    // horas son decenas de MB).
+    () => { if (memoria.get(clave) === blob) memoria.delete(clave); },
+    (e) => console.warn("Escriba: no se pudo guardar el tramo", idx, e));
+}
+
+async function olvidaAudio(id, idx) {
+  memoria.delete(id + ":" + idx);
+  if (audios) { try { await audios.borrar(id, idx); } catch (_) { /* se limpia al arrancar */ } }
+}
+
+async function leeAudio(id, idx) {
+  const enMemoria = memoria.get(id + ":" + idx);
+  if (enMemoria) return enMemoria;
+  return audios ? audios.leer(id, idx) : null;
+}
+
 async function procesar() {
   if (yaProcesado) return; // stop() y onstop pueden llegar los dos; solo uno pasa
   yaProcesado = true;
+  cerrando = true;
+  try {
+    const id = await cierraGrabacion();
+    // Sin await entre medias: transcribirReunion marca la reunión como «en
+    // curso» de forma síncrona, así que no queda ningún hueco sin cubrir.
+    cerrando = false;
+    if (id !== null) await transcribirReunion(id);
+  } finally {
+    cerrando = false;
+  }
+}
+
+// Devuelve el id a transcribir, o null si no hay nada que mandar al modelo.
+async function cierraGrabacion() {
   clearInterval(rotaTimer);
+  clearInterval(parcialTimer);
   rotaTimer = null;
   medidores.forEach((m) => clearInterval(m.timer));
   const audio = informeAudio();
@@ -291,22 +387,21 @@ async function procesar() {
 
   const partes = tramos.slice();
   tramos = [];
-  const id = Date.now();
-  const meta = fechaBonita(id);
-  const minutos = Math.max(1, Math.round((id - tInicio) / 60000));
+  const id = reunionActual;
+  const minutos = Math.max(1, Math.round((Date.now() - tInicio) / 60000));
   const bytes = partes.reduce((a, p) => a + p.blob.size, 0);
   const conSonido = partes.filter((p) => p.pico >= PICO_SILENCIO);
 
-  await histCrear({
-    id, fecha: meta.legible, titulo: tabTitle || "Reunión", estado: "transcribiendo",
-    progreso: `0/${conSonido.length} tramos`, transcript: "", analisis: {},
-  });
+  // La entrada se creó al empezar; si aquello falló, se crea ahora.
+  const existe = await aBg("histLeer", { id }).catch(() => null);
+  if (!existe) await histCrear(entradaNueva());
+  const meta = { ...((existe && existe.meta) || {}), fichero: fechaBonita(id).fichero, minutos, audioLinea: audio.linea, audioAlerta: audio.alerta };
 
   // Silencio: NO se manda a Gemini. Ante un audio mudo el modelo no dice "no oigo
   // nada", se inventa una reunión entera con hablantes y acuerdos que no existen.
   if (!bytes || !conSonido.length) {
     await histActualizar(id, {
-      estado: "error", progreso: "",
+      estado: "error", progreso: "", meta, tramos: [],
       transcript: "# No se grabó audio\n\n" +
         "**No se ha transcrito nada a propósito:** la grabación está muda y, si se le manda silencio, " +
         "el modelo se inventa una reunión que nunca ocurrió.\n\n" +
@@ -316,77 +411,121 @@ async function procesar() {
         "· Para una reunión presencial usa «Solo micro».\n" +
         "· Comprueba el permiso de micrófono en Opciones y que no esté silenciado en Windows.\n",
     });
+    for (let i = 0; i < partes.length; i++) await olvidaAudio(id, i);
     avisar(false);
-    return;
+    return null;
   }
 
-  const textos = new Array(partes.length).fill(null);
-  const mudos = new Set();
-  const fallos = [];
-  let hechas = 0, siguiente = 0;
+  const lista = partes.map((p, i) => ({
+    estado: p.pico < PICO_SILENCIO ? "mudo" : "pendiente", pico: p.pico, etiqueta: etiquetaTramo(i),
+  }));
+  for (let i = 0; i < lista.length; i++) if (lista[i].estado === "mudo") await olvidaAudio(id, i);
+  await histActualizar(id, {
+    estado: "transcribiendo", meta, tramos: lista, progreso: `${lista.length - conSonido.length}/${lista.length} tramos`,
+  });
+  return id;
+}
 
+// --- motor de transcripción --------------------------------------------------
+// Transcribe los tramos PENDIENTES de una reunión del historial. Sirve igual
+// para la primera pasada, un reintento o un archivo importado: todo lo que
+// necesita está en el historial (qué falta) y en IndexedDB (el audio).
+async function transcribirReunion(id) {
+  if (enCurso.has(id)) return { ok: true, yaEnCurso: true };
+  enCurso.add(id);
+  try {
+    await ronda(id);
+    return { ok: true };
+  } finally {
+    enCurso.delete(id);
+  }
+}
+
+async function ronda(id) {
+  const h = await aBg("histLeer", { id });
+  if (!h || !Array.isArray(h.tramos)) return;
+  const total = h.tramos.length;
+  const cola = h.tramos.map((t, i) => (t.estado === "pendiente" ? i : -1)).filter((i) => i >= 0);
+  if (cola.length) await histActualizar(id, { estado: "transcribiendo" });
+
+  // Una clave mala o ausente no se arregla en el tramo siguiente: en cuanto
+  // aparece, el resto de la ronda ni se intenta (sería gastar llamadas).
+  let parar = null, borrada = false;
   const trabajador = async () => {
-    for (let i = siguiente++; i < partes.length; i = siguiente++) {
-      if (partes[i].pico < PICO_SILENCIO) { mudos.add(i); continue; } // ni se pregunta
-      try {
-        const r = await transcribirGemini(partes[i].blob, i + 1, partes.length);
-        if (r.sinVoz) mudos.add(i);
-        else textos[i] = r.texto + (r.truncado ? "\n\n> ⚠️ Este tramo se cortó por límite de longitud del modelo." : "");
-      } catch (e) {
-        fallos.push({ i, error: (e && e.message) || String(e) });
+    while (cola.length && !borrada) {
+      const i = cola.shift();
+      const res = parar ? { ...parar } : await transcribirTramo(id, i, total, h.tramos[i]);
+      if (!parar && res.estado === "pendiente" && CODIGOS_CLAVE.includes(res.codigo)) {
+        parar = { estado: "pendiente", codigo: res.codigo, error: res.error, detalle: res.detalle };
       }
-      hechas++;
-      await histActualizar(id, { progreso: `${hechas}/${conSonido.length} tramos` });
+      const g = await histTramo(id, i, res);
+      if (g && g.borrada) { borrada = true; break; }
+      // El audio se borra DESPUÉS de que el texto esté guardado: al revés, un
+      // fallo entre medias perdería las dos cosas.
+      if (g && g.ok && (res.estado === "ok" || res.estado === "mudo")) await olvidaAudio(id, i);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCIA, conSonido.length) }, trabajador));
-
-  // El audio de los tramos fallidos se guarda: es lo único irrecuperable.
-  const filesAudio = [];
-  for (const f of fallos) {
-    try {
-      const r = await descargar(await blobADataUrl(partes[f.i].blob),
-        `reuniones/audio_${meta.fichero}/tramo${String(f.i + 1).padStart(2, "0")}.webm`);
-      if (r && typeof r.id === "number") filesAudio.push(r.id);
-    } catch (_) { /* best-effort */ }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCIA, cola.length) }, trabajador));
+  if (ctxDecode) { try { await ctxDecode.close(); } catch (_) {} ctxDecode = null; }
+  if (borrada) {
+    // El usuario borró la reunión mientras se transcribía: no queda nada que guardar.
+    if (audios) await audios.borrarReunion(id).catch(() => {});
+    return;
   }
+  await cierraRonda(id);
+}
 
-  const minTramo = Math.round(MS_TRAMO / 60000);
-  const cuerpo = textos.map((t, i) => {
-    if (t !== null) return t;
-    if (mudos.has(i)) return `> _(Tramo ${i + 1}: sin voz — no se transcribe para no inventar texto.)_`;
-    const fallo = fallos.find((f) => f.i === i) || {};
-    return `> ⚠️ **Tramo ${i + 1} de ${partes.length} (≈ minuto ${i * minTramo} al ${(i + 1) * minTramo}) no se pudo transcribir.**\n` +
-      `> ${fallo.error || "error desconocido"}\n` +
-      `> Su audio está en Descargas/reuniones/audio_${meta.fichero}/.`;
-  }).join("\n\n");
-
-  let aviso = fallos.length
-    ? `\n> ⚠️ **${fallos.length} de ${partes.length} tramos fallaron.** Su audio se ha guardado en Descargas/reuniones/audio_${meta.fichero}/.\n`
-    : "";
-  if (mudos.size) {
-    aviso += `\n> ℹ️ **${mudos.size} de ${partes.length} tramos venían sin voz** y se han dejado en blanco a propósito.\n`;
-  }
-  const md = `# Transcripción de reunión — ${meta.legible}\n\n` +
-    (tabTitle ? `**Origen:** ${tabTitle}\n` : "") +
-    `**Duración:** ${minutos} min · ${partes.length} tramo${partes.length === 1 ? "" : "s"}\n` +
-    (audio.linea ? `**Audio:** ${audio.linea}\n` : "") +
-    audio.alerta + aviso + `\n---\n\n${cuerpo}\n`;
-
-  const salvado = textos.some((t) => t !== null);
-  // Se descarga primero para poder guardar el id: sin id, luego no hay forma de
-  // borrar ese fichero concreto.
-  let fileMd = null;
-  try {
-    const r = await descargar("data:text/markdown;charset=utf-8," + encodeURIComponent(md),
-      `reuniones/reunion_${meta.fichero}.md`);
-    if (r && typeof r.id === "number") fileMd = r.id;
-  } catch (_) {}
-  await histActualizar(id, {
-    estado: salvado ? "ok" : "error", progreso: "", transcript: md, fileMd, filesAudio,
+async function transcribirTramo(id, i, total, tramo) {
+  const pendiente = (codigo, e) => ({
+    estado: "pendiente", codigo, error: textoError(codigo),
+    detalle: String((e && e.message) || e || "").slice(0, 300),
   });
+  let blob;
+  try {
+    blob = await leeAudio(id, i);
+  } catch (e) {
+    return pendiente("interno", e); // IndexedDB no responde: el audio puede seguir ahí
+  }
+  if (!blob) return { estado: "perdido", error: textoError("perdido") };
+
+  let pico = tramo && typeof tramo.pico === "number" ? tramo.pico : null;
+  if (pico === null) {
+    // Tramo recuperado de una grabación interrumpida: nadie lo midió.
+    try { pico = (await medirExacto(blob)).pico; } catch (_) { pico = PICO_SILENCIO; }
+  }
+  if (pico < PICO_SILENCIO) return { estado: "mudo", pico };
+
+  try {
+    const r = await transcribirGemini(blob, i + 1, total);
+    if (r.sinVoz) return { estado: "mudo", pico };
+    return { estado: "ok", texto: r.texto, truncado: !!r.truncado, pico };
+  } catch (e) {
+    return { ...pendiente((e && e.codigo) || "otro", e), pico };
+  }
+}
+
+// Fin de ronda: copia de seguridad en Descargas del audio que sigue pendiente,
+// .md rehecho desde el historial y, si falta algo, el service worker programa
+// el siguiente intento.
+async function cierraRonda(id) {
+  const h = await aBg("histLeer", { id });
+  if (!h) return;
+  const fichero = (h.meta && h.meta.fichero) || fechaBonita(id).fichero;
+  for (let i = 0; i < h.tramos.length; i++) {
+    const t = h.tramos[i];
+    if (t.estado !== "pendiente" || typeof t.dlAudio === "number") continue;
+    try {
+      const blob = await leeAudio(id, i);
+      if (!blob) continue;
+      const ext = /wav/.test(blob.type || "") ? "wav" : "webm";
+      const r = await descargar(await blobADataUrl(blob),
+        `reuniones/audio_${fichero}/tramo${String(i + 1).padStart(2, "0")}.${ext}`);
+      if (r && typeof r.id === "number") await histTramo(id, i, { dlAudio: r.id });
+    } catch (_) { /* best-effort: el audio sigue en IndexedDB */ }
+  }
+  const fin = await aBg("finRonda", { id });
+  avisar(!!(fin && fin.estado === "ok"));
   await aBg("podar"); // aplica el límite configurado en Opciones
-  avisar(salvado && !fallos.length);
 }
 
 // --- prueba de 3 s de punta a punta (botón Diagnóstico) ---
@@ -502,8 +641,8 @@ Devuelve SOLO la transcripción.`;
 
 async function transcribirGemini(blob, idx = 1, total = 1) {
   const cfg = await leerConfig();
-  const key = cfg && cfg.geminiKey;
-  if (!key) throw new Error("Falta la clave de Gemini: ábrela en Opciones.");
+  const key = cfg.geminiKey;
+  if (!key) throw marcar(new Error("Falta la clave de Gemini: ábrela en Opciones."), { codigo: "sin_clave" });
   const preferido = (cfg && cfg.geminiModel) || MODELOS_RESERVA[0];
   const modelos = [preferido, ...MODELOS_RESERVA.filter((m) => m !== preferido)];
 
@@ -554,7 +693,7 @@ async function generar(key, modelo, prompt, parteAudio) {
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, parteAudio] }], generationConfig }),
     });
   } catch (e) {
-    throw marcar(new Error("Sin conexión con Gemini: " + ((e && e.message) || e)), { reintentable: true });
+    throw marcar(new Error("Sin conexión con Gemini: " + ((e && e.message) || e)), { reintentable: true, codigo: "red" });
   }
 
   if (!res.ok) {
@@ -562,11 +701,11 @@ async function generar(key, modelo, prompt, parteAudio) {
     const e = new Error(`Gemini HTTP ${res.status} (${modelo}): ${txt}`);
     if ([408, 429, 500, 502, 503, 504].includes(res.status)) {
       const d = /"retryDelay"\s*:\s*"(\d+)s"/.exec(txt);
-      throw marcar(e, { reintentable: true, esperaMs: d ? Number(d[1]) * 1000 : 0 });
+      throw marcar(e, { reintentable: true, codigo: "saturado", esperaMs: d ? Number(d[1]) * 1000 : 0 });
     }
     // Clave mala o sin permisos: cambiar de modelo no arregla nada.
-    if (res.status === 401 || res.status === 403 || /API key/i.test(txt)) throw marcar(e, { fatal: true });
-    throw e; // el resto (404…) deja probar el siguiente modelo
+    if (res.status === 401 || res.status === 403 || /API key/i.test(txt)) throw marcar(e, { fatal: true, codigo: "clave_invalida" });
+    throw marcar(e, { codigo: "otro" }); // el resto (404…) deja probar el siguiente modelo
   }
 
   const data = await res.json();
@@ -575,7 +714,7 @@ async function generar(key, modelo, prompt, parteAudio) {
   const texto = ((cand && cand.content && cand.content.parts) || []).map((p) => p.text || "").join("").trim();
   if (!texto) {
     throw marcar(new Error("Gemini devolvió texto vacío" + (razon ? ` (finishReason: ${razon})` : "") + " — ¿tramo en silencio?"),
-      { reintentable: true });
+      { reintentable: true, codigo: "otro" });
   }
   // El modelo confirma que no hay voz: se respeta, no se reintenta.
   if (/^\s*SIN_VOZ[\s.]*$/i.test(texto)) return { texto: "", sinVoz: true };
@@ -586,18 +725,26 @@ async function generar(key, modelo, prompt, parteAudio) {
 // Devuelve la parte lista para la petición y, si se subió por Files API, el
 // nombre del fichero remoto para poder borrarlo después.
 async function prepararAudio(blob, key) {
+  // Lo grabado es webm; lo importado se convierte a wav (importar.js).
+  const mime = /wav/.test(blob.type || "") ? "audio/wav" : "audio/webm";
   if (blob.size < LIMITE_INLINE) {
-    return { parte: { inline_data: { mime_type: "audio/webm", data: (await blobADataUrl(blob)).split(",")[1] } }, fileName: "" };
+    return { parte: { inline_data: { mime_type: mime, data: (await blobADataUrl(blob)).split(",")[1] } }, fileName: "" };
   }
   const auth = { "x-goog-api-key": key };
-  const up = await fetch(`${BASE}/upload/v1beta/files`, {
-    method: "POST",
-    headers: { ...auth, "X-Goog-Upload-Protocol": "raw", "X-Goog-Upload-Header-Content-Type": "audio/webm", "Content-Type": "audio/webm" },
-    body: blob,
-  });
+  let up;
+  try {
+    up = await fetch(`${BASE}/upload/v1beta/files`, {
+      method: "POST",
+      headers: { ...auth, "X-Goog-Upload-Protocol": "raw", "X-Goog-Upload-Header-Content-Type": mime, "Content-Type": mime },
+      body: blob,
+    });
+  } catch (e) {
+    throw marcar(new Error("Sin conexión con Gemini al subir el audio: " + ((e && e.message) || e)), { codigo: "red" });
+  }
   if (!up.ok) {
     const e = new Error("Subida del audio a Gemini falló: HTTP " + up.status);
-    throw marcar(e, { reintentable: up.status >= 500 || up.status === 429 });
+    if (up.status === 401 || up.status === 403) throw marcar(e, { codigo: "clave_invalida" });
+    throw marcar(e, { codigo: up.status >= 500 || up.status === 429 ? "saturado" : "otro" });
   }
   let file = (await up.json()).file;
   let n = 0;
@@ -605,18 +752,11 @@ async function prepararAudio(blob, key) {
     await espera(2000);
     file = await (await fetch(`${BASE}/v1beta/${file.name}`, { headers: auth })).json();
   }
-  if (file.state !== "ACTIVE") throw new Error("Gemini no procesó el audio (estado " + file.state + ").");
-  return { parte: { file_data: { mime_type: "audio/webm", file_uri: file.uri } }, fileName: file.name };
+  if (file.state !== "ACTIVE") throw marcar(new Error("Gemini no procesó el audio (estado " + file.state + ")."), { codigo: "otro" });
+  return { parte: { file_data: { mime_type: mime, file_uri: file.uri } }, fileName: file.name };
 }
 
 // --- utilidades ---
-function fechaBonita(ts) {
-  const d = new Date(ts), p = (n) => String(n).padStart(2, "0");
-  return {
-    legible: `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`,
-    fichero: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`,
-  };
-}
 function blobADataUrl(blob) {
   return new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(blob); });
 }

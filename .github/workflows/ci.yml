@@ -36,7 +36,7 @@ jobs:
         run: |
           node -e "
             const m = require('./manifest.json');
-            const req = ['tabCapture','desktopCapture','downloads','storage','offscreen','unlimitedStorage'];
+            const req = ['tabCapture','desktopCapture','downloads','storage','offscreen','unlimitedStorage','alarms'];
             const faltan = req.filter(p => !m.permissions.includes(p));
             if (faltan.length) { console.error('faltan permisos:', faltan); process.exit(1); }
             if (m.manifest_version !== 3) { console.error('debe ser MV3'); process.exit(1); }

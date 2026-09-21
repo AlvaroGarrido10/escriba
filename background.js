@@ -2,15 +2,41 @@
 // El popup manda órdenes; la grabación/transcripción vive en un documento
 // offscreen (sobrevive aunque el popup se cierre). Estado en storage.session.
 
-importScripts("config.js");
+importScripts("config.js", "comun.js");
 
 const OFFSCREEN_URL = "offscreen.html";
 const TOPE_HISTORIAL = 100;
+// Reintentos automáticos de una reunión con tramos pendientes, en minutos desde
+// el fallo anterior. Más allá del último, solo a mano («Reintentar»).
+const ESPERAS_REINTENTO_MIN = [1, 5, 15, 60, 180, 720];
+// Reuniones que todavía necesitan su audio: ni la poda ni la limpieza las tocan.
+const ESTADOS_ACTIVOS = ["grabando", "transcribiendo", "pendiente"];
 
-// Las claves de API vivían en storage.sync, que las replica a la cuenta de
-// Google del usuario. Se traen a local en cuanto arranca la extensión.
-chrome.runtime.onInstalled.addListener(() => { migrarConfig().catch(() => {}); });
-chrome.runtime.onStartup.addListener(() => { migrarConfig().catch(() => {}); });
+// Al arrancar Chrome o instalar/actualizar la extensión:
+// 1. Las claves de API vivían en storage.sync, que las replica a la cuenta de
+//    Google del usuario. Se traen a local.
+// 2. Una grabación que se quedó a medias (Chrome se cerró) se transcribe con lo
+//    que llegó a guardarse, y las rondas que murieron con el navegador se relanzan.
+// 3. Se borra el audio que ya no pertenece a ninguna reunión viva.
+async function arranque() {
+  await migrarConfig().catch(() => {});
+  await recuperar().catch((e) => console.warn("Escriba: recuperar", e));
+  await limpiarHuerfanos().catch((e) => console.warn("Escriba: limpiar audio", e));
+  await revisarPendientes().catch((e) => console.warn("Escriba: pendientes", e));
+}
+chrome.runtime.onInstalled.addListener(() => { arranque(); });
+chrome.runtime.onStartup.addListener(() => { arranque(); });
+
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name.startsWith("reintento:")) lanzar(Number(a.name.slice("reintento:".length)));
+});
+
+// En cuanto el usuario guarda una clave nueva, lo que esperaba por ella se
+// reintenta sin que tenga que hacer nada más.
+chrome.storage.onChanged.addListener((cambios, area) => {
+  const c = area === "local" && cambios.geminiKey;
+  if (c && c.newValue && c.newValue !== c.oldValue) conClaveNueva().catch(() => {});
+});
 
 // TODAS las escrituras del historial pasan por esta cola. `storage.local` no
 // tiene transacciones y hay hasta tres escritores a la vez: los dos
@@ -38,14 +64,183 @@ async function guardarHistorial(historial) {
   }
 }
 
+// Una sola creación a la vez: dos llamadas simultáneas (una alarma y el popup)
+// harían que la segunda fallara con «Only a single offscreen document».
+let creandoOffscreen = null;
 async function ensureOffscreen() {
-  if (!(await chrome.offscreen.hasDocument())) {
-    await chrome.offscreen.createDocument({
+  if (await chrome.offscreen.hasDocument()) return;
+  if (!creandoOffscreen) {
+    creandoOffscreen = chrome.offscreen.createDocument({
       url: OFFSCREEN_URL,
-      reasons: ["USER_MEDIA"],
-      justification: "Grabar audio de la reunión (pestaña y/o micrófono) en segundo plano",
-    });
+      reasons: ["USER_MEDIA", "BLOBS"],
+      justification: "Grabar el audio de la reunión en segundo plano y transcribirlo por tramos",
+    }).finally(() => { creandoOffscreen = null; });
   }
+  await creandoOffscreen;
+}
+
+// --- rondas de transcripción ---------------------------------------------------
+// La transcripción la hace el documento offscreen; aquí solo se le pide.
+async function lanzar(id) {
+  try {
+    await ensureOffscreen();
+    return (await chrome.runtime.sendMessage({ target: "offscreen", cmd: "transcribir", id })) ||
+      { ok: false, error: "El transcriptor no respondió." };
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+}
+
+// Qué está haciendo ahora el documento offscreen. null = no se sabe (existe
+// pero no contesta): en ese caso NO se toca nada, por si está grabando.
+async function estadoGrabador() {
+  if (!(await chrome.offscreen.hasDocument())) return { grabandoId: null, enCurso: [] };
+  try {
+    const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "estado" });
+    return r && r.ok ? { grabandoId: r.grabandoId, enCurso: r.enCurso || [] } : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+const leerHistorial = async () => (await chrome.storage.local.get({ historial: [] })).historial;
+
+// Cierre de una ronda: estado final, .md rehecho y siguiente intento si falta algo.
+async function finRonda(id) {
+  const historial = await leerHistorial();
+  const h = historial.find((x) => x.id === id);
+  if (!h) return { ok: false, error: "La entrada ya no está en el historial." };
+  const estado = estadoFinal(h.tramos);
+  const md = construirMarkdown(h);
+  // El .md anterior se sustituye: si no, cada reintento dejaría otra copia.
+  if (typeof h.fileMd === "number") await borraDescarga(h.fileMd);
+  const fichero = (h.meta && h.meta.fichero) || fechaBonita(id).fichero;
+  h.fileMd = await descargaFichero("data:text/markdown;charset=utf-8," + encodeURIComponent(md), `reuniones/reunion_${fichero}.md`);
+  h.transcript = md;
+  h.estado = estado;
+  h.progreso = "";
+  h.reintento = await planificaReintento(h, estado);
+  const g = await guardarHistorial(historial);
+  return g.ok ? { ok: true, estado } : g;
+}
+
+async function planificaReintento(h, estado) {
+  const alarma = "reintento:" + h.id;
+  await chrome.alarms.clear(alarma);
+  if (estado !== "pendiente") return null;
+  const n = (h.reintento && h.reintento.n) || 0;
+  const ahora = Date.now();
+  const codigos = h.tramos.filter((t) => t.estado === "pendiente").map((t) => t.codigo);
+  // Esperar no arregla una clave: se reintenta cuando el usuario guarde otra.
+  if (codigos.length && codigos.every((c) => CODIGOS_CLAVE.includes(c))) {
+    return { n, esperaClave: true, proximo: null, ultimo: ahora };
+  }
+  if (n >= ESPERAS_REINTENTO_MIN.length) return { n, agotado: true, proximo: null, ultimo: ahora };
+  const min = ESPERAS_REINTENTO_MIN[n];
+  await chrome.alarms.create(alarma, { delayInMinutes: min });
+  return { n: n + 1, proximo: ahora + min * 60000, ultimo: ahora };
+}
+
+// Reintento pedido a mano: vuelve a empezar la tanda de reintentos automáticos.
+async function reintentar(id) {
+  const r = await enCola(async () => {
+    const historial = await leerHistorial();
+    const h = historial.find((x) => x.id === id);
+    if (!h) return { ok: false, error: "Esa reunión ya no está en el historial." };
+    if (!Array.isArray(h.tramos) || !h.tramos.some((t) => t.estado === "pendiente")) {
+      return { ok: false, error: "No le queda nada pendiente." };
+    }
+    h.reintento = { n: 0 };
+    return guardarHistorial(historial);
+  });
+  return r.ok ? lanzar(id) : r;
+}
+
+async function conClaveNueva() {
+  const ids = await enCola(async () => {
+    const historial = await leerHistorial();
+    const ids = [];
+    for (const h of historial) if (h.estado === "pendiente") { h.reintento = { n: 0 }; ids.push(h.id); }
+    if (ids.length) await guardarHistorial(historial);
+    return ids;
+  });
+  for (const id of ids) await lanzar(id);
+}
+
+// Al abrir el popup: se relanza lo que toca sin esperar a la alarma, siempre
+// que haya pasado un rato desde el último intento (abrir y cerrar el popup no
+// debe convertirse en una ráfaga de llamadas).
+async function revisarPendientes() {
+  await recuperar();
+  const historial = await leerHistorial();
+  const { geminiKey } = await leerConfig();
+  const ahora = Date.now();
+  for (const h of historial) {
+    if (h.estado !== "pendiente") continue;
+    const r = h.reintento || {};
+    const hace = r.ultimo ? ahora - r.ultimo : Infinity;
+    if (r.esperaClave ? (geminiKey && hace > 60000) : (!r.agotado && hace > 2 * 60000)) await lanzar(h.id);
+  }
+}
+
+// Reuniones que se quedaron a medias porque se cerró Chrome o se recargó la
+// extensión. Sin esto, una grabación cortada no se transcribía nunca.
+async function recuperar() {
+  const vivo = await estadoGrabador();
+  if (!vivo) return;
+  const ids = await enCola(async () => {
+    const historial = await leerHistorial();
+    const relanzar = [];
+    let claves = null, cambios = false;
+    for (const h of historial) {
+      if (h.estado === "grabando" && h.id !== vivo.grabandoId) {
+        if (!claves) claves = audios ? await audios.claves().catch(() => []) : [];
+        const idxs = claves.filter((k) => k[0] === h.id).map((k) => k[1]);
+        cambios = true;
+        if (!idxs.length) {
+          h.estado = "error";
+          h.transcript = "# La grabación se interrumpió\n\nSe cerró Chrome o se reinició la extensión antes de " +
+            "completar el primer tramo, así que no llegó a guardarse audio.\n";
+          continue;
+        }
+        const n = Math.max(...idxs) + 1;
+        h.tramos = Array.from({ length: n }, (_, i) => ({
+          estado: idxs.includes(i) ? "pendiente" : "perdido", etiqueta: etiquetaTramo(i),
+        }));
+        h.meta = { ...(h.meta || {}), minutos: n * (DURACION_TRAMO_S / 60), interrumpida: true };
+        h.estado = "transcribiendo";
+        relanzar.push(h.id);
+      } else if (h.estado === "transcribiendo" && !vivo.enCurso.includes(h.id)) {
+        if (Array.isArray(h.tramos)) {
+          relanzar.push(h.id); // la ronda murió con el documento que la llevaba
+        } else {
+          // Entrada de una versión anterior a la 3.1 cortada a medias: su audio
+          // solo vivía en memoria, no hay nada que reintentar.
+          h.estado = "error";
+          h.progreso = "";
+          h.transcript = "# La transcripción se interrumpió\n\nEscriba se cerró o se actualizó mientras " +
+            "transcribía esta reunión, y la versión que la grabó no guardaba el audio para reintentar.\n";
+          cambios = true;
+        }
+      }
+    }
+    if (cambios) await guardarHistorial(historial);
+    return relanzar;
+  });
+  for (const id of ids) await lanzar(id);
+}
+
+// Audio en IndexedDB de reuniones que ya no lo necesitan (borradas, o que
+// terminaron pero no pudieron limpiar su audio).
+async function limpiarHuerfanos() {
+  if (!audios) return;
+  const vivo = await estadoGrabador();
+  if (!vivo) return;
+  const historial = await leerHistorial();
+  const necesitan = new Set(historial.filter((h) => ESTADOS_ACTIVOS.includes(h.estado)).map((h) => h.id));
+  if (vivo.grabandoId) necesitan.add(vivo.grabandoId);
+  const sobran = new Set((await audios.claves()).map((k) => k[0]).filter((id) => !necesitan.has(id)));
+  for (const id of sobran) await audios.borrarReunion(id);
 }
 
 // Elige QUÉ pestaña grabar: la activa si es capturable y está sonando; si no,
@@ -84,13 +279,22 @@ async function borraFicherosDe(items, conAudio) {
   let n = 0;
   for (const h of items) {
     for (const dlId of idsDe(h, conAudio)) { await borraDescarga(dlId); n++; }
+    // El audio interno pendiente de transcribir se va siempre con su reunión:
+    // sin entrada en el historial ya nadie podría reintentarlo.
+    if (audios) await audios.borrarReunion(h.id).catch(() => {});
+    await chrome.alarms.clear("reintento:" + h.id);
   }
   return n;
 }
 
+// Devolvemos el id: es lo único que permite borrar luego ESE fichero y
+// ninguno más. Sin id no se toca nada del disco.
+const descargaFichero = (url, filename) => new Promise((res) =>
+  chrome.downloads.download({ url, filename, saveAs: false }, res));
+
 // Borra las entradas indicadas del historial y sus ficheros.
 async function borrar(idsHist, conAudio) {
-  const { historial } = await chrome.storage.local.get({ historial: [] });
+  const historial = await leerHistorial();
   const fuera = new Set(idsHist);
   const ficheros = await borraFicherosDe(historial.filter((x) => fuera.has(x.id)), conAudio);
   const quedan = historial.filter((x) => !fuera.has(x.id));
@@ -100,13 +304,16 @@ async function borrar(idsHist, conAudio) {
 }
 
 // Aplica el límite configurado: deja las N más recientes y borra el resto.
+// Nunca poda una reunión que aún se está grabando o transcribiendo, o que
+// espera un reintento: se perdería su audio antes de tener el texto.
 async function podar() {
   const { limite } = await leerConfig(); // config.js decide en qué almacén vive
   if (!limite) return { ok: true, entradas: 0, ficheros: 0 }; // 0 = guardarlas todas
-  const { historial } = await chrome.storage.local.get({ historial: [] });
-  if (historial.length <= limite) return { ok: true, entradas: 0, ficheros: 0 };
+  const historial = await leerHistorial();
+  const sobran = historial.slice(limite).filter((h) => !ESTADOS_ACTIVOS.includes(h.estado));
+  if (!sobran.length) return { ok: true, entradas: 0, ficheros: 0 };
   // El audio de respaldo SÍ se va al podar: si no, la carpeta crece sin freno.
-  return borrar(historial.slice(limite).map((h) => h.id), true);
+  return borrar(sobran.map((h) => h.id), true);
 }
 
 // Audio de TODO el PC. Chrome obliga a que el usuario elija la fuente cada vez;
@@ -213,11 +420,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true });
 
       } else if (msg.cmd === "descargar") {
-        // Devolvemos el id: es lo único que permite borrar luego ESE fichero y
-        // ninguno más. Sin id no se toca nada del disco.
-        const dlId = await new Promise((res) =>
-          chrome.downloads.download({ url: msg.url, filename: msg.filename, saveAs: false }, res));
-        sendResponse({ ok: true, id: dlId });
+        sendResponse({ ok: true, id: await descargaFichero(msg.url, msg.filename) });
 
       } else if (msg.cmd === "borrar") {
         sendResponse(await enCola(() => borrar(msg.ids || [], msg.conAudio)));
@@ -236,11 +439,48 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Tope duro aunque el usuario elija «guardarlas todas»: storage.local
           // no es infinito. Lo que se cae por aquí se borra también del disco,
           // para no dejar ficheros huérfanos que ya nadie puede listar.
-          const sobran = historial.slice(TOPE_HISTORIAL);
+          const sobran = historial.slice(TOPE_HISTORIAL); // su audio interno también se borra
           const g = await guardarHistorial(historial.slice(0, TOPE_HISTORIAL));
           if (sobran.length) await borraFicherosDe(sobran, true);
           return g;
         }));
+
+      } else if (msg.cmd === "histLeer") {
+        sendResponse((await leerHistorial()).find((h) => h.id === msg.id) || null);
+
+      // Resultado de UN tramo. Va por la cola y toca solo ese tramo: los dos
+      // trabajadores que transcriben a la vez no pueden pisarse el uno al otro.
+      } else if (msg.cmd === "histTramo") {
+        sendResponse(await enCola(async () => {
+          const historial = await leerHistorial();
+          const h = historial.find((x) => x.id === msg.id);
+          if (!h) return { ok: false, borrada: true, error: "La entrada ya no está en el historial." };
+          if (!Array.isArray(h.tramos)) h.tramos = [];
+          const t = { ...(h.tramos[msg.i] || {}), ...msg.datos };
+          if (t.estado !== "pendiente") { delete t.codigo; delete t.error; delete t.detalle; }
+          h.tramos[msg.i] = t;
+          if (typeof msg.datos.dlAudio === "number") h.filesAudio = [...(h.filesAudio || []), msg.datos.dlAudio];
+          const r = resumenTramos(h.tramos);
+          h.progreso = `${r.total - r.pendientes}/${r.total} tramos`;
+          return guardarHistorial(historial);
+        }));
+
+      } else if (msg.cmd === "finRonda") {
+        sendResponse(await enCola(() => finRonda(msg.id)));
+
+      } else if (msg.cmd === "transcribir") {
+        sendResponse(await lanzar(msg.id));
+
+      } else if (msg.cmd === "reintentar") {
+        sendResponse(await reintentar(msg.id));
+
+      } else if (msg.cmd === "claveNueva") {
+        await conClaveNueva();
+        sendResponse({ ok: true });
+
+      } else if (msg.cmd === "revisarPendientes") {
+        await revisarPendientes();
+        sendResponse({ ok: true });
 
       } else if (msg.cmd === "histActualizar") {
         sendResponse(await enCola(async () => {

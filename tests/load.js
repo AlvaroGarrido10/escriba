@@ -10,6 +10,8 @@ const vm = require("vm");
 
 const RAIZ = path.join(__dirname, "..");
 
+// `fichero` puede ser una lista: se evalúan en orden en el mismo contexto, como
+// varios <script> de una página (p. ej. ["comun.js", "offscreen.js"]).
 function cargar(fichero, globales = {}) {
   const contexto = {
     console,
@@ -31,7 +33,9 @@ function cargar(fichero, globales = {}) {
   };
 
   const ctx = vm.createContext(contexto);
-  vm.runInContext(fs.readFileSync(path.join(RAIZ, fichero), "utf8"), ctx, { filename: fichero });
+  for (const f of [].concat(fichero)) {
+    vm.runInContext(fs.readFileSync(path.join(RAIZ, f), "utf8"), ctx, { filename: f });
+  }
   return contexto;
 }
 

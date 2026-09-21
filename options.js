@@ -61,7 +61,17 @@ async function validarClave(key, modeloGuardado) {
     $("geminiModel").value = elegido;
     await guardarConfig({ geminiKey: key, geminiModel: elegido });
     $("p1").classList.add("listo");
-    pinta("e1", `✅ Clave válida · modelo: ${elegido}`, true);
+    // Guardar una clave nueva reintenta solo lo que estaba esperando por ella
+    // (lo hace el service worker); aquí solo se cuenta, para que se sepa.
+    const { historial } = await chrome.storage.local.get({ historial: [] });
+    // Al cargar la página se revalida la clave ya guardada: eso no dispara nada.
+    const esNueva = modeloGuardado === undefined;
+    const pendientes = esNueva ? historial.filter((h) => h.estado === "pendiente").length : 0;
+    // El service worker ya reacciona al cambio de clave, pero si se pega la
+    // misma que había, Chrome no avisa de ningún cambio: se pide explícitamente.
+    if (pendientes) chrome.runtime.sendMessage({ target: "bg", cmd: "claveNueva" }).catch(() => {});
+    pinta("e1", `✅ Clave válida · modelo: ${elegido}` +
+      (pendientes ? ` · Reintentando ${pendientes} reunión${pendientes > 1 ? "es" : ""} pendiente${pendientes > 1 ? "s" : ""}.` : ""), true);
     listo();
   } catch (e) {
     $("p1").classList.remove("listo");
@@ -90,7 +100,7 @@ $("btnMic").onclick = async () => {
 
 function listo() {
   if ($("p1").classList.contains("listo") && $("p2").classList.contains("listo")) {
-    $("final").textContent = "🎉 Todo listo. Cierra esta pestaña y pulsa el icono 🎙️ para grabar tu reunión.";
+    $("final").textContent = "🎉 Todo listo. Cierra esta pestaña y pulsa el icono de Escriba en la barra de Chrome para grabar tu reunión.";
   }
 }
 

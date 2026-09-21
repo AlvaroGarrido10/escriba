@@ -10,7 +10,7 @@ git clone https://github.com/AlvaroGarrido10/escriba.git
 
 1. Chrome → `chrome://extensions` → activa **Modo de desarrollador**
 2. **Cargar descomprimida** → elige la carpeta del repo
-3. Clic derecho en el icono 🎙️ → **Opciones** → pega tu clave gratuita de [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (se valida sola) y permite el micrófono
+3. Clic derecho en el icono de Escriba → **Opciones** → pega tu clave gratuita de [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (se valida sola) y permite el micrófono
 
 Cada persona usa **su propia clave**: no hay servidores ni secretos en el repo.
 
@@ -22,8 +22,10 @@ Cada persona usa **su propia clave**: no hay servidores ni secretos en el repo.
 |---|---|
 | `manifest.json` | Permisos y declaración de la extensión (MV3) |
 | `background.js` | Service worker: orquesta todo. **Es el único que puede usar `chrome.storage`, `chrome.downloads`, `chrome.tabs` y `chrome.tabCapture`** |
-| `offscreen.js` | Documento offscreen: graba el audio (pestaña + micro) y llama a Gemini. Sobrevive al cierre del popup |
-| `popup.js/html` | Panel: grabar/parar, historial, ver transcripción, analizar con IA, diagnóstico |
+| `offscreen.js` | Documento offscreen: graba el audio (pestaña + micro) y tiene el motor de transcripción (`transcribirReunion`) que usan grabaciones, reintentos e importaciones. Sobrevive al cierre del popup |
+| `comun.js` | Compartido por todos: almacén de audio en IndexedDB, códigos de error, estado y markdown de una reunión, troceado y WAV |
+| `importar.js/html` | Página «Transcribir un archivo»: decodifica, trocea en tramos de 5 min, guarda el audio y encarga la transcripción |
+| `popup.js/html` | Panel: grabar/parar, historial, ver transcripción, reintentar, analizar con IA, diagnóstico |
 | `options.js/html` | Configuración: valida la clave, elige modelo compatible y pide permiso de micrófono |
 | `config.js` | Dónde vive cada ajuste, y la migración de las claves de `sync` a `local`. Lo cargan el popup, las opciones y el service worker (`importScripts`) |
 | `tests/` | Suite en Node con el navegador simulado. `npm test` |
@@ -50,6 +52,9 @@ uno se pone rojo, ese fallo ha vuelto — no lo relajes, arregla el código.
 - El service worker **se duerme**: no guardes estado en variables globales, usa `chrome.storage.session`.
 - Modelos de Gemini: no fijes uno a fuego. Las claves nuevas ya no pueden usar algunos modelos antiguos (404 "no longer available to new users"). `options.js` prueba varios y se queda con el que responda.
 - La captura de pestaña falla en páginas `chrome://`, de la Web Store y de la propia extensión. `background.js` busca la pestaña que **esté sonando** (`tab.audible`).
+- **El audio de un tramo se borra DESPUÉS de guardar su texto**, nunca antes: un fallo entre medias perdería las dos cosas.
+- Un fallo de transcripción siempre lleva `codigo` (`comun.js`). Sin él no se sabe si reintentar con alarma o esperar a que el usuario cambie la clave, y el usuario recibe un mensaje falso.
+- `comun.js` y `offscreen.js` se cargan como scripts clásicos en la misma página: una constante declarada en los dos es un `SyntaxError` que deja la extensión sin grabador. Lo compartido vive solo en `comun.js`.
 
 ## Depurar
 
@@ -60,7 +65,7 @@ uno se pone rojo, ese fallo ha vuelto — no lo relajes, arregla el código.
 ## Publicar una versión
 
 1. Sube el número en `manifest.json` **y en `package.json`**: el CI falla si no coinciden, y la Store rechaza versiones repetidas.
-2. Zip con: `manifest.json`, `background.js`, `config.js`, `offscreen.*`, `popup.*`, `options.*`, `icon*.png` (sin docs, ni tests, ni zips). **Ojo con `config.js`**: sin él, el popup y las opciones se quedan sin `leerConfig` y la extensión no arranca.
+2. Zip con: `manifest.json`, `background.js`, `config.js`, `comun.js`, `offscreen.*`, `popup.*`, `options.*`, `importar.*`, `icon*.png`, `LEEME.txt` (sin docs, ni tests, ni zips). **Ojo con `config.js` y `comun.js`**: sin ellos la extensión no arranca.
 3. [Chrome Web Store Developer Console](https://chrome.google.com/webstore/devconsole) → el elemento → **Paquete** → subir → **Enviar a revisión**.
 
 Textos de la ficha y justificación de permisos: `STORE_LISTING.md`. Política de privacidad: `PRIVACY.md`.

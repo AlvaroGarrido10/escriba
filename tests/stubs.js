@@ -9,7 +9,8 @@
 
 const espera0 = () => new Promise((r) => setImmediate(r));
 
-function almacen(inicial = {}) {
+// `avisar(cambios)` imita chrome.storage.onChanged: se llama tras cada set.
+function almacen(inicial = {}, avisar = () => {}) {
   let datos = { ...inicial };
   return {
     _volcado: () => ({ ...datos }),
@@ -30,7 +31,12 @@ function almacen(inicial = {}) {
     },
     async set(o) {
       await espera0();
+      const cambios = {};
+      for (const [k, v] of Object.entries(o)) {
+        if (JSON.stringify(datos[k]) !== JSON.stringify(v)) cambios[k] = { oldValue: datos[k], newValue: v };
+      }
       datos = { ...datos, ...o };
+      if (Object.keys(cambios).length) avisar(cambios);
     },
     async remove(claves) {
       await espera0();
@@ -43,18 +49,24 @@ function almacen(inicial = {}) {
 // Registro de lo que la extensión le ha pedido al navegador, para poder
 // afirmar sobre efectos que no dejan rastro en el almacenamiento.
 function nuevoChrome(opciones = {}) {
-  const registro = { descargas: [], borrados: [], borradosHist: [], badges: [], offscreen: 0 };
+  const registro = { descargas: [], borrados: [], borradosHist: [], badges: [], offscreen: 0, alarmas: {} };
   let proximoIdDescarga = 1;
-  const oyentes = { mensaje: [], instalado: [], arranque: [] };
+  const oyentes = { mensaje: [], instalado: [], arranque: [], cambios: [], alarma: [] };
+  const avisa = (area) => (cambios) => oyentes.cambios.forEach((f) => f(cambios, area));
 
   const chrome = {
     _registro: registro,
     _oyentes: oyentes,
     storage: {
-      local: almacen(opciones.local || {}),
-      sync: almacen(opciones.sync || {}),
-      session: almacen(opciones.session || {}),
-      onChanged: { addListener() {} },
+      local: almacen(opciones.local || {}, avisa("local")),
+      sync: almacen(opciones.sync || {}, avisa("sync")),
+      session: almacen(opciones.session || {}, avisa("session")),
+      onChanged: { addListener: (f) => oyentes.cambios.push(f) },
+    },
+    alarms: {
+      async create(nombre, o) { registro.alarmas[nombre] = o; },
+      async clear(nombre) { const habia = nombre in registro.alarmas; delete registro.alarmas[nombre]; return habia; },
+      onAlarm: { addListener: (f) => oyentes.alarma.push(f) },
     },
     runtime: {
       lastError: null,
@@ -154,4 +166,27 @@ function blobDe(muestras, size) {
   };
 }
 
-module.exports = { almacen, nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, blobDe, espera0 };
+// Almacén de audio en memoria con la misma interfaz que abrirAudios(indexedDB)
+// de comun.js. `fallaLectura` simula un IndexedDB que no responde.
+function nuevosAudios(inicial = []) {
+  const datos = new Map(inicial.map(([reunion, idx, blob]) => [reunion + ":" + idx, { reunion, idx, blob }]));
+  return {
+    _datos: datos,
+    fallaLectura: false,
+    async guardar(reunion, idx, blob) { await espera0(); datos.set(reunion + ":" + idx, { reunion, idx, blob }); },
+    async leer(reunion, idx) {
+      await espera0();
+      if (this.fallaLectura) throw new Error("IndexedDB no responde");
+      const r = datos.get(reunion + ":" + idx);
+      return r ? r.blob : null;
+    },
+    async borrar(reunion, idx) { await espera0(); datos.delete(reunion + ":" + idx); },
+    async borrarReunion(reunion) {
+      await espera0();
+      for (const [k, v] of datos) if (v.reunion === reunion) datos.delete(k);
+    },
+    async claves() { await espera0(); return [...datos.values()].map((v) => [v.reunion, v.idx]); },
+  };
+}
+
+module.exports = { almacen, nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, blobDe, nuevosAudios, espera0 };

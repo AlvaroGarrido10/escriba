@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Escriba",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Graba tus reuniones (Meet, Teams o presenciales), transcríbelas con IA y genera actas con Gemini, GPT o Claude.",
   "permissions": [
     "tabCapture",
@@ -10,7 +10,8 @@
     "storage",
     "activeTab",
     "offscreen",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "alarms"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
@@ -22,11 +23,16 @@
   },
   "action": {
     "default_title": "Escriba",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png"
+    }
   },
   "options_page": "options.html",
   "icons": {
     "16": "icon16.png",
+    "32": "icon32.png",
     "48": "icon48.png",
     "128": "icon128.png"
   }

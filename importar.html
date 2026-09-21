@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Escriba — Transcribir un archivo</title>
+<link rel="icon" href="icon32.png">
+<style>
+  :root { --vino: #5d2a42; --rosa: #d6336c; --ok: #2e7d32; --err: #c0392b; --borde: #e6dce1; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; max-width: 660px; margin: 36px auto; color: #241d21; padding: 0 18px; background: #fff; }
+  h1 { color: var(--vino); font-size: 23px; margin: 0; display: flex; align-items: center; gap: 10px; }
+  h1 img { width: 34px; height: 34px; }
+  .sub { color: #7b6b73; margin: 6px 0 22px; font-size: 14px; }
+  #zona { border: 2px dashed #d7c3cd; border-radius: 14px; padding: 34px 18px; text-align: center; cursor: pointer; background: #fcf8fa; transition: background .15s, border-color .15s; }
+  #zona:hover, #zona.encima { background: #f7edf2; border-color: var(--rosa); }
+  #zona b { color: var(--vino); font-size: 15px; }
+  #zona small { display: block; color: #8b7c83; margin-top: 6px; font-size: 12.5px; }
+  #lista { margin: 14px 0 0; padding: 0; list-style: none; }
+  #lista li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 7px 10px; border: 1px solid var(--borde); border-radius: 8px; margin-bottom: 6px; background: #fff; }
+  #lista li span:last-child { color: #8b7c83; white-space: nowrap; }
+  label.campo { display: block; font-size: 12.5px; font-weight: 600; margin: 16px 0 5px; }
+  input[type=text] { width: 100%; padding: 10px; border: 1px solid #bbb; border-radius: 8px; font-size: 13.5px; }
+  button { padding: 11px 18px; border: none; border-radius: 9px; cursor: pointer; font-size: 14px; background: var(--vino); color: #fff; }
+  button.sec { background: #fff; border: 1px solid var(--vino); color: var(--vino); padding: 8px 14px; font-size: 13px; }
+  button:disabled { opacity: .55; cursor: default; }
+  .acciones { display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  .nota { font-size: 12.5px; color: #7b6b73; line-height: 1.45; }
+  .aviso { font-size: 13px; line-height: 1.45; border-radius: 9px; padding: 10px 12px; margin-top: 14px; }
+  .aviso.info { background: #f4f0f2; color: #4d3f46; }
+  .aviso.ok { background: #eef8ee; color: #1f5b22; border: 1px solid #b9dfb8; }
+  .aviso.err { background: #fdecef; color: #7d2d43; border: 1px solid #e6a9ba; }
+  .aviso.pend { background: #fff4e5; color: #7a4a00; border: 1px solid #f0c48a; }
+  .barra { height: 8px; background: #efe5ea; border-radius: 6px; overflow: hidden; margin-top: 10px; }
+  .barra div { height: 100%; width: 0; background: linear-gradient(90deg, var(--vino), var(--rosa)); transition: width .3s; }
+  textarea { width: 100%; height: 280px; margin-top: 12px; padding: 10px; border: 1px solid #ccc; border-radius: 9px; font-size: 12.5px; line-height: 1.45; resize: vertical; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <h1><img src="icon128.png" alt="">Transcribir un archivo</h1>
+  <div class="sub">Para grabaciones que ya tienes en el ordenador: notas de voz, reuniones grabadas con otra herramienta o audios que no llegaron a transcribirse.</div>
+
+  <div id="zona" tabindex="0" role="button">
+    <b>Arrastra aquí el audio o pulsa para elegirlo</b>
+    <small>mp3, m4a, wav, webm, ogg, flac o vídeo mp4 · Si eliges varios, se tratan como partes seguidas de la misma reunión, por orden de nombre.</small>
+  </div>
+  <input type="file" id="fichero" multiple accept="audio/*,video/*,.webm,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.mp4,.mov" hidden>
+  <ul id="lista"></ul>
+
+  <div id="formulario" hidden>
+    <label class="campo" for="titulo">Nombre de la reunión</label>
+    <input type="text" id="titulo" maxlength="120">
+    <div class="acciones">
+      <button id="btnTranscribir">✍️ Transcribir</button>
+      <button id="btnOtro" class="sec">Elegir otro</button>
+    </div>
+  </div>
+
+  <div id="avisoClave" class="aviso pend" hidden>
+    ⚠️ Todavía no hay clave de Gemini. Puedes importar igual: el audio queda guardado y se transcribirá solo en cuanto la pongas en <a href="options.html" target="_blank">Opciones</a>.
+  </div>
+
+  <div id="progreso" hidden>
+    <div id="progresoTxt" class="aviso info"></div>
+    <div class="barra"><div id="progresoBarra"></div></div>
+    <p class="nota">Puedes cerrar esta pestaña cuando pase a «Transcribiendo»: sigue sola y el resultado aparecerá en el historial de Escriba y en Descargas/reuniones.</p>
+  </div>
+
+  <div id="resultado" hidden>
+    <div id="resultadoTxt" class="aviso"></div>
+    <textarea id="texto" readonly></textarea>
+    <div class="acciones">
+      <button id="btnCopiar" class="sec">📋 Copiar</button>
+      <button id="btnNuevo" class="sec">📂 Transcribir otro</button>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="comun.js"></script>
+  <script src="importar.js"></script>
+</body>
+</html>

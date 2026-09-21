@@ -26,16 +26,26 @@
   .item .acc button { font-size: 10.5px; padding: 4px 7px; border: 1px solid var(--vino); background: #fff; color: var(--vino); border-radius: 6px; cursor: pointer; }
   .item .acc button:hover { background: #f7edf2; }
   .item .acc button.ia { border-color: #2e5f7d; color: #2e5f7d; }
+  #detalle .acc button { font-size: 10.5px; padding: 5px 8px; border: 1px solid var(--vino); background: #fff; color: var(--vino); border-radius: 6px; cursor: pointer; }
+  #detalle .acc button:hover { background: #f7edf2; }
+  #detalle .acc button.ia { border-color: #2e5f7d; color: #2e5f7d; }
+  #detalle .acc button.ia:hover { background: #eef4f8; }
   #detalle { display: none; }
   #detalle textarea { width: 100%; height: 150px; font-size: 11px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
   #detalle .volver { margin: 6px 0; font-size: 11px; color: var(--vino); cursor: pointer; }
   .badge-estado { font-size: 10px; padding: 1px 6px; border-radius: 6px; }
   .ok { background: #cdeacc; } .err { background: #f5c6cb; } .proc { background: #fff3b8; }
+  .pend { background: #ffe0b8; color: #7a4a00; } .rec { background: #fbd3d0; color: #a3261b; }
+  .item .nota { font-size: 10.5px; color: #7a4a00; margin-top: 3px; line-height: 1.35; }
+  .item .acc button:disabled { opacity: .6; cursor: default; }
+  .herr { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
+  .herr button { font-size: 11px; padding: 5px 10px; border: 1px solid #bbb; background: #fff; color: #555; border-radius: 6px; cursor: pointer; }
+  .herr button:hover { background: #f4f0f2; }
 </style>
 </head>
 <body>
 <header>
-  <b>🎙️ Escriba</b>
+  <b style="display:flex;align-items:center;gap:7px"><img src="icon32.png" alt="" style="width:20px;height:20px">Escriba</b>
   <a id="lnkOpc">⚙️ Opciones</a>
 </header>
 <main>
@@ -53,7 +63,10 @@
     <div id="timer">00:00</div>
     <div id="estado"></div>
     <div style="font-size:10.5px;color:#999;text-align:center">Puedes cerrar este panel: la grabación sigue (verás 🔴 REC en el icono).</div>
-    <div style="text-align:center;margin-top:8px"><button id="btnDiag" style="font-size:11px;padding:5px 10px;border:1px solid #bbb;background:#fff;color:#555;border-radius:6px;cursor:pointer">🩺 Diagnóstico</button></div>
+    <div class="herr">
+      <button id="btnImportar" title="Transcribir una grabación que ya tienes en el ordenador">📂 Transcribir un archivo</button>
+      <button id="btnDiag">🩺 Diagnóstico</button>
+    </div>
     <pre id="diag" style="display:none;background:#2b2229;color:#e8dfe4;font-size:10.5px;padding:8px;border-radius:6px;white-space:pre-wrap;margin-top:6px;max-height:220px;overflow:auto"></pre>
 
     <h3 style="display:flex;align-items:center;justify-content:space-between">
@@ -79,6 +92,7 @@
   </div>
 </main>
 <script src="config.js"></script>
+<script src="comun.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

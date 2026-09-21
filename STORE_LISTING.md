@@ -19,6 +19,12 @@ A diferencia de otros servicios, no hay planes de pago ni registro. Usas tu prop
 ✅ TODO EN SEGUNDO PLANO
 Pulsa grabar y sigue con tu reunión: la grabación continúa aunque cierres el panel. Al parar, la transcripción se genera sola, se guarda en tu historial y se descarga en Descargas/reuniones.
 
+✅ NO SE PIERDE NADA
+Si Google está saturado, se cae la red o la clave falla, la reunión no se pierde: el audio queda guardado en tu navegador y Escriba lo reintenta sola. Si Chrome se cierra a mitad de reunión, al volver recupera lo grabado.
+
+✅ TAMBIÉN ARCHIVOS
+¿Ya tienes la grabación? Arrastra un mp3, m4a, wav o mp4 y obtén la transcripción igual.
+
 ✅ ANÁLISIS CON 3 IAs
 Analiza cualquier transcripción con Gemini, GPT o Claude: resumen ejecutivo, decisiones tomadas, tabla de tareas con responsables, temas abiertos y datos citados. La IA sabe que trabaja sobre una transcripción automática (varios hablantes, posibles errores) y usa tu glosario personalizado para escribir bien los nombres de tu empresa y proyectos.
 
@@ -32,7 +38,8 @@ Productividad / Herramientas
 - tabCapture: capturar el audio de la pestaña de la reunión cuando el usuario pulsa Grabar. Es la función principal.
 - Micrófono (getUserMedia): grabar la voz del usuario en reuniones online y presenciales. Función principal.
 - downloads: guardar la transcripción (.md) y el audio de respaldo en la carpeta de Descargas del usuario.
-- storage: configuración (claves API del usuario, glosario) e historial local de transcripciones.
+- storage / unlimitedStorage: configuración (claves API del usuario, glosario), historial local de transcripciones y audio pendiente de transcribir (IndexedDB local, se borra al transcribirse).
+- alarms: reintentar automáticamente, pasados unos minutos, una transcripción que falló por saturación o falta de red.
 - host_permissions (generativelanguage.googleapis.com, api.openai.com, api.anthropic.com): llamadas directas a las APIs de IA con las claves del propio usuario. No hay otros hosts.
 
 ## Pendiente antes de enviar

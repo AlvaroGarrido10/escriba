@@ -46,24 +46,34 @@ chrome.storage.onChanged.addListener((cambios, area) => {
       $("estado").textContent = `⏳ Transcribiendo… ${ultimo.progreso}`;
     }
     // Si la última grabación acaba de terminar, ábrela automáticamente.
-    if (ultimo && ultimo.estado !== "transcribiendo" && ultimo.id !== ultimoIdVisto && $("detalle").style.display !== "block") {
+    if (ultimo && ESTADOS_FINALES.includes(ultimo.estado) && ultimo.id !== ultimoIdVisto && $("detalle").style.display !== "block") {
       ultimoIdVisto = ultimo.id;
       abrirDetalle(ultimo, false);
       $("detEstado").textContent = ultimo.estado === "ok"
         ? "✅ Transcripción lista (guardada en el historial y en Descargas/reuniones)."
-        : "❌ La transcripción falló. Detalle arriba.";
+        : ultimo.estado === "pendiente"
+          ? "⏳ Falta algún tramo. Su audio está a salvo y Escriba lo reintentará sola."
+          : "❌ La transcripción falló. Detalle arriba.";
     }
   }
 });
 
+const ESTADOS_FINALES = ["ok", "pendiente", "error"];
+
+$("btnImportar").onclick = () => chrome.tabs.create({ url: "importar.html" });
+
 init();
 async function init() {
+  // Lo que quedó pendiente se reintenta al abrir el popup, sin esperar a la
+  // alarma (el service worker decide si ya toca). No se espera la respuesta.
+  chrome.runtime.sendMessage({ target: "bg", cmd: "revisarPendientes" }).catch(() => {});
   // Primer uso: sin clave no se puede transcribir → llevar a la configuración.
   const { geminiKey } = await leerConfig();
   if (!geminiKey) {
     $("estado").innerHTML = '⚠️ Falta configurar la clave (1 min).';
     $("btnRec").textContent = "⚙️ Configurar ahora";
     $("btnRec").onclick = () => chrome.runtime.openOptionsPage();
+    pintaHistorial(); // el historial se ve igual: puede haber reuniones esperando la clave
     return;
   }
   await revisaMicro();
@@ -71,7 +81,7 @@ async function init() {
   if (s && s.grabando) modoGrabando(s.t0);
   else pintaObjetivo(s && s.objetivo);
   const { historial } = await chrome.storage.local.get({ historial: [] });
-  if (historial[0]) ultimoIdVisto = historial[0].estado !== "transcribiendo" ? historial[0].id : null;
+  if (historial[0]) ultimoIdVisto = ESTADOS_FINALES.includes(historial[0].estado) ? historial[0].id : null;
   pintaHistorial();
 }
 
@@ -187,11 +197,16 @@ async function pintaHistorial() {
     div.className = "item";
     const badge = h.estado === "ok" ? '<span class="badge-estado ok">lista</span>'
       : h.estado === "error" ? '<span class="badge-estado err">error</span>'
+      : h.estado === "pendiente" ? '<span class="badge-estado pend">incompleta</span>'
+      : h.estado === "grabando" ? '<span class="badge-estado rec">● grabando</span>'
       : `<span class="badge-estado proc">transcribiendo… ${esc(h.progreso || "")}</span>`;
-    div.innerHTML = `<div class="tit">${esc(h.titulo)} ${badge}</div><div class="fec">${h.fecha}</div><div class="acc"></div>`;
+    const icono = h.origen === "archivo" ? "📂 " : "";
+    div.innerHTML = `<div class="tit">${icono}${esc(h.titulo)} ${badge}</div><div class="fec">${esc(h.fecha)}</div>` +
+      (h.estado === "pendiente" ? `<div class="nota">${esc(notaPendiente(h))}</div>` : "") + '<div class="acc"></div>';
     const acc = div.querySelector(".acc");
-    if (h.estado !== "transcribiendo") {
-      boton(acc, h.estado === "ok" ? "📄 Ver transcripción" : "⚠️ Ver error", () => abrirDetalle(h, false));
+    if (ESTADOS_FINALES.includes(h.estado)) {
+      if (h.estado === "pendiente") boton(acc, "🔄 Reintentar ahora", (ev) => reintentar(ev.target, h));
+      boton(acc, h.estado === "error" ? "⚠️ Ver error" : "📄 Ver transcripción", () => abrirDetalle(h, false));
       for (const prov of Object.keys(h.analisis || {})) boton(acc, "🔎 Análisis " + prov, () => abrirDetalle(h, prov));
       boton(acc, "🗑", () => pideBorrar(acc, h));
     }
@@ -199,6 +214,37 @@ async function pintaHistorial() {
   }
 }
 function boton(parent, txt, fn) { const b = document.createElement("button"); b.textContent = txt; b.onclick = fn; parent.appendChild(b); }
+
+// Qué le falta a una reunión incompleta y qué va a pasar con ella, en una línea.
+function notaPendiente(h) {
+  const r = resumenTramos(h.tramos);
+  const re = h.reintento || {};
+  const codigo = ((h.tramos || []).find((t) => t.estado === "pendiente") || {}).codigo;
+  let luego = "se reintentará sola";
+  if (re.esperaClave) {
+    luego = codigo === "sin_clave" ? "falta la clave: ponla en Opciones y se reintentará sola"
+      : "Google rechaza la clave: pon una nueva en Opciones y se reintentará sola";
+  } else if (re.agotado) {
+    luego = "ya no se reintenta sola: pulsa «Reintentar ahora»";
+  } else if (re.proximo) {
+    const d = new Date(re.proximo);
+    luego = `se reintentará sola a las ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  const cuantos = r.total === 1 ? "El tramo está" : `${r.pendientes} de ${r.total} tramos están`;
+  return `${cuantos} sin transcribir · ${luego}`;
+}
+
+async function reintentar(btn, h) {
+  btn.disabled = true;
+  btn.textContent = "⏳ Reintentando…";
+  const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "reintentar", id: h.id });
+  if (!r || !r.ok) {
+    btn.disabled = false;
+    btn.textContent = "🔄 Reintentar ahora";
+    $("estado").textContent = "❌ " + ((r && r.error) || "No se pudo reintentar.");
+  }
+  // Si arranca, el historial se repinta solo con el progreso.
+}
 
 // Borrar es irreversible, así que siempre se pregunta primero — y el audio de
 // respaldo se pregunta aparte, que es lo único que no se puede regenerar.
@@ -252,7 +298,9 @@ function abrirDetalle(h, prov) {
   itemAbierto = h; verAnalisis = prov || null;
   $("panelGrabar").style.display = "none";
   $("detalle").style.display = "block";
-  $("detTitulo").textContent = (prov ? `Análisis (${prov}) — ` : (h.estado === "error" ? "Error — " : "Transcripción — ")) + h.fecha;
+  $("detTitulo").textContent = (prov ? `Análisis (${prov}) — `
+    : h.estado === "error" ? "Error — "
+    : h.estado === "pendiente" ? "Transcripción incompleta — " : "Transcripción — ") + h.fecha;
   $("detTexto").value = prov ? h.analisis[prov] : h.transcript;
   $("detEstado").textContent = "";
 }

@@ -7,11 +7,11 @@ ESCRIBA — instalar en 2 minutos
 2. Abre Chrome y escribe en la barra de direcciones:  chrome://extensions
    - Activa el interruptor "Modo de desarrollador" (arriba a la derecha).
    - Pulsa "Cargar descomprimida" y elige la carpeta que acabas de descomprimir.
-   - Aparecerá el icono del micrófono. Si no lo ves, pulsa el puzzle de la barra
-     y clava la chincheta junto a Escriba.
+   - Aparecerá el icono de Escriba (cuadrado rosa con una pluma). Si no lo ves,
+     pulsa el puzzle de la barra y clava la chincheta junto a Escriba.
 
 3. Configúrala (una sola vez):
-   - Clic DERECHO en el icono del micrófono -> Opciones.
+   - Clic DERECHO en el icono de Escriba -> Opciones.
    - Consigue tu clave GRATIS en https://aistudio.google.com/apikey
      ("Create API key" -> copiar) y pégala. Se valida sola (se pone en verde).
    - Pulsa "Permitir micrófono" y acepta.
@@ -29,11 +29,22 @@ YA ESTÁ. Para grabar una reunión, elige modo:
      y se transcriben uno a uno: verás el avance ("3/12 tramos"). Una reunión de
      una hora tarda un par de minutos. Al acabar tienes la transcripción en el
      panel y un .md en Descargas/reuniones.
-   - Si algún tramo falla (Google se satura), se reintenta solo; si aun así no sale,
-     ese hueco queda marcado en el .md y su audio se guarda en
-     Descargas/reuniones/audio_<fecha>/ para no perderlo.
+   - Si algún tramo falla, NO se pierde: su audio queda guardado dentro de Escriba
+     y la reunión sale como "incompleta" en el historial, diciendo por qué.
+       · Si Google estaba saturado o no había red: se reintenta sola (al minuto,
+         a los 5, a los 15... y cada vez que abres el panel).
+       · Si faltaba la clave o Google la rechaza: pon una nueva en Opciones y se
+         reintenta sola en ese momento.
+       · Siempre puedes pulsar "Reintentar ahora".
+     Cuando sale, el .md de Descargas se sustituye por el completo.
+   - Si Chrome se cierra a mitad de reunión, al volver a abrirlo Escriba transcribe
+     lo que se llegó a grabar (como mucho se pierde el último medio minuto).
    - Botones "Analizar": te genera el acta (resumen, decisiones, tareas) con Gemini,
      GPT o Claude.
+
+¿Ya tienes el audio? Botón "Transcribir un archivo" en el panel: arrastras el
+archivo (mp3, m4a, wav, webm, mp4...) y listo. Si eliges varios, se tratan como
+partes seguidas de la misma reunión.
 
 Cada persona usa su propia clave (gratis). Tu audio va solo a Google, no hay servidores
 por medio.
@@ -42,6 +53,7 @@ LIMPIEZA
    - En Opciones eliges cuántas transcripciones conservar (por defecto las 10
      últimas). Al terminar cada reunión, las más viejas se borran solas, tanto del
      historial como de Descargas/reuniones. También puedes decir "guardarlas todas".
+     Una reunión incompleta nunca se borra sola: espera a que se complete.
    - En el historial: 🗑 en cada una para borrarla, o "🗑 Borrar todo" arriba.
      Siempre pregunta antes, y si esa reunión tenía audio de respaldo guardado te
      deja decidir aparte si lo borras también.

@@ -26,6 +26,9 @@ async function guarda(campos) {
   $("autoActa").checked = !!d.autoActa;
   $("autoActaPlantilla").value = d.autoActaPlantilla || "acta";
   $("autoActaProv").value = d.autoActaProv || "gemini";
+  $("conservarAudio").checked = !!d.conservarAudio;
+  cargaModelos(d);
+  pintaEspacio();
   if (d.geminiKey) validarClave(d.geminiKey, d.geminiModel);
   revisarMicro();
 })();
@@ -144,6 +147,53 @@ async function guardaActa() {
   else pinta("e6", $("autoActa").checked ? "Guardado ✓ — el acta se generará sola al terminar cada reunión" : "Guardado ✓ — el acta se pide a mano desde la biblioteca", true);
 }
 for (const id of ["autoActa", "autoActaPlantilla", "autoActaProv"]) $(id).addEventListener("change", guardaActa);
+
+// --- conservar el audio ---
+$("conservarAudio").addEventListener("change", async () => {
+  await guardarConfig({ conservarAudio: $("conservarAudio").checked });
+  pintaEspacio($("conservarAudio").checked ? "Guardado ✓ — desde la próxima reunión." : "Guardado ✓ — no se guardará audio nuevo (el ya guardado se queda con su reunión).");
+});
+async function pintaEspacio(prefijo) {
+  let usado = "";
+  try {
+    const e = await navigator.storage.estimate();
+    if (e && typeof e.usage === "number") usado = ` Ocupado ahora por Escriba en este navegador: ${(e.usage / 1048576).toFixed(0)} MB.`;
+  } catch (_) {}
+  pinta("e7", (prefijo || "") + usado, prefijo ? true : null);
+}
+
+// --- modelos de GPT y Claude, leídos de sus APIs con la clave del usuario ---
+// Los nombres cambian cada pocos meses: escribirlos a mano acaba en un 404.
+async function cargaModelos(d) {
+  const cfg = d || await leerConfig();
+  const pon = (id, ids) => { $(id).innerHTML = ids.map((m) => `<option value="${m}">`).join(""); };
+  const avisos = [];
+  if (cfg.openaiKey) {
+    try {
+      const r = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: "Bearer " + cfg.openaiKey } });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const ids = ((await r.json()).data || []).map((m) => m.id).filter((m) => /^(gpt|o\d|chatgpt)/.test(m) && !/(audio|realtime|tts|transcribe|image|search|embedding)/.test(m)).sort().reverse();
+      pon("modelosOpenai", ids);
+      avisos.push(`OpenAI: ${ids.length} modelos`);
+    } catch (e) { avisos.push("OpenAI no responde a la clave (" + e.message + ")"); }
+  }
+  if (cfg.claudeKey) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/models?limit=100", {
+        headers: { "x-api-key": cfg.claudeKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const ids = ((await r.json()).data || []).map((m) => m.id);
+      pon("modelosClaude", ids);
+      avisos.push(`Anthropic: ${ids.length} modelos`);
+    } catch (e) { avisos.push("Anthropic no responde a la clave (" + e.message + ")"); }
+  }
+  if (avisos.length) pinta("e3", avisos.join(" · "), !avisos.some((a) => /no responde/.test(a)));
+}
+let tModelos = null;
+for (const id of ["openaiKey", "claudeKey"]) {
+  $(id).addEventListener("input", () => { clearTimeout(tModelos); tModelos = setTimeout(() => cargaModelos(), 1200); });
+}
 
 // --- avanzado: se guarda solo ---
 for (const id of ["glosario", "plantillaPersonalizada", "openaiKey", "openaiModel", "claudeKey", "claudeModel"]) {

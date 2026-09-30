@@ -242,6 +242,7 @@ function blobDe(muestras, size) {
 // de comun.js. `fallaLectura` simula un IndexedDB que no responde.
 function nuevosAudios(inicial = []) {
   const datos = new Map(inicial.map(([reunion, idx, blob]) => [reunion + ":" + idx, { reunion, idx, blob }]));
+  const escucha = new Map();
   return {
     _datos: datos,
     fallaLectura: false,
@@ -258,6 +259,12 @@ function nuevosAudios(inicial = []) {
       for (const [k, v] of datos) if (v.reunion === reunion) datos.delete(k);
     },
     async claves() { await espera0(); return [...datos.values()].map((v) => [v.reunion, v.idx]); },
+    // Audio que se conserva para escucharlo en la biblioteca (3.4).
+    _escucha: escucha,
+    async guardarEscucha(reunion, idx, blob) { await espera0(); escucha.set(reunion + ":" + idx, { reunion, idx, blob }); },
+    async leerEscucha(reunion, idx) { await espera0(); const r = escucha.get(reunion + ":" + idx); return r ? r.blob : null; },
+    async borrarEscucha(reunion) { await espera0(); for (const [k, v] of escucha) if (v.reunion === reunion) escucha.delete(k); },
+    async clavesEscucha() { await espera0(); return [...escucha.values()].map((v) => [v.reunion, v.idx]); },
   };
 }
 

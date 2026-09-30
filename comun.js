@@ -21,8 +21,15 @@ const UMBRAL_VOZ = 0.008; // rms por encima del cual una ventana cuenta como voz
 function abrirAudios(idb) {
   let promesaDb = null;
   const db = () => promesaDb || (promesaDb = new Promise((ok, ko) => {
-    const r = idb.open("escriba", 1);
-    r.onupgradeneeded = () => r.result.createObjectStore("audios", { keyPath: ["reunion", "idx"] });
+    // v2 (3.4): «escucha» guarda el audio YA transcrito que el usuario quiere
+    // poder escuchar. Va aparte de «audios» (lo pendiente de transcribir), que
+    // se vacía en cuanto hay texto y lo limpia el arranque.
+    const r = idb.open("escriba", 2);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      if (!d.objectStoreNames.contains("audios")) d.createObjectStore("audios", { keyPath: ["reunion", "idx"] });
+      if (!d.objectStoreNames.contains("escucha")) d.createObjectStore("escucha", { keyPath: ["reunion", "idx"] });
+    };
     r.onsuccess = () => {
       const d = r.result;
       d.onversionchange = () => { d.close(); promesaDb = null; };
@@ -65,6 +72,26 @@ function abrirAudios(idb) {
     async claves() {
       const t = (await db()).transaction("audios", "readonly");
       return (await resultado(t.objectStore("audios").getAllKeys())) || [];
+    },
+    // --- audio conservado para escuchar ---
+    async guardarEscucha(reunion, idx, blob) {
+      const t = (await db()).transaction("escucha", "readwrite");
+      t.objectStore("escucha").put({ reunion, idx, blob, guardado: Date.now() });
+      await confirmada(t);
+    },
+    async leerEscucha(reunion, idx) {
+      const t = (await db()).transaction("escucha", "readonly");
+      const r = await resultado(t.objectStore("escucha").get([reunion, idx]));
+      return r ? r.blob : null;
+    },
+    async borrarEscucha(reunion) {
+      const t = (await db()).transaction("escucha", "readwrite");
+      t.objectStore("escucha").delete(rango(reunion));
+      await confirmada(t);
+    },
+    async clavesEscucha() {
+      const t = (await db()).transaction("escucha", "readonly");
+      return (await resultado(t.objectStore("escucha").getAllKeys())) || [];
     },
   };
 }

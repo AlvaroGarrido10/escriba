@@ -35,8 +35,20 @@ YA ESTÁ. Para grabar una reunión, elige modo:
      Cuando sale, el .md de Descargas se sustituye por el completo.
    - Si Chrome se cierra a mitad de reunión, al volver a abrirlo Escriba transcribe
      lo que se llegó a grabar (como mucho se pierde el último medio minuto).
-   - Botones "Analizar": te genera el acta (resumen, decisiones, tareas) con Gemini,
-     GPT o Claude.
+   - Mientras grabas: "Pausar", "Marcar" (apunta el minuto de algo importante) y
+     "En vivo" (panel lateral con el texto que va llegando, los niveles y tus notas).
+     Atajos: Alt+Shift+R empieza/para, Alt+Shift+M marca un momento.
+   - Si en 2 minutos no entra voz, Escriba te avisa (pestaña equivocada, micro
+     silenciado...).
+
+BIBLIOTECA ("📚 Reuniones" arriba en el panel)
+   - Todas tus reuniones, con buscador. Cada una con marcas de tiempo.
+   - Pulsa "Hablante 1" y ponle el nombre: cambia en toda la reunión.
+   - Exportar: Word, PDF, texto o subtítulos.
+   - "Acta y resúmenes": acta completa, resumen breve, tareas y responsables,
+     correo de seguimiento o tu propia plantilla, con Gemini, GPT o Claude.
+   - "Preguntar": pregúntale lo que quieras a la reunión.
+   - Si en Opciones activas "Conservar el audio", pulsas una frase y la oyes.
 
 ¿Ya tienes el audio? Botón "Transcribir un archivo" en el panel: arrastras el
 archivo (mp3, m4a, wav, webm, mp4...) y listo. Si eliges varios, se tratan como

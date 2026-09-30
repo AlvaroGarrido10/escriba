@@ -342,6 +342,13 @@ async function limpiarHuerfanos() {
   if (vivo.grabandoId) necesitan.add(vivo.grabandoId);
   const sobran = new Set((await audios.claves()).map((k) => k[0]).filter((id) => !necesitan.has(id)));
   for (const id of sobran) await audios.borrarReunion(id);
+  // El audio conservado vive mientras viva su reunión en el historial.
+  if (audios.clavesEscucha) {
+    const existen = new Set(historial.map((h) => h.id));
+    if (vivo.grabandoId) existen.add(vivo.grabandoId);
+    const huerfanas = new Set((await audios.clavesEscucha()).map((k) => k[0]).filter((id) => !existen.has(id)));
+    for (const id of huerfanas) await audios.borrarEscucha(id);
+  }
 }
 
 // Elige QUÉ pestaña grabar: la activa si es capturable y está sonando; si no,
@@ -381,8 +388,10 @@ async function borraFicherosDe(items, conAudio) {
   for (const h of items) {
     for (const dlId of idsDe(h, conAudio)) { await borraDescarga(dlId); n++; }
     // El audio interno pendiente de transcribir se va siempre con su reunión:
-    // sin entrada en el historial ya nadie podría reintentarlo.
+    // sin entrada en el historial ya nadie podría reintentarlo. Y el conservado
+    // para escuchar, también: sin la reunión no hay dónde escucharlo.
     if (audios) await audios.borrarReunion(h.id).catch(() => {});
+    if (audios && audios.borrarEscucha) await audios.borrarEscucha(h.id).catch(() => {});
     await chrome.alarms.clear("reintento:" + h.id);
   }
   return n;

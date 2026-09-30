@@ -12,6 +12,8 @@ const PROVEEDORES = [["gemini", "Gemini", "geminiKey"], ["gpt", "GPT", "openaiKe
 const nombreProv = (p) => (PROVEEDORES.find((x) => x[0] === p) || [p, p])[1];
 
 let historial = [], actual = null, cfg = {}, filtro = "", actaSel = null, marcaActual = -1;
+let conAudio = new Set();   // tramos de la reunión abierta con audio conservado
+let sonando = null;         // { tramo, inicioS } del audio cargado en el reproductor
 
 const aBgMsg = (cmd, extra = {}) => chrome.runtime.sendMessage({ target: "bg", cmd, ...extra });
 const escT = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -113,9 +115,81 @@ function abrir(id, empujar) {
     if (empujar) history.pushState(null, "", "#" + id); else history.replaceState(null, "", "#" + id);
   }
   $("buscarEn").value = "";
+  paraAudio();
   pintaLista();
   pintaVista(true);
+  miraAudio();
 }
+
+// --- escuchar (3.4) ---
+// El audio conservado vive en IndexedDB («escucha»), por tramos. Pulsar la marca
+// de tiempo de una frase carga su tramo y salta a ese segundo.
+async function miraAudio() {
+  const id = actual && actual.id;
+  conAudio = new Set();
+  if (id && typeof audios !== "undefined" && audios && audios.clavesEscucha) {
+    try {
+      for (const [r, i] of await audios.clavesEscucha()) if (r === id) conAudio.add(i);
+    } catch (_) { /* sin IndexedDB no hay reproductor; el resto funciona */ }
+  }
+  if (!actual || actual.id !== id) return;
+  $("reproductor").hidden = !conAudio.size;
+  if (conAudio.size) $("repInfo").textContent = "🔊 Pulsa ▶ junto a una frase para oírla";
+  pintaTexto();
+}
+
+function paraAudio() {
+  const a = $("audio");
+  a.pause();
+  if (a.src) URL.revokeObjectURL(a.src);
+  a.removeAttribute("src");
+  sonando = null;
+  document.querySelectorAll(".l.sonando").forEach((l) => l.classList.remove("sonando"));
+}
+
+async function suena(tramo, desdeS) {
+  const t = (actual.tramos || [])[tramo];
+  const blob = await audios.leerEscucha(actual.id, tramo).catch(() => null);
+  if (!blob) { toast("El audio de ese trozo ya no está guardado."); return; }
+  paraAudio();
+  const a = $("audio");
+  sonando = { tramo, inicioS: inicioTramo(t, tramo) };
+  a.src = URL.createObjectURL(blob);
+  a.playbackRate = Number($("velocidad").value) || 1;
+  a.onloadedmetadata = () => {
+    a.currentTime = Math.max(0, desdeS - sonando.inicioS - 1); // un segundo antes, para no cortar la frase
+    a.play().catch(() => {});
+  };
+  $("repInfo").textContent = `🔊 Tramo ${tramo + 1} de ${actual.tramos.length}`;
+}
+
+$("audio").addEventListener("timeupdate", () => {
+  if (!sonando) return;
+  const ahora = sonando.inicioS + $("audio").currentTime;
+  let actualL = null;
+  for (const l of $("texto").querySelectorAll(`.l[data-tramo="${sonando.tramo}"][data-t]`)) {
+    if (Number(l.dataset.t) <= ahora + 0.5) actualL = l; else break;
+  }
+  document.querySelectorAll(".l.sonando").forEach((l) => { if (l !== actualL) l.classList.remove("sonando"); });
+  if (actualL && !actualL.classList.contains("sonando")) {
+    actualL.classList.add("sonando");
+    actualL.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+});
+// Al acabar un tramo sigue con el siguiente, como si fuera un solo audio.
+$("audio").addEventListener("ended", () => {
+  if (!sonando) return;
+  const sig = sonando.tramo + 1;
+  if (conAudio.has(sig)) suena(sig, inicioTramo(actual.tramos[sig], sig));
+});
+$("velocidad").addEventListener("change", () => { $("audio").playbackRate = Number($("velocidad").value) || 1; });
+$("quitarAudio").onclick = async () => {
+  if (!actual) return;
+  paraAudio();
+  await audios.borrarEscucha(actual.id).catch(() => {});
+  toast("🗑 Audio borrado. La transcripción se queda.");
+  miraAudio();
+};
 
 // ---------------------------------------------------------------------------------
 // una reunión
@@ -249,7 +323,7 @@ function lineasDeVista(h) {
     const cab = `Tramo ${i + 1} de ${total} (${t.etiqueta || etiquetaTramo(i)})`;
     if (t.estado === "ok") {
       for (const l of lineasTranscripcion(t.texto || "")) {
-        out.push({ tipo: "l", ...l, orig: l.hablante, hablante: (mapa[l.hablante] || "").trim() || l.hablante });
+        out.push({ tipo: "l", ...l, tramo: i, orig: l.hablante, hablante: (mapa[l.hablante] || "").trim() || l.hablante });
       }
       if (t.truncado) out.push({ tipo: "aviso", texto: `⚠️ ${cab}: se cortó por el límite de longitud del modelo.` });
     } else if (t.estado === "mudo") out.push({ tipo: "mudo", texto: `${cab}: sin voz — no se transcribe para no inventar texto.` });
@@ -280,9 +354,14 @@ function pintaTexto() {
       if (re) nom = nom.replace(re, (m) => { n++; return `<mark>${m}</mark>`; });
       quien = `<span class="h" style="color:${colorVoz(l.orig, etiquetas)}">${nom}</span>`;
     }
-    return `<div class="l"${l.t !== null ? ` data-t="${l.t}"` : ""}><span class="t">${l.t !== null ? formatoTiempo(l.t) : ""}</span><div>${quien}${cuerpo}</div></div>`;
+    const escuchable = l.t !== null && typeof l.tramo === "number" && conAudio.has(l.tramo);
+    return `<div class="l"${l.t !== null ? ` data-t="${l.t}"` : ""}${typeof l.tramo === "number" ? ` data-tramo="${l.tramo}"` : ""}>` +
+      `<span class="t${escuchable ? " play" : ""}"${escuchable ? ' title="Escuchar desde aquí"' : ""}>${l.t !== null ? formatoTiempo(l.t) : ""}</span><div>${quien}${cuerpo}</div></div>`;
   }).join("");
   cont.innerHTML = html || '<div class="l mudo-l">Todavía no hay texto.</div>';
+  cont.querySelectorAll(".t.play").forEach((el) => {
+    el.onclick = () => { const l = el.closest(".l"); suena(Number(l.dataset.tramo), Number(l.dataset.t)); };
+  });
   $("nCoinc").textContent = re ? (n ? `${n} coincidencia${n === 1 ? "" : "s"} · Intro para ir a la siguiente` : "sin coincidencias") : "";
 }
 

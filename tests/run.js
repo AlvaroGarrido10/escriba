@@ -1265,6 +1265,75 @@ test("el atajo empieza a grabar con el último modo y, pulsado otra vez, para", 
   await hasta(() => s.chrome.storage.session._volcado().grabando === false, "que parara");
 });
 
+test("una grabación de «Solo micro» toma el título de los participantes", async () => {
+  const s = sistemaGrabando();
+  await s.off.start({ modo: "mic", participantes: "Marcos, Ana" });
+  assert.strictEqual(s.historial()[0].titulo, "Reunión con Marcos, Ana");
+  const s2 = sistemaGrabando();
+  await s2.off.start({ modo: "mic" });
+  assert.strictEqual(s2.historial()[0].titulo, "Reunión presencial");
+});
+
+// ============================================================================
+// 3.4 — escuchar la reunión (docs/2026-09-30-plan-mejoras.md, tanda C)
+// ============================================================================
+grupo("3.4 · conservar el audio para escucharlo");
+
+test("con «conservar el audio», cada tramo transcrito pasa al almacén de escucha", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("uno")], 2: [respGemini("dos")] });
+  const s = sistema({ local: { historial: [reunion(90, 2)] }, sync: { conservarAudio: true }, audios: audioDe(90, 2), fetch: f });
+  await s.off.transcribirReunion(90);
+  assert.strictEqual(s.entrada(90).estado, "ok");
+  assert.strictEqual(s.audios._datos.size, 0, "el audio pendiente se borra como siempre");
+  assert.deepStrictEqual([...(await s.audios.clavesEscucha()).map((k) => k[1])].sort(), [0, 1], "pero queda una copia para escucharla");
+});
+
+test("sin esa opción no se conserva nada", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("uno")] });
+  const s = sistema({ local: { historial: [reunion(91, 1)] }, audios: audioDe(91, 1), fetch: f });
+  await s.off.transcribirReunion(91);
+  assert.strictEqual(s.audios._escucha.size, 0);
+});
+
+test("también se conserva lo que se transcribe en vivo", async () => {
+  const reloj = { t: 4000000 };
+  const f = fetchPorTramo({ 1: [respGemini("uno")], 2: [respGemini("dos")] });
+  const s = sistemaGrabando({ fetch: f, reloj, sync: { conservarAudio: true } });
+  await s.off.start({ modo: "mic" });
+  const id = s.historial()[0].id;
+  reloj.t += comun.DURACION_TRAMO_S * 1000;
+  s.off.cortaTramo();
+  await hasta(() => ((s.entrada(id).tramos || [])[0] || {}).estado === "ok", "el tramo en vivo");
+  s.off.stop();
+  await hasta(() => s.entrada(id).estado === "ok", "que terminara");
+  assert.strictEqual(s.audios._escucha.size, 2);
+});
+
+test("borrar una reunión borra también su audio conservado", async () => {
+  const { enviar, audios } = bg({ local: { historial: [entradaHist(92)] } });
+  await audios.guardarEscucha(92, 0, blobDe(null));
+  await enviar({ target: "bg", cmd: "borrar", ids: [92], conAudio: false });
+  assert.strictEqual(audios._escucha.size, 0);
+});
+
+test("al arrancar se borra el audio conservado de reuniones que ya no existen", async () => {
+  const { chrome, ctx, audios } = bg({ local: { historial: [entradaHist(93)] } });
+  await audios.guardarEscucha(93, 0, blobDe(null));
+  await audios.guardarEscucha(94, 0, blobDe(null)); // de una reunión borrada
+  chrome.runtime.sendMessage = async () => ({ ok: true, grabandoId: null, enCurso: [] });
+  chrome._registro.offscreen = 1;
+  await ctx.limpiarHuerfanos();
+  assert.deepStrictEqual([...(await audios.clavesEscucha()).map((k) => k[0])], [93]);
+});
+
+test("podar se lleva el audio conservado de las reuniones que salen", async () => {
+  const hist = Array.from({ length: 3 }, (_, i) => entradaHist(95 + i));
+  const { enviar, audios } = bg({ local: { historial: hist }, sync: { limite: 1 } });
+  for (const h of hist) await audios.guardarEscucha(h.id, 0, blobDe(null));
+  await enviar({ target: "bg", cmd: "podar" });
+  assert.deepStrictEqual([...(await audios.clavesEscucha()).map((k) => k[0])], [95]);
+});
+
 // ============================================================================
 (async function main() {
   let ok = 0, fallos = 0;

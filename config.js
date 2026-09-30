@@ -25,6 +25,7 @@ const CFG_SYNC = {
   autoActa: false,             // generar el acta sola al terminar la transcripción
   autoActaProv: "gemini",
   autoActaPlantilla: "acta",
+  conservarAudio: false,       // guardar el audio para escucharlo en la biblioteca
 };
 
 async function leerConfig() {

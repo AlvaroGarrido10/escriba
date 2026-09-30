@@ -72,6 +72,15 @@
         </details>
         <div id="hablantes" class="hablantes"></div>
         <div id="texto" class="transcripcion"></div>
+        <div id="reproductor" class="reproductor" hidden>
+          <span id="repInfo" class="suave"></span>
+          <audio id="audio" controls preload="auto"></audio>
+          <select id="velocidad" aria-label="Velocidad" title="Velocidad">
+            <option value="0.75">0,75×</option><option value="1" selected>1×</option>
+            <option value="1.25">1,25×</option><option value="1.5">1,5×</option><option value="2">2×</option>
+          </select>
+          <button id="quitarAudio" class="peligro" title="Borra el audio guardado de esta reunión (el texto se queda)">🗑 Audio</button>
+        </div>
       </section>
 
       <section id="p-acta" class="panel" hidden>

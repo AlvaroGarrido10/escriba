@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Escriba",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "Graba tus reuniones (Meet, Teams o presenciales), transcríbelas con IA y genera actas con Gemini, GPT o Claude.",
   "permissions": [
     "tabCapture",

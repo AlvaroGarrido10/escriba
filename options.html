@@ -87,6 +87,15 @@
     <div class="estado" id="e6"></div>
   </div>
 
+  <div class="paso" id="p7">
+    <h2>🔊 Escuchar las reuniones</h2>
+    <p>Guarda el audio de cada reunión en este navegador para oírla desde la biblioteca: pulsas una frase y suena ese momento. Una hora de reunión ocupa unos 30 MB; se borra con la reunión.</p>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
+      <input type="checkbox" id="conservarAudio"> Conservar el audio de las próximas reuniones
+    </label>
+    <div class="estado" id="e7"></div>
+  </div>
+
   <div class="paso" id="p3" style="margin-top:14px">
     <h2>🧹 Cuántas transcripciones conservar</h2>
     <p>Al terminar cada reunión se borran las más antiguas, tanto del historial como
@@ -119,14 +128,15 @@
       <label>OpenAI — GPT (opcional, solo para el botón «Analizar con GPT»)</label>
       <div class="par">
         <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off">
-        <input type="text" id="openaiModel" placeholder="gpt-4o">
+        <input type="text" id="openaiModel" placeholder="gpt-4o" list="modelosOpenai"><datalist id="modelosOpenai"></datalist>
       </div>
 
       <label>Anthropic — Claude (opcional, para «Analizar con Claude»)</label>
       <div class="par">
         <input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off">
-        <input type="text" id="claudeModel" placeholder="claude-sonnet-5">
+        <input type="text" id="claudeModel" placeholder="claude-sonnet-5" list="modelosClaude"><datalist id="modelosClaude"></datalist>
       </div>
+      <small>Con la clave puesta, al pulsar el campo del modelo salen los que tu cuenta puede usar.</small>
       <div class="estado" id="e3"></div>
     </div>
   </details>

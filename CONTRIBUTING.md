@@ -25,7 +25,11 @@ Cada persona usa **su propia clave**: no hay servidores ni secretos en el repo.
 | `offscreen.js` | Documento offscreen: graba el audio (pestaña + micro) y tiene el motor de transcripción (`transcribirReunion`) que usan grabaciones, reintentos e importaciones. Sobrevive al cierre del popup |
 | `comun.js` | Compartido por todos: almacén de audio en IndexedDB, códigos de error, estado y markdown de una reunión, troceado y WAV |
 | `importar.js/html` | Página «Transcribir un archivo»: decodifica, trocea en tramos de 5 min, guarda el audio y encarga la transcripción |
-| `popup.js/html` | Panel: grabar/parar, historial, ver transcripción, reintentar, analizar con IA, diagnóstico |
+| `popup.js/html` | Panel: grabar/parar, pausar, marcar, participantes, historial, reintentar, diagnóstico |
+| `reuniones.js/html/css` | Biblioteca: buscar, leer con tiempos, renombrar hablantes, exportar, actas con plantillas, preguntar, notas, escuchar |
+| `vivo.js/html` | Panel lateral en vivo: texto que llega, niveles, pausa, marcadores y notas |
+| `ia.js` | Plantillas de acta, llamadas a Gemini/GPT/Claude con reintentos y tokens, preguntas a la reunión. Sin DOM ni `chrome.*` |
+| `exportar.js` | Word (.docx sin librerías), SRT, texto plano y markdown → HTML seguro |
 | `options.js/html` | Configuración: valida la clave, elige modelo compatible y pide permiso de micrófono |
 | `config.js` | Dónde vive cada ajuste, y la migración de las claves de `sync` a `local`. Lo cargan el popup, las opciones y el service worker (`importScripts`) |
 | `tests/` | Suite en Node con el navegador simulado. `npm test` |

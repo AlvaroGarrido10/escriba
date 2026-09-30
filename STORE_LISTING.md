@@ -25,8 +25,14 @@ Si Google está saturado, se cae la red o la clave falla, la reunión no se pier
 ✅ TAMBIÉN ARCHIVOS
 ¿Ya tienes la grabación? Arrastra un mp3, m4a, wav o mp4 y obtén la transcripción igual.
 
+✅ TU BIBLIOTECA DE REUNIONES
+Busca en todas tus reuniones, lee cada una con marcas de tiempo y cada voz en su color, pon nombre a cada hablante con un clic y exporta a Word, PDF, texto o subtítulos. Si quieres, escucha la reunión: pulsas una frase y suena ese momento.
+
+✅ MIENTRAS GRABAS
+Pausa, marca los momentos importantes, toma notas en el panel lateral y ve llegar el texto sin esperar al final. Si en dos minutos no entra voz, Escriba te avisa. Atajo de teclado para empezar y parar.
+
 ✅ ANÁLISIS CON 3 IAs
-Analiza cualquier transcripción con Gemini, GPT o Claude: resumen ejecutivo, decisiones tomadas, tabla de tareas con responsables, temas abiertos y datos citados. La IA sabe que trabaja sobre una transcripción automática (varios hablantes, posibles errores) y usa tu glosario personalizado para escribir bien los nombres de tu empresa y proyectos.
+Saca el acta completa, un resumen breve, las tareas con responsable y plazo, el correo de seguimiento listo para enviar o tu propia plantilla, con Gemini, GPT o Claude. Y pregúntale a la reunión lo que necesites: responde citando el minuto. El acta puede generarse sola al terminar. La IA sabe que trabaja sobre una transcripción automática (varios hablantes, posibles errores) y usa tu glosario personalizado para escribir bien los nombres de tu empresa y proyectos.
 
 ✅ PRIVACIDAD REAL
 Sin telemetría, sin analítica, sin cuentas. El desarrollador no ve ni puede ver tus datos. Código sin ofuscar.
@@ -40,6 +46,8 @@ Productividad / Herramientas
 - downloads: guardar la transcripción (.md) y el audio de respaldo en la carpeta de Descargas del usuario.
 - storage / unlimitedStorage: configuración (claves API del usuario, glosario), historial local de transcripciones y audio pendiente de transcribir (IndexedDB local, se borra al transcribirse).
 - alarms: reintentar automáticamente, pasados unos minutos, una transcripción que falló por saturación o falta de red.
+- notifications: avisar al usuario si durante la grabación no entra voz en dos minutos.
+- sidePanel: panel lateral «En vivo» que el usuario abre para ver el texto, los niveles y tomar notas.
 - host_permissions (generativelanguage.googleapis.com, api.openai.com, api.anthropic.com): llamadas directas a las APIs de IA con las claves del propio usuario. No hay otros hosts.
 
 ## Pendiente antes de enviar

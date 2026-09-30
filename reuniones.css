@@ -88,6 +88,13 @@ article { max-width: 920px; margin: 0 auto; }
 .chip.marca .x { margin-left: 6px; color: #b3a3ab; }
 .chip.marca .x:hover { color: var(--err); }
 .l.destacada { background: #fff3cd; transition: background 1.5s; }
+.l.sonando { background: #f7edf2; box-shadow: inset 3px 0 0 var(--rosa); }
+.l .t.play { cursor: pointer; color: var(--vino2); }
+.l .t.play::before { content: "▶ "; font-size: 9px; }
+.l .t.play:hover { color: var(--rosa); text-decoration: underline; }
+.reproductor { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: center; background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 8px 12px; margin-top: 10px; box-shadow: 0 -6px 18px rgba(60,20,40,.08); }
+.reproductor audio { flex: 1; height: 36px; }
+.reproductor select { padding: 5px; border: 1px solid var(--borde); border-radius: 8px; }
 
 /* --- transcripción --- */
 .transcripcion { background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 8px 4px; }
@@ -128,7 +135,7 @@ article { max-width: 920px; margin: 0 auto; }
 /* --- imprimir / PDF: solo lo que se está viendo --- */
 @media print {
   body { background: #fff; display: block; }
-  .barra, #lista, .acciones, .pestanas, .herramientas, .hablantes, .participantes, .sugerencias, .pregunta, #confirmaBorrar, .chips, #aviso { display: none !important; }
+  .barra, #lista, .acciones, .pestanas, .herramientas, .hablantes, .participantes, .sugerencias, .pregunta, #confirmaBorrar, .chips, #aviso, .reproductor, .notas { display: none !important; }
   .cuerpo { display: block; }
   #vista { padding: 0; overflow: visible; }
   .titulo { border: none; margin: 0; padding: 0; }

@@ -135,3 +135,30 @@ Cada tanda es una versión. Dentro de cada tanda: primero las pruebas en rojo, l
 - **Regresión:** las 57 pruebas actuales siguen en verde, y las reuniones de la 3.1 se abren en la biblioteca.
 - **Cierre de cada tanda:** Álvaro recarga la extensión en su Chrome y graba una reunión de verdad.
 
+## 5. Estado al cerrar el 30/09/2026
+
+| Punto | Estado | Cómo se ha comprobado |
+|---|---|---|
+| A1 Biblioteca | Hecho | En pantalla: lista, búsqueda global sin tildes, búsqueda dentro de la reunión |
+| A2 Marcas de tiempo | Hecho | Suite; en pantalla, el tramo 2 sale con tiempo de reunión (05:12) |
+| A3 Hablantes con nombre | Hecho | Suite; en pantalla, renombrar cambia todas las intervenciones y rehace el .md |
+| A4 Idioma | Hecho | Suite (prompt); en pantalla, el selector de Opciones |
+| A5 Plantillas y preguntar | Hecho | Suite (las tres APIs); en pantalla con IA simulada |
+| A6 Acta automática | Hecho | Suite: una sola llamada, ninguna si está apagada o la reunión está incompleta |
+| A7 Exportar | Hecho | El .docx pasa `zipfile.testzip` y lo abre python-docx; SRT con nombres |
+| A8 Uso | Hecho | Tokens de transcripción y de actas en la cabecera de la reunión |
+| B1 Transcribir mientras se graba | Hecho | Suite: lo transcrito en vivo no se repite al parar ni se pierde al recuperar |
+| B2 Panel en vivo | Hecho | En pantalla con grabación real (micro simulado) |
+| B3 Pausa | Hecho | Suite con reloj simulado; en pantalla, el reloj se para |
+| B4 Marcadores y notas | Hecho | Suite y pantalla; salen en el .md y en el prompt del acta |
+| B5 Aviso de silencio | Hecho | Suite (aviso, sin repetir, se quita con la voz, no en pausa) |
+| B6 Atajo de teclado | Hecho | Suite (empieza con el último modo, para al repetir) |
+| B7 Recordatorio RGPD | Hecho | En pantalla, con «No volver a mostrar» |
+| C2 Escuchar la reunión | Hecho (opcional, apagado) | Suite (se conserva, se borra con la reunión, la poda y el arranque); en pantalla suena desde la frase |
+| C4 Modelos de OpenAI y Anthropic | Hecho | Sin probar contra las APIs reales (no hay claves en este equipo) |
+| C1 Audio del sistema (Teams de escritorio) | **No hecho: decisión de Álvaro** | Se quitó el 24/09 por decisión suya. Hace falta una ventana visible de la extensión que grabe; se hace si lo pide |
+| C3 Coste en euros | No hecho | Se enseñan los tokens; los precios por modelo cambian y no se pueden fijar sin que el usuario los ponga |
+| C5 Aviso al detectar una reunión | No hecho | Exige permiso de lectura de pestañas o de Meet/Teams; queda para cuando se decida publicar |
+| C6 Interfaz en inglés | No hecho | Necesario solo para publicar fuera de España |
+
+**Pendiente de verdad antes de dar la 3.4 por buena:** una reunión real con Gemini de verdad en el Chrome de Álvaro. Las pruebas han simulado la IA. Lo que falta medir es que el modelo respete el formato `[MM:SS] Hablante: texto` y que ponga nombres solo cuando se oyen.

@@ -454,6 +454,7 @@ function tramoCerrado(id, idx, entrada, medida) {
     await histTramo(id, idx, { ...base, estado: "pendiente" });
     const res = await transcribirTramo(id, idx, null, { ...base, estado: "pendiente" }, { participantes });
     const g = await histTramo(id, idx, res);
+    if (g && g.ok && res.estado === "ok") await conservaAudio(id, idx, await leerConfig().catch(() => null));
     if (g && g.ok && (res.estado === "ok" || res.estado === "mudo")) await olvidaAudio(id, idx);
   }).catch((e) => console.warn("Escriba: transcripción en vivo", e));
 }
@@ -461,7 +462,10 @@ function tramoCerrado(id, idx, entrada, medida) {
 function entradaNueva() {
   const f = fechaBonita(reunionActual);
   return {
-    id: reunionActual, fecha: f.legible, titulo: tabTitle || "Reunión", origen: "grabacion",
+    // Sin pestaña (Solo micro), el título sale de los participantes: «Reunión» a
+    // secas no dice nada en una lista de veinte.
+    id: reunionActual, fecha: f.legible, origen: "grabacion",
+    titulo: tabTitle || (participantes ? "Reunión con " + participantes : "Reunión presencial"),
     estado: "grabando", progreso: "", transcript: "", analisis: {}, tramos: [], meta: { fichero: f.fichero },
     participantes,
   };
@@ -478,6 +482,16 @@ function guardaAudio(id, idx, blob) {
     // horas son decenas de MB).
     () => { if (memoria.get(clave) === blob) memoria.delete(clave); },
     (e) => console.warn("Escriba: no se pudo guardar el tramo", idx, e));
+}
+
+// Antes de borrar el audio de un tramo ya transcrito, se copia al almacén de
+// escucha si el usuario quiere poder oír la reunión desde la biblioteca.
+async function conservaAudio(id, idx, cfg) {
+  if (!cfg || !cfg.conservarAudio || !audios || !audios.guardarEscucha) return;
+  try {
+    const blob = await leeAudio(id, idx);
+    if (blob) await audios.guardarEscucha(id, idx, blob);
+  } catch (e) { console.warn("Escriba: no se pudo conservar el audio del tramo", idx, e); }
 }
 
 async function olvidaAudio(id, idx) {
@@ -594,6 +608,7 @@ async function ronda(id) {
   const total = h.tramos.length;
   const cola = h.tramos.map((t, i) => (t.estado === "pendiente" ? i : -1)).filter((i) => i >= 0);
   if (cola.length) await histActualizar(id, { estado: "transcribiendo" });
+  const cfgRonda = cola.length ? await leerConfig().catch(() => null) : null;
 
   // Una clave mala o ausente no se arregla en el tramo siguiente: en cuanto
   // aparece, el resto de la ronda ni se intenta (sería gastar llamadas).
@@ -609,6 +624,7 @@ async function ronda(id) {
       if (g && g.borrada) { borrada = true; break; }
       // El audio se borra DESPUÉS de que el texto esté guardado: al revés, un
       // fallo entre medias perdería las dos cosas.
+      if (g && g.ok && res.estado === "ok") await conservaAudio(id, i, cfgRonda);
       if (g && g.ok && (res.estado === "ok" || res.estado === "mudo")) await olvidaAudio(id, i);
     }
   };

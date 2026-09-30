@@ -71,6 +71,7 @@ $("btnTranscribir").onclick = async () => {
       target: "bg", cmd: "histCrear", item: {
         id, fecha: f.legible, titulo: $("titulo").value.trim() || sinExtension(ficheros[0].name),
         origen: "archivo", estado: "transcribiendo", progreso: `${tramos.length - pendientes}/${tramos.length} tramos`,
+        participantes: $("participantes").value.trim(),
         transcript: "", analisis: {}, tramos,
         meta: {
           fichero: f.fichero, minutos: Math.max(1, Math.round(segundos / 60)),
@@ -108,6 +109,7 @@ async function preparar(id, alGuardar) {
         throw new Error(`No se puede leer «${f.name}»: Chrome no reconoce su formato. Prueba con mp3, m4a, wav o webm.`);
       }
       const muestras = aMono(audio);
+      const inicioArchivo = segundos; // los archivos son partes seguidas de la misma reunión
       segundos += muestras.length / audio.sampleRate;
       const plan = planificarTramos([{ nombre: f.name, longitud: muestras.length, sampleRate: audio.sampleRate }]);
       for (let j = 0; j < plan.length; j++) {
@@ -116,8 +118,9 @@ async function preparar(id, alGuardar) {
         const trozo = muestras.subarray(p.desde, p.hasta);
         const { pico } = medirMuestras(trozo, audio.sampleRate, UMBRAL_VOZ);
         const etiqueta = ficheros.length > 1 ? `${f.name}, ${p.etiqueta}` : p.etiqueta;
+        const inicioS = Math.round(inicioArchivo + p.desde / audio.sampleRate);
         if (pico < PICO_SILENCIO) {
-          tramos.push({ estado: "mudo", pico, etiqueta });
+          tramos.push({ estado: "mudo", pico, etiqueta, inicioS });
           continue;
         }
         const blob = new Blob([codificarWav(trozo, audio.sampleRate)], { type: "audio/wav" });
@@ -127,7 +130,7 @@ async function preparar(id, alGuardar) {
           throw new Error("No hay espacio para guardar el audio en el navegador: " + ((e && e.message) || e));
         }
         alGuardar(++guardados);
-        tramos.push({ estado: "pendiente", pico, etiqueta });
+        tramos.push({ estado: "pendiente", pico, etiqueta, inicioS });
       }
     }
   } finally {
@@ -163,13 +166,15 @@ chrome.storage.onChanged.addListener((cambios, area) => {
 
 function muestraResultado(h) {
   idActual = null;
+  $("btnAbrir").hidden = false;
+  $("btnAbrir").onclick = () => chrome.tabs.create({ url: "reuniones.html#" + h.id });
   $("progreso").hidden = true;
   $("resultado").hidden = false;
   $("formulario").hidden = true;
   const caja = $("resultadoTxt");
   if (h.estado === "ok") {
     caja.className = "aviso ok";
-    caja.textContent = "✅ Transcripción lista. Está en el historial de Escriba (desde ahí puedes sacar el acta) y en Descargas/reuniones.";
+    caja.textContent = "✅ Transcripción lista. Está en la biblioteca de Escriba (desde ahí puedes sacar el acta o exportarla a Word) y en Descargas/reuniones.";
   } else if (h.estado === "pendiente") {
     const r = resumenTramos(h.tramos);
     caja.className = "aviso pend";

@@ -16,9 +16,16 @@ const CFG_LOCAL = {
   openaiKey: "", openaiModel: "gpt-4o",
   claudeKey: "", claudeModel: "claude-sonnet-5",
   glosario: "",
+  plantillaPersonalizada: "", // puede ser larga: sync tiene un tope de 8 KB por elemento
 };
 // Preferencias sin datos sensibles: se sincronizan entre equipos.
-const CFG_SYNC = { limite: 10 };
+const CFG_SYNC = {
+  limite: 10,
+  idioma: "es",                // "auto" o un código: es, en, ca, pt, fr, de, it
+  autoActa: false,             // generar el acta sola al terminar la transcripción
+  autoActaProv: "gemini",
+  autoActaPlantilla: "acta",
+};
 
 async function leerConfig() {
   const [local, sync] = await Promise.all([

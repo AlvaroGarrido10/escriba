@@ -1,9 +1,19 @@
 // Escriba — popup: control de grabación + historial + análisis IA.
 
 const $ = (id) => document.getElementById(id);
-let timerInt = null, itemAbierto = null, verAnalisis = null, ultimoIdVisto = null;
+let timerInt = null, ultimoIdVisto = null;
 
 $("lnkOpc").onclick = () => chrome.runtime.openOptionsPage();
+// Leer, exportar, sacar actas y preguntar: todo eso vive en la biblioteca, que
+// tiene sitio. El popup se queda para grabar.
+const abrirBiblioteca = (id) => chrome.tabs.create({ url: "reuniones.html" + (id ? "#" + id : "") });
+$("lnkBiblio").onclick = () => abrirBiblioteca();
+
+// Los participantes se guardan mientras se escriben: cerrar el popup para ir a
+// la reunión no puede borrarlos.
+$("participantes").addEventListener("input", () => {
+  chrome.storage.session.set({ participantesBorrador: $("participantes").value });
+});
 $("btnArreglaMic").onclick = () => chrome.runtime.openOptionsPage();
 
 // El permiso de micrófono se concede al ORIGEN de la extensión, y solo lo puede
@@ -45,20 +55,30 @@ chrome.storage.onChanged.addListener((cambios, area) => {
     if (ultimo && ultimo.estado === "transcribiendo" && ultimo.progreso) {
       $("estado").textContent = `⏳ Transcribiendo… ${ultimo.progreso}`;
     }
-    // Si la última grabación acaba de terminar, ábrela automáticamente.
-    if (ultimo && ESTADOS_FINALES.includes(ultimo.estado) && ultimo.id !== ultimoIdVisto && $("detalle").style.display !== "block") {
+    // Si la última grabación acaba de terminar, se avisa con un botón para abrirla.
+    if (ultimo && ESTADOS_FINALES.includes(ultimo.estado) && ultimo.id !== ultimoIdVisto) {
       ultimoIdVisto = ultimo.id;
-      abrirDetalle(ultimo, false);
-      $("detEstado").textContent = ultimo.estado === "ok"
-        ? "✅ Transcripción lista (guardada en el historial y en Descargas/reuniones)."
-        : ultimo.estado === "pendiente"
-          ? "⏳ Falta algún tramo. Su audio está a salvo y Escriba lo reintentará sola."
-          : "❌ La transcripción falló. Detalle arriba.";
+      avisaLista(ultimo);
     }
   }
 });
 
 const ESTADOS_FINALES = ["ok", "pendiente", "error"];
+
+function avisaLista(h) {
+  const caja = $("listo");
+  const txt = h.estado === "ok" ? "✅ Transcripción lista"
+    : h.estado === "pendiente" ? "⏳ Falta algún tramo; su audio está a salvo y se reintentará sola"
+      : "❌ La transcripción falló";
+  caja.innerHTML = `${txt}: <b>${esc(h.titulo)}</b>. `;
+  const b = document.createElement("button");
+  b.textContent = "📖 Abrir";
+  b.style.cssText = "font-size:11px;padding:3px 8px;border:1px solid #2e7d32;background:#fff;color:#1f5b22;border-radius:5px;cursor:pointer;margin-left:4px";
+  b.onclick = () => abrirBiblioteca(h.id);
+  caja.appendChild(b);
+  caja.style.display = "block";
+  $("estado").textContent = "";
+}
 
 $("btnImportar").onclick = () => chrome.tabs.create({ url: "importar.html" });
 
@@ -77,6 +97,8 @@ async function init() {
     return;
   }
   await revisaMicro();
+  const { participantesBorrador } = await chrome.storage.session.get({ participantesBorrador: "" });
+  $("participantes").value = participantesBorrador;
   const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
   if (s && s.grabando) modoGrabando(s.t0);
   else pintaObjetivo(s && s.objetivo);
@@ -106,7 +128,7 @@ $("btnRec").onclick = async () => {
   if (!grabando) {
     const modo = document.querySelector(".modo input:checked").value;
     $("estado").textContent = "Arrancando…";
-    const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "start", modo });
+    const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "start", modo, participantes: $("participantes").value.trim() });
     if (r && r.ok) modoGrabando(Date.now());
     else $("estado").textContent = "❌ " + ((r && r.error) || "No se pudo iniciar");
   } else {
@@ -115,6 +137,9 @@ $("btnRec").onclick = async () => {
     $("btnRec").textContent = "⏺ Empezar a grabar";
     $("btnRec").classList.remove("grabando");
     $("estado").textContent = "⏳ Transcribiendo… (aparecerá aquí en cuanto esté)";
+    $("participantes").value = "";
+    $("participantes").disabled = false;
+    chrome.storage.session.set({ participantesBorrador: "" });
     pintaHistorial();
   }
 };
@@ -123,6 +148,7 @@ function modoGrabando(t0) {
   $("btnRec").textContent = "⏹ Parar y transcribir";
   $("btnRec").classList.add("grabando");
   $("estado").textContent = "🔴 Grabando…";
+  $("participantes").disabled = true;
   clearInterval(timerInt);
   timerInt = setInterval(() => {
     const s = Math.floor((Date.now() - t0) / 1000);
@@ -201,8 +227,8 @@ async function pintaHistorial() {
     const acc = div.querySelector(".acc");
     if (ESTADOS_FINALES.includes(h.estado)) {
       if (h.estado === "pendiente") boton(acc, "🔄 Reintentar ahora", (ev) => reintentar(ev.target, h));
-      boton(acc, h.estado === "error" ? "⚠️ Ver error" : "📄 Ver transcripción", () => abrirDetalle(h, false));
-      for (const prov of Object.keys(h.analisis || {})) boton(acc, "🔎 Análisis " + prov, () => abrirDetalle(h, prov));
+      const nActas = Object.keys(h.analisis || {}).length;
+      boton(acc, h.estado === "error" ? "⚠️ Ver error" : "📖 Abrir" + (nActas ? ` · ${nActas} acta${nActas > 1 ? "s" : ""}` : ""), () => abrirBiblioteca(h.id));
       boton(acc, "🗑", () => pideBorrar(acc, h));
     }
     cont.appendChild(div);
@@ -287,164 +313,3 @@ $("btnBorrarTodo").onclick = async () => {
   caja.appendChild(fila);
 };
 function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
-
-// ---------- Detalle + análisis ----------
-function abrirDetalle(h, prov) {
-  itemAbierto = h; verAnalisis = prov || null;
-  $("panelGrabar").style.display = "none";
-  $("detalle").style.display = "block";
-  $("detTitulo").textContent = (prov ? `Análisis (${prov}) — `
-    : h.estado === "error" ? "Error — "
-    : h.estado === "pendiente" ? "Transcripción incompleta — " : "Transcripción — ") + h.fecha;
-  $("detTexto").value = prov ? h.analisis[prov] : h.transcript;
-  $("detEstado").textContent = "";
-}
-document.querySelector("#detalle .volver").onclick = () => {
-  $("detalle").style.display = "none";
-  $("panelGrabar").style.display = "block";
-  pintaHistorial();
-};
-$("detCopiar").onclick = async () => { await navigator.clipboard.writeText($("detTexto").value); $("detEstado").textContent = "📋 Copiado."; };
-$("detDescargar").onclick = () => {
-  const nombre = (verAnalisis ? "analisis_" + verAnalisis + "_" : "reunion_") + itemAbierto.id + ".md";
-  const url = "data:text/markdown;charset=utf-8," + encodeURIComponent($("detTexto").value);
-  chrome.runtime.sendMessage({ target: "bg", cmd: "descargar", url, filename: "reuniones/" + nombre });
-  $("detEstado").textContent = "💾 Descargado en Descargas/reuniones.";
-};
-
-document.querySelectorAll("button.ia").forEach(b => b.onclick = async () => {
-  const prov = b.dataset.prov;
-  $("detEstado").textContent = `⏳ Analizando con ${prov}…`;
-  try {
-    const analisis = await analizar(prov, itemAbierto.transcript);
-    // Lo guarda el service worker: escribe por la misma cola que el progreso de
-    // la transcripción, así dos escrituras a la vez no se pisan.
-    const r = await chrome.runtime.sendMessage({
-      target: "bg", cmd: "histAnalisis", id: itemAbierto.id, prov, texto: analisis,
-    });
-    if (r && r.ok && r.item) {
-      itemAbierto = r.item;
-      abrirDetalle(itemAbierto, prov);
-      $("detEstado").textContent = "✅ Análisis listo (guardado en el historial).";
-    } else {
-      // El análisis está hecho y pagado: se enseña aunque no se haya podido
-      // guardar, en vez de perderlo.
-      itemAbierto = { ...itemAbierto, analisis: { ...(itemAbierto.analisis || {}), [prov]: analisis } };
-      abrirDetalle(itemAbierto, prov);
-      $("detEstado").textContent = "⚠️ " + ((r && r.error) || "No se pudo guardar en el historial") +
-        " — cópialo o descárgalo ahora.";
-    }
-  } catch (e) {
-    $("detEstado").textContent = "❌ " + (e.message || e);
-  }
-});
-
-// ---------- Análisis con las 3 IAs ----------
-function promptAnalisis(glosario) {
-  return `Eres un asistente experto en actas de reunión. Te paso la TRANSCRIPCIÓN AUTOMÁTICA de una reunión de trabajo en español.
-
-Ten en cuenta que es una transcripción automática:
-- Puede haber varias personas hablando (a veces etiquetadas como "Hablante 1/2...", a veces sin separar).
-- Habrá palabras mal transcritas, sobre todo nombres propios y términos técnicos. Glosario correcto del dominio: ${glosario}. Si una palabra suena parecida a una del glosario, asume que es esa.
-- Puede haber marcas [inaudible], frases cortadas y muletillas: interprétalas por contexto sin inventar contenido.
-
-Devuelve en markdown, en español:
-## Resumen ejecutivo
-(5-10 líneas: de qué fue la reunión y qué se decidió)
-## Decisiones tomadas
-(lista concreta)
-## Tareas y acciones
-(quién, qué, y plazo si se menciona — tabla)
-## Temas abiertos / dudas
-(lo que quedó sin cerrar, y las partes de la transcripción que no se entienden bien y conviene confirmar)
-## Datos citados
-(cifras, fechas, referencias, nombres de sistemas mencionados)`;
-}
-
-// Las tres APIs devuelven 429/503 de vez en cuando. Sin esto, un pico de carga
-// de un segundo se lleva por delante el acta de una reunión de una hora.
-const ESPERAS_IA = [3000, 8000, 20000];
-async function fetchIA(nombre, url, opts) {
-  let ultimo = null;
-  for (let intento = 0; ; intento++) {
-    let r;
-    try {
-      r = await fetch(url, opts);
-    } catch (e) {
-      ultimo = new Error(`${nombre}: sin conexión (${(e && e.message) || e})`);
-      if (intento < ESPERAS_IA.length) { await new Promise((s) => setTimeout(s, ESPERAS_IA[intento])); continue; }
-      throw ultimo;
-    }
-    if (r.ok) return r;
-    const txt = (await r.text()).slice(0, 200);
-    ultimo = new Error(`${nombre} HTTP ${r.status}: ${txt}`);
-    if ([408, 429, 500, 502, 503, 504].includes(r.status) && intento < ESPERAS_IA.length) {
-      $("detEstado").textContent = `⏳ ${nombre} saturado, reintentando (${intento + 1}/${ESPERAS_IA.length})…`;
-      await new Promise((s) => setTimeout(s, ESPERAS_IA[intento]));
-      continue;
-    }
-    throw ultimo;
-  }
-}
-
-async function analizar(prov, transcript) {
-  const cfgd = await leerConfig();
-  const sys = promptAnalisis(cfgd.glosario);
-
-  if (prov === "gemini") {
-    if (!cfgd.geminiKey) throw new Error("Falta la clave de Gemini en Opciones.");
-    const r = await fetchIA("Gemini", `https://generativelanguage.googleapis.com/v1beta/models/${cfgd.geminiModel}:generateContent`, {
-      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": cfgd.geminiKey },
-      // Margen amplio: en los modelos "thinking" el razonamiento también gasta
-      // de aquí, y con 8192 el acta salía vacía o cortada.
-      body: JSON.stringify({ contents: [{ parts: [{ text: sys + "\n\n---TRANSCRIPCIÓN---\n" + transcript }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 32768 } }),
-    });
-    const d = await r.json();
-    const txt = (d.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("").trim();
-    if (!txt) throw new Error("Gemini devolvió un acta vacía (finishReason: " + (d.candidates?.[0]?.finishReason || "?") + ")");
-    return txt;
-
-  } else if (prov === "gpt") {
-    if (!cfgd.openaiKey) throw new Error("Falta la clave de OpenAI en Opciones.");
-    const r = await fetchIA("OpenAI", "https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfgd.openaiKey },
-      body: JSON.stringify({ model: cfgd.openaiModel, messages: [{ role: "system", content: sys }, { role: "user", content: transcript }], temperature: 0.3 }),
-    });
-    // Un 200 no garantiza que venga acta: un filtro de contenido o un modelo
-    // inexistente devuelven un cuerpo sin `choices`. Sin esta comprobación
-    // salía un TypeError que no le dice nada a nadie.
-    const d = await r.json();
-    const txt = (d.choices?.[0]?.message?.content || "").trim();
-    if (!txt) throw new Error("OpenAI devolvió un acta vacía" + motivo(d.choices?.[0]?.finish_reason, d));
-    return txt;
-
-  } else if (prov === "claude") {
-    if (!cfgd.claudeKey) throw new Error("Falta la clave de Anthropic en Opciones.");
-    const r = await fetchIA("Anthropic", "https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": cfgd.claudeKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      // 16384, no 8192: con el tope antiguo el acta de una reunión larga salía
-      // cortada solo en Claude, mientras Gemini iba con 32768.
-      body: JSON.stringify({ model: cfgd.claudeModel, max_tokens: 16384, system: sys, messages: [{ role: "user", content: transcript }] }),
-    });
-    const d = await r.json();
-    const txt = (Array.isArray(d.content) ? d.content : []).map((c) => c.text || "").join("").trim();
-    if (!txt) throw new Error("Anthropic devolvió un acta vacía" + motivo(d.stop_reason, d));
-    return txt;
-  }
-  throw new Error("Proveedor desconocido");
-}
-
-// Añade el motivo que dé la API, si lo da: sin esto un acta vacía no se
-// distingue de un fallo de red.
-function motivo(razon, cuerpo) {
-  if (razon) return ` (motivo: ${razon})`;
-  const err = cuerpo && cuerpo.error && (cuerpo.error.message || cuerpo.error.type);
-  return err ? ` (${String(err).slice(0, 120)})` : "";
-}

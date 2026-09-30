@@ -124,6 +124,21 @@ async function finRonda(id) {
   return g.ok ? { ok: true, estado } : g;
 }
 
+// Campos que la biblioteca puede cambiar con «histEditar».
+const CAMPOS_EDITABLES = ["titulo", "participantes", "hablantes", "notas"];
+
+// El .md de Descargas se rehace cuando el usuario cambia algo que sale en él
+// (título, participantes, nombres de los hablantes). Solo en reuniones que ya
+// tienen texto: una en error no tiene tramos de los que rehacerlo.
+async function rehacerMd(h) {
+  if (!Array.isArray(h.tramos) || !h.tramos.length || !["ok", "pendiente"].includes(h.estado)) return;
+  const md = construirMarkdown(h);
+  if (typeof h.fileMd === "number") await borraDescarga(h.fileMd);
+  const fichero = (h.meta && h.meta.fichero) || fechaBonita(h.id).fichero;
+  h.fileMd = await descargaFichero("data:text/markdown;charset=utf-8," + encodeURIComponent(md), `reuniones/reunion_${fichero}.md`);
+  h.transcript = md;
+}
+
 async function planificaReintento(h, estado) {
   const alarma = "reintento:" + h.id;
   await chrome.alarms.clear(alarma);
@@ -205,7 +220,7 @@ async function recuperar() {
         }
         const n = Math.max(...idxs) + 1;
         h.tramos = Array.from({ length: n }, (_, i) => ({
-          estado: idxs.includes(i) ? "pendiente" : "perdido", etiqueta: etiquetaTramo(i),
+          estado: idxs.includes(i) ? "pendiente" : "perdido", etiqueta: etiquetaTramo(i), inicioS: i * DURACION_TRAMO_S,
         }));
         h.meta = { ...(h.meta || {}), minutos: n * (DURACION_TRAMO_S / 60), interrumpida: true };
         h.estado = "transcribiendo";
@@ -341,7 +356,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         }
         await ensureOffscreen();
-        const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "start", modo: msg.modo, streamId, tabTitle });
+        const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "start", modo: msg.modo, streamId, tabTitle, participantes: msg.participantes || "" });
         if (r && r.ok) {
           await chrome.storage.session.set({ grabando: true, t0: Date.now(), tabTitle });
           chrome.action.setBadgeText({ text: "REC" });
@@ -474,9 +489,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // La entrada pudo podarse mientras corría el análisis. Se dice, en vez
           // de reventar con un TypeError y perder un análisis ya pagado.
           if (i < 0) return { ok: false, error: "Esa transcripción ya no está en el historial; el análisis no se ha podido guardar." };
-          historial[i].analisis = { ...(historial[i].analisis || {}), [msg.prov]: msg.texto };
+          // Desde la 3.2 la clave es «plantilla·proveedor»; las actas de antes,
+          // guardadas solo por proveedor, se conservan tal cual.
+          const clave = msg.clave || msg.prov;
+          historial[i].analisis = { ...(historial[i].analisis || {}), [clave]: msg.texto };
+          if (msg.uso) historial[i].usoIA = [...(historial[i].usoIA || []), { clave, ...msg.uso, fecha: Date.now() }];
           const g = await guardarHistorial(historial);
           return g.ok ? { ok: true, item: historial[i] } : g;
+        }));
+
+      // Lo que el usuario puede cambiar desde la biblioteca. Solo esos campos:
+      // el estado y los tramos son cosa del motor de transcripción.
+      } else if (msg.cmd === "histEditar") {
+        sendResponse(await enCola(async () => {
+          const historial = await leerHistorial();
+          const h = historial.find((x) => x.id === msg.id);
+          if (!h) return { ok: false, error: "Esa reunión ya no está en el historial." };
+          for (const k of CAMPOS_EDITABLES) if (msg.cambios && k in msg.cambios) h[k] = msg.cambios[k];
+          await rehacerMd(h);
+          const g = await guardarHistorial(historial);
+          return g.ok ? { ok: true, item: h } : g;
+        }));
+
+      } else if (msg.cmd === "histChat") {
+        sendResponse(await enCola(async () => {
+          const historial = await leerHistorial();
+          const h = historial.find((x) => x.id === msg.id);
+          if (!h) return { ok: false, error: "Esa reunión ya no está en el historial; la respuesta no se ha podido guardar." };
+          h.chat = [...(h.chat || []), { ...msg.mensaje, fecha: Date.now() }];
+          if (msg.mensaje && msg.mensaje.uso) {
+            h.usoIA = [...(h.usoIA || []), { clave: "pregunta·" + msg.mensaje.prov, ...msg.mensaje.uso, fecha: Date.now() }];
+          }
+          const g = await guardarHistorial(historial);
+          return g.ok ? { ok: true, item: h } : g;
         }));
 
       } else {

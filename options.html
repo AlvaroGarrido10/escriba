@@ -49,6 +49,44 @@
 
   <div class="estado ok" id="final" style="font-size:14px;font-weight:600"></div>
 
+  <div class="paso" id="p5" style="margin-top:14px">
+    <h2>🗣️ Idioma de las reuniones</h2>
+    <p>En qué idioma se habla. «Detectar» sirve para reuniones que mezclan idiomas: cada frase se deja en el suyo, sin traducir.</p>
+    <select id="idioma" style="padding:8px;border:1px solid #bbb;border-radius:8px;font-size:13.5px">
+      <option value="es">Español</option>
+      <option value="auto">Detectar automáticamente (respeta mezclas)</option>
+      <option value="en">Inglés</option>
+      <option value="ca">Catalán</option>
+      <option value="pt">Portugués</option>
+      <option value="fr">Francés</option>
+      <option value="de">Alemán</option>
+      <option value="it">Italiano</option>
+    </select>
+    <div class="estado" id="e5"></div>
+  </div>
+
+  <div class="paso" id="p6">
+    <h2>📝 Acta automática</h2>
+    <p>Al terminar cada transcripción, Escriba genera sola el acta y la deja en la reunión. Gasta una llamada más por reunión, con tu clave.</p>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
+      <input type="checkbox" id="autoActa"> Generar automáticamente
+      <select id="autoActaPlantilla" style="padding:6px;border:1px solid #bbb;border-radius:7px">
+        <option value="acta">Acta completa</option>
+        <option value="resumen">Resumen breve</option>
+        <option value="tareas">Tareas y responsables</option>
+        <option value="correo">Correo de seguimiento</option>
+        <option value="personalizada">Mi plantilla</option>
+      </select>
+      con
+      <select id="autoActaProv" style="padding:6px;border:1px solid #bbb;border-radius:7px">
+        <option value="gemini">Gemini</option>
+        <option value="gpt">GPT</option>
+        <option value="claude">Claude</option>
+      </select>
+    </label>
+    <div class="estado" id="e6"></div>
+  </div>
+
   <div class="paso" id="p3" style="margin-top:14px">
     <h2>🧹 Cuántas transcripciones conservar</h2>
     <p>Al terminar cada reunión se borran las más antiguas, tanto del historial como
@@ -64,11 +102,15 @@
   </div>
 
   <details>
-    <summary>Opciones avanzadas (glosario, GPT y Claude)</summary>
+    <summary>Opciones avanzadas (glosario, mi plantilla, GPT y Claude)</summary>
     <div class="avz">
       <label>Glosario — nombres propios y jerga que la IA debe escribir bien</label>
       <textarea id="glosario" placeholder="Ej: nombres de tu empresa, clientes, productos y siglas de tu sector, separados por comas"></textarea>
       <small>Mejora mucho la transcripción de nombres. Se usa también al generar el acta.</small>
+
+      <label>Mi plantilla de acta — lo que quieres que saque de cada reunión</label>
+      <textarea id="plantillaPersonalizada" style="height:110px" placeholder="Ej: Devuelve una tabla con los riesgos que se mencionen, quién los detectó y qué se decidió hacer. Después, una lista de compromisos con fecha."></textarea>
+      <small>Aparece como «Mi plantilla» en la biblioteca y en el acta automática. Participantes, glosario y notas se le añaden solos.</small>
 
       <label>Modelo de Gemini</label>
       <input type="text" id="geminiModel" readonly>

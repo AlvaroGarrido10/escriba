@@ -114,6 +114,68 @@ const etiquetaTramo = (i) => {
   return `≈ minuto ${i * min} al ${(i + 1) * min}`;
 };
 
+// --- marcas de tiempo (3.2) ------------------------------------------------------
+// El modelo marca cada intervención con [MM:SS] contados desde el principio de
+// SU tramo. Aquí se pasan a tiempo de la reunión sumando dónde empieza el tramo.
+const pad2 = (n) => String(n).padStart(2, "0");
+function formatoTiempo(s) {
+  s = Math.max(0, Math.round(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), seg = s % 60;
+  return h ? `${h}:${pad2(m)}:${pad2(seg)}` : `${pad2(m)}:${pad2(seg)}`;
+}
+const RE_MARCA = /^(\s*)\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]/;
+const segundosDe = (m) => (m[4] !== undefined ? (+m[2]) * 3600 + (+m[3]) * 60 + (+m[4]) : (+m[2]) * 60 + (+m[3]));
+
+function ajustarTiempos(texto, inicioS) {
+  return String(texto || "").split("\n").map((l) => {
+    const m = RE_MARCA.exec(l);
+    return m ? `${m[1]}[${formatoTiempo(segundosDe(m) + (inicioS || 0))}]` + l.slice(m[0].length) : l;
+  }).join("\n");
+}
+
+// Dónde empieza un tramo dentro de la reunión. Las entradas anteriores a la 3.2
+// no lo guardaban: todos sus tramos medían lo mismo.
+const inicioTramo = (t, i) => (t && typeof t.inicioS === "number" ? t.inicioS : i * DURACION_TRAMO_S);
+
+// --- hablantes (3.2) --------------------------------------------------------------
+// Una línea de transcripción es «[MM:SS] Nombre: texto» (la marca es opcional).
+// La etiqueta empieza por mayúscula y no lleva «:» ni corchetes: así «[inaudible]»
+// o una frase suelta no se toman por un hablante.
+const RE_LINEA = /^(\s*(?:\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*)?)([A-ZÁÉÍÓÚÜÑ][^:\n[\]]{0,39}?):\s?(.*)$/;
+
+function lineasTranscripcion(texto) {
+  return String(texto || "").split("\n").filter((l) => l.trim()).map((l) => {
+    const m = RE_LINEA.exec(l);
+    if (m) {
+      const t = m[2] !== undefined ? segundosDe([null, null, m[2], m[3], m[4]]) : null;
+      return { t, hablante: m[5].trim(), texto: m[6].trim() };
+    }
+    const soloMarca = RE_MARCA.exec(l);
+    if (soloMarca) return { t: segundosDe(soloMarca), hablante: "", texto: l.slice(soloMarca[0].length).trim() };
+    return { t: null, hablante: "", texto: l.trim() };
+  });
+}
+
+function hablantesDe(texto) {
+  const vistos = [];
+  for (const l of lineasTranscripcion(texto)) if (l.hablante && !vistos.includes(l.hablante)) vistos.push(l.hablante);
+  return vistos;
+}
+
+// Cambia la ETIQUETA de inicio de línea («Hablante 1:» → «Marcos:»). El texto
+// original no se toca: el mapa se guarda aparte y se aplica al ver y al exportar,
+// así que un nombre mal puesto se corrige sin perder nada.
+function aplicarHablantes(texto, mapa) {
+  const nombres = mapa || {};
+  if (!Object.values(nombres).some((v) => v && String(v).trim())) return String(texto || "");
+  return String(texto || "").split("\n").map((l) => {
+    const m = RE_LINEA.exec(l);
+    if (!m) return l;
+    const nuevo = nombres[m[5].trim()];
+    return nuevo && String(nuevo).trim() ? `${m[1]}${String(nuevo).trim()}: ${m[6]}` : l;
+  }).join("\n");
+}
+
 // El .md se rehace entero desde el historial cada vez que cambia algo, así que
 // un reintento que completa un hueco deja un documento limpio, sin avisos viejos.
 function construirMarkdown(h) {
@@ -122,6 +184,7 @@ function construirMarkdown(h) {
   const m = h.meta || {};
   let md = `# Transcripción de reunión — ${h.fecha}\n\n`;
   if (h.titulo) md += `**Origen:** ${h.titulo}\n`;
+  if (h.participantes) md += `**Participantes:** ${h.participantes}\n`;
   md += `**Duración:** ${m.minutos || 1} min · ${tramos.length} tramo${tramos.length === 1 ? "" : "s"}\n`;
   if (m.audioLinea) md += `**Audio:** ${m.audioLinea}\n`;
   md += m.audioAlerta || "";
@@ -140,7 +203,8 @@ function construirMarkdown(h) {
   const cuerpo = tramos.map((t, i) => {
     const cab = `Tramo ${i + 1} de ${tramos.length} (${t.etiqueta || etiquetaTramo(i)})`;
     if (t.estado === "ok") {
-      return (t.texto || "") + (t.truncado ? "\n\n> ⚠️ Este tramo se cortó por límite de longitud del modelo." : "");
+      return aplicarHablantes(t.texto || "", h.hablantes) +
+        (t.truncado ? "\n\n> ⚠️ Este tramo se cortó por límite de longitud del modelo." : "");
     }
     if (t.estado === "mudo") return `> _(${cab}: sin voz — no se transcribe para no inventar texto.)_`;
     if (t.estado === "perdido") return `> ⚠️ **${cab}: no se puede transcribir.**\n> ${textoError("perdido")}`;
@@ -229,5 +293,6 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     DURACION_TRAMO_S, PICO_SILENCIO, UMBRAL_VOZ, abrirAudios, MENSAJES_ERROR, CODIGOS_CLAVE, textoError, resumenTramos, estadoFinal,
     etiquetaTramo, construirMarkdown, medirMuestras, trocear, planificarTramos, codificarWav, fechaBonita,
+    formatoTiempo, ajustarTiempos, inicioTramo, lineasTranscripcion, hablantesDe, aplicarHablantes,
   };
 }

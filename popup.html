@@ -46,7 +46,7 @@
 <body>
 <header>
   <b style="display:flex;align-items:center;gap:7px"><img src="icon32.png" alt="" style="width:20px;height:20px">Escriba</b>
-  <a id="lnkOpc">⚙️ Opciones</a>
+  <span style="display:flex;gap:10px"><a id="lnkBiblio" title="Leer, exportar y sacar actas">📚 Reuniones</a><a id="lnkOpc">⚙️ Opciones</a></span>
 </header>
 <main>
   <div id="panelGrabar">
@@ -58,6 +58,7 @@
       <label id="lblTab"><input type="radio" name="modo" value="tab_mic" checked><span>🖥️+🎙️ Pestaña + micro</span></label>
       <label><input type="radio" name="modo" value="mic"><span>🎙️ Solo micro</span></label>
     </div>
+    <input id="participantes" maxlength="400" placeholder="👥 Participantes (opcional): Marcos, Ana…" title="Ayuda a poner nombre a cada voz y a sacar el acta" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #ddd;border-radius:8px;font-size:11.5px;margin-bottom:8px">
     <button id="btnRec">⏺ Empezar a grabar</button>
     <div id="timer">00:00</div>
     <div id="estado"></div>
@@ -73,22 +74,10 @@
       <button id="btnBorrarTodo" style="font-size:10.5px;font-weight:400;padding:3px 8px;border:1px solid #d3b3bf;background:#fff;color:#8c3b57;border-radius:5px;cursor:pointer">🗑 Borrar todo</button>
     </h3>
     <div id="confirmaTodo" style="display:none;font-size:11px;line-height:1.45;background:#fdecef;border:1px solid #e6a9ba;color:#7d2d43;border-radius:6px;padding:8px 9px;margin-bottom:8px"></div>
+    <div id="listo" style="display:none;font-size:11.5px;line-height:1.4;background:#eef8ee;border:1px solid #b9dfb8;color:#1f5b22;border-radius:6px;padding:7px 9px;margin-bottom:8px"></div>
     <div id="historial"></div>
   </div>
 
-  <div id="detalle">
-    <div class="volver">← Volver</div>
-    <div class="tit" id="detTitulo" style="font-weight:600;font-size:12px;margin-bottom:4px"></div>
-    <textarea id="detTexto" readonly></textarea>
-    <div class="acc" style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
-      <button id="detCopiar">📋 Copiar</button>
-      <button id="detDescargar">💾 .md</button>
-      <button class="ia" data-prov="gemini">✨ Analizar Gemini</button>
-      <button class="ia" data-prov="gpt">🤖 Analizar GPT</button>
-      <button class="ia" data-prov="claude">🧠 Analizar Claude</button>
-    </div>
-    <div id="detEstado" style="font-size:11px;color:#555;min-height:16px;margin-top:4px"></div>
-  </div>
 </main>
 <script src="config.js"></script>
 <script src="comun.js"></script>

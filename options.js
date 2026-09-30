@@ -21,7 +21,11 @@ async function guarda(campos) {
 (async () => {
   await migrarConfig();
   const d = await leerConfig();
-  for (const k of ["geminiKey", "geminiModel", "openaiKey", "openaiModel", "claudeKey", "claudeModel", "glosario"]) $(k).value = d[k] || "";
+  for (const k of ["geminiKey", "geminiModel", "openaiKey", "openaiModel", "claudeKey", "claudeModel", "glosario", "plantillaPersonalizada"]) $(k).value = d[k] || "";
+  $("idioma").value = d.idioma || "es";
+  $("autoActa").checked = !!d.autoActa;
+  $("autoActaPlantilla").value = d.autoActaPlantilla || "acta";
+  $("autoActaProv").value = d.autoActaProv || "gemini";
   if (d.geminiKey) validarClave(d.geminiKey, d.geminiModel);
   revisarMicro();
 })();
@@ -125,8 +129,24 @@ $("retenTodo").addEventListener("change", guardaRetencion);
 $("retenN").addEventListener("change", guardaRetencion);
 $("limite").addEventListener("input", () => { $("retenN").checked = true; guardaRetencion(); });
 
+// --- idioma y acta automática ---
+$("idioma").addEventListener("change", async () => {
+  await guardarConfig({ idioma: $("idioma").value });
+  pinta("e5", "Guardado ✓ — se aplica a las próximas transcripciones", true);
+});
+async function guardaActa() {
+  const prov = $("autoActaProv").value;
+  const claves = await leerConfig();
+  const falta = { gemini: "geminiKey", gpt: "openaiKey", claude: "claudeKey" }[prov];
+  await guardarConfig({ autoActa: $("autoActa").checked, autoActaPlantilla: $("autoActaPlantilla").value, autoActaProv: prov });
+  if ($("autoActa").checked && !claves[falta]) pinta("e6", "⚠️ Guardado, pero falta la clave de " + $("autoActaProv").selectedOptions[0].textContent + " (abajo, en avanzadas).", false);
+  else if ($("autoActa").checked && $("autoActaPlantilla").value === "personalizada" && !claves.plantillaPersonalizada) pinta("e6", "⚠️ Guardado, pero «Mi plantilla» está vacía: escríbela en avanzadas (mientras, se usa el acta completa).", false);
+  else pinta("e6", $("autoActa").checked ? "Guardado ✓ — el acta se generará sola al terminar cada reunión" : "Guardado ✓ — el acta se pide a mano desde la biblioteca", true);
+}
+for (const id of ["autoActa", "autoActaPlantilla", "autoActaProv"]) $(id).addEventListener("change", guardaActa);
+
 // --- avanzado: se guarda solo ---
-for (const id of ["glosario", "openaiKey", "openaiModel", "claudeKey", "claudeModel"]) {
+for (const id of ["glosario", "plantillaPersonalizada", "openaiKey", "openaiModel", "claudeKey", "claudeModel"]) {
   $(id).addEventListener("input", () => {
     guarda({ [id]: $(id).value.trim() });
     pinta("e3", "Guardado ✓", true);

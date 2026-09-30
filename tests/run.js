@@ -521,7 +521,7 @@ function sistema({ local = {}, sync = {}, audios: ini = [], fetch: fetchStub = n
   const enviarBg = mensajero(chrome);
   const offChrome = nuevoChrome();
   offChrome.runtime.sendMessage = (msg) => enviarBg(msg);
-  const off = cargar(["comun.js", "offscreen.js"], entornoOffscreen(offChrome, fetchStub));
+  const off = cargar(["comun.js", "ia.js", "offscreen.js"], entornoOffscreen(offChrome, fetchStub));
   off.audios = aud;
   const enviarOff = mensajero(offChrome);
   chrome.runtime.sendMessage = (msg) => (msg.target === "offscreen" ? enviarOff(msg) : enviarBg(msg));
@@ -776,6 +776,319 @@ test("REGRESIÓN: dos tramos que terminan a la vez no se pisan en el historial",
   const h = chrome.storage.local._volcado().historial[0];
   assert.deepStrictEqual(h.tramos.map((t) => t.texto), ["t0", "t1", "t2", "t3", "t4", "t5"]);
   assert.strictEqual(h.progreso, "6/6 tramos");
+});
+
+// ============================================================================
+// 3.2 — sacar partido a la reunión grabada (docs/2026-09-30-plan-mejoras.md)
+// ============================================================================
+grupo("3.2 · marcas de tiempo y hablantes (comun.js)");
+
+test("formatoTiempo: minutos:segundos, y horas cuando pasa de una", () => {
+  assert.strictEqual(comun.formatoTiempo(65), "01:05");
+  assert.strictEqual(comun.formatoTiempo(0), "00:00");
+  assert.strictEqual(comun.formatoTiempo(3725), "1:02:05");
+});
+
+test("ajustarTiempos suma el inicio del tramo a las marcas que da el modelo", () => {
+  const txt = "[00:05] Hablante 1: hola\n[1:10] Hablante 2: adiós\nsigue sin marca\n[0:01:02] Hablante 1: fin";
+  const r = comun.ajustarTiempos(txt, 600);
+  assert.strictEqual(r, "[10:05] Hablante 1: hola\n[11:10] Hablante 2: adiós\nsigue sin marca\n[11:02] Hablante 1: fin");
+  assert.strictEqual(comun.ajustarTiempos("[59:30] X: a", 300), "[1:04:30] X: a", "pasa a horas");
+  assert.strictEqual(comun.ajustarTiempos("sin marcas", 300), "sin marcas");
+});
+
+test("inicioTramo usa el inicio guardado y, en entradas antiguas, lo deduce del índice", () => {
+  assert.strictEqual(comun.inicioTramo({ inicioS: 42 }, 3), 42);
+  assert.strictEqual(comun.inicioTramo({}, 3), 3 * comun.DURACION_TRAMO_S);
+});
+
+test("hablantesDe saca las etiquetas en orden y sin repetir", () => {
+  const txt = "[00:01] Hablante 1: hola\n[00:04] Hablante 2: qué tal\nHablante 1: bien\n[inaudible]\nTexto suelto sin etiqueta";
+  assert.deepStrictEqual(comun.hablantesDe(txt), ["Hablante 1", "Hablante 2"]);
+});
+
+test("aplicarHablantes renombra solo la etiqueta de inicio de línea, nunca el texto", () => {
+  const txt = "[00:01] Hablante 1: le paso la palabra a Hablante 2\nHablante 10: yo no soy el 1\nHablante 1: vale";
+  const r = comun.aplicarHablantes(txt, { "Hablante 1": "Marcos", "Hablante 2": "" });
+  assert.strictEqual(r, "[00:01] Marcos: le paso la palabra a Hablante 2\nHablante 10: yo no soy el 1\nMarcos: vale");
+});
+
+test("lineasTranscripcion separa marca, hablante y texto", () => {
+  const ls = comun.lineasTranscripcion("[01:05] Marcos: hola\ncontinúa\n[1:00:00] Ana: fin");
+  assert.deepStrictEqual(ls.map((l) => [l.t, l.hablante, l.texto]), [[65, "Marcos", "hola"], [null, "", "continúa"], [3600, "Ana", "fin"]]);
+});
+
+test("el .md lleva los participantes y los hablantes renombrados", () => {
+  const md = comun.construirMarkdown({
+    fecha: "30/09/2026 10:00", titulo: "Comité", participantes: "Marcos, Ana", hablantes: { "Hablante 1": "Marcos" },
+    meta: { minutos: 5 }, tramos: [{ estado: "ok", texto: "[00:03] Hablante 1: arrancamos" }],
+  });
+  assert.match(md, /\*\*Participantes:\*\* Marcos, Ana/);
+  assert.match(md, /\[00:03\] Marcos: arrancamos/);
+  assert.doesNotMatch(md, /Hablante 1/);
+});
+
+// ----------------------------------------------------------------------------
+grupo("3.2 · exportar (exportar.js)");
+const exportar = require("../exportar.js");
+
+test("crc32 da el valor de referencia", () => {
+  assert.strictEqual(exportar.crc32(new TextEncoder().encode("123456789")), 0xcbf43926);
+});
+
+// Lee un zip sin comprimir: nombres y contenido de cada fichero del directorio central.
+function leerZip(bytes) {
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let fin = bytes.length - 22;
+  while (fin >= 0 && v.getUint32(fin, true) !== 0x06054b50) fin--;
+  assert.ok(fin >= 0, "falta el fin de directorio central");
+  const n = v.getUint16(fin + 10, true);
+  let p = v.getUint32(fin + 16, true);
+  const ficheros = {};
+  for (let i = 0; i < n; i++) {
+    assert.strictEqual(v.getUint32(p, true), 0x02014b50, "cabecera central");
+    const crc = v.getUint32(p + 16, true), tam = v.getUint32(p + 20, true);
+    const ln = v.getUint16(p + 28, true), le = v.getUint16(p + 30, true), lc = v.getUint16(p + 32, true);
+    const loc = v.getUint32(p + 42, true);
+    const nombre = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + ln));
+    assert.strictEqual(v.getUint32(loc, true), 0x04034b50, "cabecera local de " + nombre);
+    const lnl = v.getUint16(loc + 26, true), lel = v.getUint16(loc + 28, true);
+    const datos = bytes.subarray(loc + 30 + lnl + lel, loc + 30 + lnl + lel + tam);
+    assert.strictEqual(exportar.crc32(datos), crc, "crc de " + nombre);
+    ficheros[nombre] = new TextDecoder().decode(datos);
+    p += 46 + ln + le + lc;
+  }
+  return ficheros;
+}
+
+test("zip genera un archivo válido que se puede volver a leer", () => {
+  const z = exportar.zip([{ nombre: "a.txt", datos: "hola" }, { nombre: "carpeta/b.xml", datos: "<x>ñ</x>" }]);
+  const f = leerZip(z);
+  assert.deepStrictEqual(Object.keys(f), ["a.txt", "carpeta/b.xml"]);
+  assert.strictEqual(f["carpeta/b.xml"], "<x>ñ</x>");
+});
+
+test("docx: un Word de verdad, con títulos, listas y el texto escapado", () => {
+  const f = leerZip(exportar.docx("Acta & <prueba>", "## Decisiones\n- Aprobar **presupuesto** & plazo\n\nTexto normal"));
+  for (const k of ["[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/styles.xml"]) assert.ok(f[k], "falta " + k);
+  const doc = f["word/document.xml"];
+  assert.match(doc, /Acta &amp; &lt;prueba&gt;/);
+  assert.match(doc, /Heading2[\s\S]*Decisiones/);
+  assert.match(doc, /<w:b\/>[\s\S]*presupuesto/);
+  assert.doesNotMatch(doc, /\*\*/, "las marcas de markdown no pueden llegar al Word");
+});
+
+test("srt: una entrada por intervención con marca, tiempos crecientes", () => {
+  const srt = exportar.srt("[00:05] Marcos: hola\nsigue\n[01:10] Ana: adiós");
+  assert.strictEqual(srt, "1\n00:00:05,000 --> 00:01:10,000\nMarcos: hola sigue\n\n2\n00:01:10,000 --> 00:01:16,000\nAna: adiós\n");
+  assert.strictEqual(exportar.srt("sin marcas de tiempo"), "", "sin marcas no hay subtítulos");
+});
+
+test("mdAHtml pinta títulos, listas, tablas y negrita, y nunca ejecuta HTML", () => {
+  const h = exportar.mdAHtml("## Tareas\n| Quién | Qué |\n|---|---|\n| Ana | **Enviar** |\n\n- uno\n- <script>alert(1)</script>");
+  assert.match(h, /<h2>Tareas<\/h2>/);
+  assert.match(h, /<table>[\s\S]*<td>Ana<\/td><td><b>Enviar<\/b><\/td>/);
+  assert.match(h, /<li>uno<\/li>/);
+  assert.doesNotMatch(h, /<script>/);
+  assert.match(h, /&lt;script&gt;/);
+});
+
+test("textoPlano quita las marcas de markdown", () => {
+  assert.strictEqual(exportar.textoPlano("## Título\n- **uno**\n> cita"), "Título\n• uno\ncita");
+});
+
+// ----------------------------------------------------------------------------
+grupo("3.2 · plantillas y preguntas a la IA (ia.js)");
+
+function ia(fetchStub) {
+  return cargar(["comun.js", "ia.js"], { fetch: fetchStub, setTimeout: (fn) => setImmediate(fn) });
+}
+const cfgIA = { geminiKey: "G", geminiModel: "gemini-flash-latest", openaiKey: "O", openaiModel: "gpt-x", claudeKey: "C", claudeModel: "claude-x", glosario: "Odoo, Acme" };
+
+test("cada plantilla pide lo suyo y todas llevan participantes y glosario", () => {
+  const ctx = ia(nuevoFetch([]));
+  const t = ctx.promptPlantilla("tareas", { glosario: "Odoo", participantes: "Marcos, Ana" });
+  assert.match(t, /responsable/i);
+  assert.match(t, /Marcos, Ana/);
+  assert.match(t, /Odoo/);
+  assert.match(ctx.promptPlantilla("correo", {}), /correo/i);
+  assert.match(ctx.promptPlantilla("personalizada", { personalizada: "Saca solo los riesgos" }), /Saca solo los riesgos/);
+  assert.strictEqual(ctx.promptPlantilla("no-existe", {}), ctx.promptPlantilla("acta", {}), "una plantilla desconocida cae en el acta");
+});
+
+test("Gemini: petición correcta y tokens gastados", async () => {
+  const f = nuevoFetch([{ cuerpo: { candidates: [{ content: { parts: [{ text: "ACTA" }] } }], usageMetadata: { promptTokenCount: 900, candidatesTokenCount: 120 } } }]);
+  const r = await ia(f).llamarIA("gemini", cfgIA, "SISTEMA", "TRANSCRIPCIÓN");
+  assert.deepStrictEqual([r.texto, r.uso.entrada, r.uso.salida], ["ACTA", 900, 120]);
+  const ll = f._llamadas[0];
+  assert.match(ll.url, /models\/gemini-flash-latest:generateContent$/);
+  assert.strictEqual(ll.opts.headers["x-goog-api-key"], "G");
+  assert.match(ll.opts.body, /SISTEMA[\s\S]*TRANSCRIPCIÓN/);
+});
+
+test("GPT: petición correcta y tokens gastados", async () => {
+  const f = nuevoFetch([{ cuerpo: { choices: [{ message: { content: "ACTA" } }], usage: { prompt_tokens: 50, completion_tokens: 7 } } }]);
+  const r = await ia(f).llamarIA("gpt", cfgIA, "S", "U");
+  assert.deepStrictEqual([r.texto, r.uso.entrada, r.uso.salida], ["ACTA", 50, 7]);
+  const cuerpo = JSON.parse(f._llamadas[0].opts.body);
+  assert.strictEqual(f._llamadas[0].opts.headers.Authorization, "Bearer O");
+  assert.strictEqual(cuerpo.model, "gpt-x");
+  assert.deepStrictEqual(cuerpo.messages.map((m) => m.role), ["system", "user"]);
+});
+
+test("Claude: petición correcta y tokens gastados", async () => {
+  const f = nuevoFetch([{ cuerpo: { content: [{ type: "text", text: "ACTA" }], usage: { input_tokens: 30, output_tokens: 4 } } }]);
+  const r = await ia(f).llamarIA("claude", cfgIA, "S", "U");
+  assert.deepStrictEqual([r.texto, r.uso.entrada, r.uso.salida], ["ACTA", 30, 4]);
+  const h = f._llamadas[0].opts.headers;
+  assert.strictEqual(h["x-api-key"], "C");
+  assert.strictEqual(h["anthropic-dangerous-direct-browser-access"], "true");
+  assert.strictEqual(JSON.parse(f._llamadas[0].opts.body).system, "S");
+});
+
+test("un 503 se reintenta avisando, y sin clave se dice cuál falta sin tocar la red", async () => {
+  const f = nuevoFetch([{ status: 503, cuerpo: "{}" }, { cuerpo: { choices: [{ message: { content: "OK" } }] } }]);
+  const avisos = [];
+  const r = await ia(f).llamarIA("gpt", cfgIA, "S", "U", { alEstado: (t) => avisos.push(t) });
+  assert.strictEqual(r.texto, "OK");
+  assert.strictEqual(avisos.length, 1);
+  const vacio = nuevoFetch([]);
+  await assert.rejects(ia(vacio).llamarIA("claude", { ...cfgIA, claudeKey: "" }, "S", "U"), /Anthropic/);
+  assert.strictEqual(vacio._llamadas.length, 0);
+});
+
+test("analizarReunion manda la transcripción con los nombres puestos y guarda por plantilla y proveedor", async () => {
+  const f = nuevoFetch([{ cuerpo: { candidates: [{ content: { parts: [{ text: "RESUMEN" }] } }] } }]);
+  const h = { transcript: "[00:01] Hablante 1: hola", hablantes: { "Hablante 1": "Marcos" }, participantes: "Marcos" };
+  const r = await ia(f).analizarReunion(h, "resumen", "gemini", cfgIA);
+  assert.strictEqual(r.clave, "resumen·gemini");
+  assert.strictEqual(r.texto, "RESUMEN");
+  assert.match(f._llamadas[0].opts.body, /Marcos: hola/);
+  assert.doesNotMatch(f._llamadas[0].opts.body, /Hablante 1: hola/);
+});
+
+test("preguntarReunion arrastra la conversación anterior", async () => {
+  const f = nuevoFetch([{ cuerpo: { choices: [{ message: { content: "El 15 de octubre." } }] } }]);
+  const h = { transcript: "[00:01] Ana: entregamos el 15 de octubre", chat: [{ p: "¿Quién habla?", r: "Ana." }] };
+  const r = await ia(f).preguntarReunion(h, "¿Y cuándo se entrega?", "gpt", cfgIA);
+  assert.strictEqual(r.texto, "El 15 de octubre.");
+  const msgs = JSON.parse(f._llamadas[0].opts.body).messages;
+  assert.deepStrictEqual(msgs.map((m) => m.role), ["system", "user", "assistant", "user"]);
+  assert.match(msgs[0].content, /entregamos el 15 de octubre/);
+  assert.strictEqual(msgs[3].content, "¿Y cuándo se entrega?");
+});
+
+// ----------------------------------------------------------------------------
+grupo("3.2 · transcripción con tiempos, nombres e idioma (offscreen.js)");
+
+test("el prompt pide marcas de tiempo, usa los participantes con cautela y respeta el idioma", () => {
+  const ctx = offscreen(nuevoFetch([]));
+  const p = ctx.construirPrompt("", 2, 3, { participantes: "Marcos, Ana", idioma: "es" });
+  assert.match(p, /\[MM:SS\]/);
+  assert.match(p, /Marcos, Ana/);
+  assert.match(p, /Hablante 1/, "si hay duda, sigue la etiqueta genérica");
+  assert.match(p, /español/);
+  const auto = ctx.construirPrompt("", 1, 1, { idioma: "auto" });
+  assert.doesNotMatch(auto, /reunión de trabajo en español/);
+  assert.match(auto, /idioma/i);
+});
+
+test("cada tramo guarda su texto con el tiempo de la reunión y los tokens gastados", async () => {
+  const conUso = (t) => ({ cuerpo: { candidates: [{ finishReason: "STOP", content: { parts: [{ text: t }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 3 } } });
+  const f = fetchPorTramo({ 1: [conUso("[00:10] Hablante 1: uno")], 2: [conUso("[00:20] Hablante 2: dos")] });
+  const r = reunion(60, 2);
+  r.tramos[1].inicioS = 300;
+  const s = sistema({ local: { historial: [r] }, audios: audioDe(60, 2), fetch: f });
+  await s.off.transcribirReunion(60);
+  const h = s.entrada(60);
+  assert.deepStrictEqual(h.tramos.map((t) => t.texto), ["[00:10] Hablante 1: uno", "[05:20] Hablante 2: dos"]);
+  assert.deepStrictEqual({ ...h.tramos[1].uso }, { entrada: 10, salida: 3 });
+});
+
+test("los participantes de la reunión llegan al prompt de cada tramo", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("uno")] });
+  const s = sistema({ local: { historial: [reunion(61, 1, { participantes: "Marcos, Ana" })] }, audios: audioDe(61, 1), fetch: f });
+  let prompt = "";
+  const fetchOriginal = s.off.fetch;
+  s.off.fetch = async (url, opts) => { prompt = JSON.parse(opts.body).contents[0].parts[0].text; return fetchOriginal(url, opts); };
+  await s.off.transcribirReunion(61);
+  assert.match(prompt, /Marcos, Ana/);
+});
+
+test("acta automática: encendida, una sola llamada al terminar y se guarda en la reunión", async () => {
+  const llamadasIA = [];
+  const f = fetchPorTramo({ 1: [respGemini("[00:01] Hablante 1: hola")] });
+  const envoltorio = async (url, opts) => {
+    if (/generateContent/.test(url) && !/TRAMO|Transcribe/.test(opts.body)) {
+      llamadasIA.push(url);
+      return { ok: true, status: 200, async text() { return ""; }, async json() { return { candidates: [{ content: { parts: [{ text: "ACTA AUTO" }] } }] }; } };
+    }
+    return f(url, opts);
+  };
+  const s = sistema({ local: { historial: [reunion(62, 1)] }, sync: { autoActa: true, autoActaProv: "gemini", autoActaPlantilla: "acta" }, audios: audioDe(62, 1), fetch: envoltorio });
+  await s.off.transcribirReunion(62);
+  await hasta(() => (s.entrada(62).analisis || {})["acta·gemini"], "que se guardara el acta automática");
+  assert.strictEqual(llamadasIA.length, 1);
+  assert.strictEqual(s.entrada(62).analisis["acta·gemini"], "ACTA AUTO");
+});
+
+test("acta automática: apagada no gasta, y una reunión incompleta no la dispara", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("hola")] });
+  const s = sistema({ local: { historial: [reunion(63, 1)] }, audios: audioDe(63, 1), fetch: f });
+  await s.off.transcribirReunion(63);
+  assert.strictEqual(f._llamadas.length, 1, "solo la transcripción");
+  assert.deepStrictEqual(s.entrada(63).analisis, {});
+
+  const g = fetchPorTramo({ 1: saturadoSiempre() });
+  const s2 = sistema({ local: { historial: [reunion(64, 1)] }, sync: { autoActa: true }, audios: audioDe(64, 1), fetch: g });
+  await s2.off.transcribirReunion(64);
+  assert.strictEqual(s2.entrada(64).estado, "pendiente");
+  assert.deepStrictEqual(s2.entrada(64).analisis, {}, "sin transcripción completa no hay acta");
+});
+
+// ----------------------------------------------------------------------------
+grupo("3.2 · editar la reunión desde la biblioteca (background.js)");
+
+test("histEditar solo cambia título, participantes y hablantes, y rehace el .md", async () => {
+  const h0 = reunion(70, 1, { estado: "ok", fileMd: 5, tramos: [{ estado: "ok", texto: "[00:01] Hablante 1: hola" }] });
+  const { chrome, enviar } = bg({ local: { historial: [h0] } });
+  const r = await enviar({ target: "bg", cmd: "histEditar", id: 70, cambios: { titulo: "Comité", hablantes: { "Hablante 1": "Marcos" }, estado: "error" } });
+  assert.strictEqual(r.ok, true);
+  const h = chrome.storage.local._volcado().historial[0];
+  assert.strictEqual(h.titulo, "Comité");
+  assert.strictEqual(h.estado, "ok", "el estado no se toca desde fuera");
+  assert.match(h.transcript, /Marcos: hola/);
+  assert.ok(chrome._registro.borrados.includes(5), "el .md viejo se sustituye");
+  assert.notStrictEqual(h.fileMd, 5);
+});
+
+test("histAnalisis guarda cada plantilla aparte, conserva las actas antiguas y apunta el uso", async () => {
+  const { chrome, enviar } = bg({ local: { historial: [entradaHist(71, { analisis: { gemini: "ACTA VIEJA" } })] } });
+  await enviar({ target: "bg", cmd: "histAnalisis", id: 71, clave: "tareas·claude", texto: "TAREAS", uso: { entrada: 5, salida: 2 } });
+  const h = chrome.storage.local._volcado().historial[0];
+  assert.deepStrictEqual({ ...h.analisis }, { gemini: "ACTA VIEJA", "tareas·claude": "TAREAS" });
+  assert.strictEqual(h.usoIA[0].clave, "tareas·claude");
+  assert.strictEqual(h.usoIA[0].entrada, 5);
+});
+
+test("histChat va añadiendo la conversación", async () => {
+  const { chrome, enviar } = bg({ local: { historial: [entradaHist(72)] } });
+  await enviar({ target: "bg", cmd: "histChat", id: 72, mensaje: { p: "¿Qué se decidió?", r: "Nada.", prov: "gpt" } });
+  await enviar({ target: "bg", cmd: "histChat", id: 72, mensaje: { p: "¿Seguro?", r: "Sí.", prov: "gpt" } });
+  const h = chrome.storage.local._volcado().historial[0];
+  assert.deepStrictEqual([...h.chat.map((m) => m.p)], ["¿Qué se decidió?", "¿Seguro?"]);
+});
+
+test("una grabación recuperada tras un cierre sabe dónde empieza cada tramo", async () => {
+  const { chrome, ctx } = bg({
+    local: { historial: [{ id: 73, fecha: "x", titulo: "t", estado: "grabando", tramos: [], meta: {} }] },
+    audios: [[73, 0, blobDe(null)], [73, 1, blobDe(null)]],
+  });
+  chrome.runtime.sendMessage = async () => ({ ok: true, grabandoId: null, enCurso: [] });
+  chrome._registro.offscreen = 1;
+  await ctx.recuperar();
+  const h = chrome.storage.local._volcado().historial[0];
+  assert.deepStrictEqual([...h.tramos.map((t) => t.inicioS)], [0, comun.DURACION_TRAMO_S]);
 });
 
 // ============================================================================

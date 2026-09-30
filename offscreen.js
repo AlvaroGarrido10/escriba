@@ -26,6 +26,7 @@ let mediaRecorder = null, streams = [], audioCtx = null, rotaTimer = null, parci
 let altavoz = null;        // <audio> que devuelve la pestaña capturada a los altavoces
 const MS_PARCIAL = 30 * 1000;         // cada cuánto se guarda el tramo que se está grabando
 let tramos = [], trozosTramo = [], tabTitle = "", medidores = [], errorMic = "";
+let participantes = "";     // los que escribió el usuario al empezar (opcional)
 let medidas = [];          // medidas exactas de tramo aún en vuelo
 let ctxDecode = null;      // contexto dedicado a decodificar, aparte del de grabación
 // PICO_SILENCIO y UMBRAL_VOZ viven en comun.js: la página de importar los usa igual.
@@ -94,8 +95,9 @@ async function leerConfig() {
 }
 
 // --- grabación ---
-async function start({ modo, streamId, tabTitle: tt }) {
+async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
   tabTitle = tt || "";
+  participantes = (pp || "").trim();
   // "playback": este contexto no necesita respuesta inmediata, solo alimenta la
   // grabación. Con el valor por defecto trabaja en bloques de ~10 ms y cualquier
   // tirón del proceso se oye como un chasquido si algo sale por él a los altavoces.
@@ -340,6 +342,7 @@ function entradaNueva() {
   return {
     id: reunionActual, fecha: f.legible, titulo: tabTitle || "Reunión", origen: "grabacion",
     estado: "grabando", progreso: "", transcript: "", analisis: {}, tramos: [], meta: { fichero: f.fichero },
+    participantes,
   };
 }
 
@@ -431,7 +434,7 @@ async function cierraGrabacion() {
   }
 
   const lista = partes.map((p, i) => ({
-    estado: p.pico < PICO_SILENCIO ? "mudo" : "pendiente", pico: p.pico, etiqueta: etiquetaTramo(i),
+    estado: p.pico < PICO_SILENCIO ? "mudo" : "pendiente", pico: p.pico, etiqueta: etiquetaTramo(i), inicioS: i * DURACION_TRAMO_S,
   }));
   for (let i = 0; i < lista.length; i++) if (lista[i].estado === "mudo") await olvidaAudio(id, i);
   await histActualizar(id, {
@@ -468,7 +471,7 @@ async function ronda(id) {
   const trabajador = async () => {
     while (cola.length && !borrada) {
       const i = cola.shift();
-      const res = parar ? { ...parar } : await transcribirTramo(id, i, total, h.tramos[i]);
+      const res = parar ? { ...parar } : await transcribirTramo(id, i, total, h.tramos[i], h);
       if (!parar && res.estado === "pendiente" && CODIGOS_CLAVE.includes(res.codigo)) {
         parar = { estado: "pendiente", codigo: res.codigo, error: res.error, detalle: res.detalle };
       }
@@ -489,7 +492,7 @@ async function ronda(id) {
   await cierraRonda(id);
 }
 
-async function transcribirTramo(id, i, total, tramo) {
+async function transcribirTramo(id, i, total, tramo, reunion) {
   const pendiente = (codigo, e) => ({
     estado: "pendiente", codigo, error: textoError(codigo),
     detalle: String((e && e.message) || e || "").slice(0, 300),
@@ -510,9 +513,14 @@ async function transcribirTramo(id, i, total, tramo) {
   if (pico < PICO_SILENCIO) return { estado: "mudo", pico };
 
   try {
-    const r = await transcribirGemini(blob, i + 1, total);
+    const r = await transcribirGemini(blob, i + 1, total, { participantes: (reunion && reunion.participantes) || "" });
     if (r.sinVoz) return { estado: "mudo", pico };
-    return { estado: "ok", texto: r.texto, truncado: !!r.truncado, pico };
+    // Las marcas del modelo cuentan desde el principio del tramo: se pasan a
+    // tiempo de la reunión aquí, una vez, para que el .md, el visor y los
+    // subtítulos no tengan que saber nada de tramos.
+    const ok = { estado: "ok", texto: ajustarTiempos(r.texto, inicioTramo(tramo, i)), truncado: !!r.truncado, pico };
+    if (r.uso) ok.uso = r.uso;
+    return ok;
   } catch (e) {
     return { ...pendiente((e && e.codigo) || "otro", e), pico };
   }
@@ -539,7 +547,29 @@ async function cierraRonda(id) {
   }
   const fin = await aBg("finRonda", { id });
   avisar(!!(fin && fin.estado === "ok"));
+  if (fin && fin.estado === "ok") await actaAutomatica(id);
   await aBg("podar"); // aplica el límite configurado en Opciones
+}
+
+// Acta automática (Opciones). Se hace aquí y no en el service worker: Chrome
+// puede parar el service worker a mitad de una llamada larga, y este documento
+// sigue vivo mientras haga falta. Un fallo no toca la transcripción, que ya está
+// a salvo: el acta se puede pedir a mano desde la biblioteca.
+async function actaAutomatica(id) {
+  let cfg;
+  try { cfg = await leerConfig(); } catch (_) { return; }
+  if (!cfg.autoActa || typeof analizarReunion !== "function") return;
+  const plantilla = cfg.autoActaPlantilla || "acta", prov = cfg.autoActaProv || "gemini";
+  const h = await aBg("histLeer", { id });
+  if (!h || h.estado !== "ok") return;
+  if ((h.analisis || {})[claveAnalisis(plantilla, prov)]) return; // ya la tiene
+  try {
+    const r = await analizarReunion(h, plantilla, prov, cfg);
+    await aBg("histAnalisis", { id, clave: r.clave, texto: r.texto, uso: r.uso });
+  } catch (e) {
+    console.warn("Escriba: el acta automática falló", e);
+    await histActualizar(id, { errorActa: String((e && e.message) || e).slice(0, 300) }).catch(() => {});
+  }
 }
 
 // --- prueba de 3 s de punta a punta (botón Diagnóstico) ---
@@ -628,21 +658,36 @@ async function selftest({ modo, streamId }) {
 // --- Gemini ---
 function marcar(err, props) { return Object.assign(err, props); }
 
-function construirPrompt(glosario, idx, total) {
+const IDIOMAS = { es: "español", en: "inglés", ca: "catalán", pt: "portugués", fr: "francés", de: "alemán", it: "italiano" };
+
+// opciones: { participantes, idioma }  (idioma: código de IDIOMAS o "auto")
+function construirPrompt(glosario, idx, total, opciones) {
+  const o = opciones || {};
+  const idioma = o.idioma || "es";
+  const cabecera = idioma === "auto"
+    ? "Transcribe íntegramente este audio de una reunión de trabajo, en el idioma o idiomas en que se hable: si se mezclan, deja cada frase en su idioma original, sin traducir."
+    : `Transcribe íntegramente este audio de una reunión de trabajo en ${IDIOMAS[idioma] || "español"}.`;
   const contexto = total > 1
     ? `Este audio es el TRAMO ${idx} de ${total} de una misma reunión ya cortada en trozos: empieza y acaba a mitad de conversación. Transcribe solo lo que suene, sin introducción ni despedida propias.\n`
     : "";
-  return `Transcribe íntegramente este audio de una reunión de trabajo en español.
+  // Los nombres solo con prueba: un nombre mal puesto es peor que «Hablante 2»,
+  // porque parece un dato y nadie lo revisa.
+  const nombres = o.participantes
+    ? `- Asistentes de la reunión: ${o.participantes}. Usa el nombre de una persona SOLO si se presenta o alguien la llama por su nombre de forma clara; si hay la menor duda, usa "Hablante 1", "Hablante 2"… y mantén la misma etiqueta para la misma voz.\n`
+    : "";
+  return `${cabecera}
 ${contexto}Reglas:
 - Si el audio está en silencio, solo tiene ruido de fondo o no contiene ninguna voz inteligible, responde EXACTAMENTE la palabra SIN_VOZ y nada más. No inventes una reunión bajo ningún concepto.
 - Transcripción literal y COMPLETA, desde el primer segundo hasta el último. No resumas, no omitas y no te detengas antes de que termine el audio.
-- Si distingues hablantes, etiqueta cada intervención como "Hablante 1:", "Hablante 2:"...
-- Marca con [inaudible] únicamente lo que de verdad no se entienda.
+- Cada intervención en su propia línea, empezando por la marca de tiempo [MM:SS] contada desde el principio de ESTE audio y la etiqueta del hablante: "[MM:SS] Hablante 1: texto".
+- Si distingues hablantes, etiquétalos como "Hablante 1:", "Hablante 2:"...
+${nombres}- Marca con [inaudible] únicamente lo que de verdad no se entienda.
 ${glosario ? `- Vocabulario del dominio (respeta esta ortografía exacta): ${glosario}.` : ""}
 Devuelve SOLO la transcripción.`;
 }
 
-async function transcribirGemini(blob, idx = 1, total = 1) {
+// opciones: { participantes } de la reunión; el idioma sale de la configuración.
+async function transcribirGemini(blob, idx = 1, total = 1, opciones) {
   const cfg = await leerConfig();
   const key = cfg.geminiKey;
   if (!key) throw marcar(new Error("Falta la clave de Gemini: ábrela en Opciones."), { codigo: "sin_clave" });
@@ -650,7 +695,8 @@ async function transcribirGemini(blob, idx = 1, total = 1) {
   const modelos = [preferido, ...MODELOS_RESERVA.filter((m) => m !== preferido)];
 
   const { parte: parteAudio, fileName } = await prepararAudio(blob, key);
-  const prompt = construirPrompt((cfg && cfg.glosario) || "", idx, total);
+  const prompt = construirPrompt((cfg && cfg.glosario) || "", idx, total,
+    { participantes: (opciones && opciones.participantes) || "", idioma: cfg.idioma || "es" });
 
   try {
     let ultimo = null;
@@ -721,7 +767,8 @@ async function generar(key, modelo, prompt, parteAudio) {
   }
   // El modelo confirma que no hay voz: se respeta, no se reintenta.
   if (/^\s*SIN_VOZ[\s.]*$/i.test(texto)) return { texto: "", sinVoz: true };
-  return { texto, truncado: razon === "MAX_TOKENS" };
+  const u = data.usageMetadata || {};
+  return { texto, truncado: razon === "MAX_TOKENS", uso: { entrada: u.promptTokenCount || 0, salida: u.candidatesTokenCount || 0 } };
 }
 
 // Audio pequeño va en el propio cuerpo; grande, por la Files API.

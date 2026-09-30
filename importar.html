@@ -50,6 +50,8 @@
   <div id="formulario" hidden>
     <label class="campo" for="titulo">Nombre de la reunión</label>
     <input type="text" id="titulo" maxlength="120">
+    <label class="campo" for="participantes">Participantes <span style="font-weight:400;color:#8b7c83">(opcional: ayuda a poner nombre a cada voz)</span></label>
+    <input type="text" id="participantes" maxlength="400" placeholder="Ej: Marcos, Ana, Clara">
     <div class="acciones">
       <button id="btnTranscribir">✍️ Transcribir</button>
       <button id="btnOtro" class="sec">Elegir otro</button>
@@ -63,7 +65,7 @@
   <div id="progreso" hidden>
     <div id="progresoTxt" class="aviso info"></div>
     <div class="barra"><div id="progresoBarra"></div></div>
-    <p class="nota">Puedes cerrar esta pestaña cuando pase a «Transcribiendo»: sigue sola y el resultado aparecerá en el historial de Escriba y en Descargas/reuniones.</p>
+    <p class="nota">Puedes cerrar esta pestaña cuando pase a «Transcribiendo»: sigue sola y el resultado aparecerá en la <a href="reuniones.html" target="_blank">biblioteca de Escriba</a> y en Descargas/reuniones.</p>
   </div>
 
   <div id="resultado" hidden>
@@ -71,6 +73,7 @@
     <textarea id="texto" readonly></textarea>
     <div class="acciones">
       <button id="btnCopiar" class="sec">📋 Copiar</button>
+      <button id="btnAbrir" class="sec" hidden>📚 Abrir en la biblioteca</button>
       <button id="btnNuevo" class="sec">📂 Transcribir otro</button>
     </div>
   </div>

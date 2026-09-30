@@ -20,10 +20,6 @@ YA ESTÁ. Para grabar una reunión, elige modo:
    - "Pestaña + micro": lo normal para Meet/Teams. Ponte EN esa pestaña, clic al
      icono y "Empezar a grabar". Un solo clic, pero graba ESA pestaña: si te
      equivocas de ventana, no coge nada.
-   - "Todo el PC + micro": coge el audio de todo el ordenador, venga de donde venga.
-     Chrome te pedirá elegir pantalla cada vez: elige PANTALLA COMPLETA y marca
-     abajo "Compartir también el audio del sistema" (si no la marcas, no hay audio).
-     Verás la barra de "Estás compartiendo tu pantalla" mientras grabas.
    - "Solo micro": reuniones presenciales.
    - Al terminar: "Parar y transcribir". La grabación se trocea en tramos de 5 min
      y se transcriben uno a uno: verás el avance ("3/12 tramos"). Una reunión de

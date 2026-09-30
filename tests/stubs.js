@@ -97,7 +97,6 @@ function nuevoChrome(opciones = {}) {
     },
     tabs: { async query() { return []; } },
     tabCapture: { async getMediaStreamId() { return "stream-de-prueba"; } },
-    desktopCapture: { chooseDesktopMedia(_t, _tab, cb) { cb("stream-de-prueba", { canRequestAudioTrack: true }); } },
   };
   return chrome;
 }
@@ -131,10 +130,15 @@ const respGemini = (texto, finishReason = "STOP") =>
 
 // --- APIs de audio ----------------------------------------------------------
 // decodeAudioData devuelve las muestras que el test le haya puesto al blob:
-// así se controla exactamente qué audio "oye" el medidor.
+// así se controla exactamente qué audio "oye" el medidor. Cada contexto queda
+// en `_instancias` con sus opciones y sus fuentes, para ver qué se conectó a
+// los altavoces (`destination`).
 function nuevoAudioContext() {
-  return function AudioContext() {
-    return {
+  const instancias = [];
+  function AudioContext(opciones = {}) {
+    const ctx = {
+      _opciones: opciones,
+      _fuentes: [],
       sampleRate: 16000,
       async decodeAudioData(buffer) {
         const muestras = buffer && buffer._muestras;
@@ -146,16 +150,66 @@ function nuevoAudioContext() {
         };
       },
       async close() {},
-      createDynamicsCompressor: () => nodo(),
+      createDynamicsCompressor: () => ({
+        ...nodo(), threshold: { value: 0 }, knee: { value: 0 }, ratio: { value: 1 }, attack: { value: 0 }, release: { value: 0 },
+      }),
       createGain: () => ({ ...nodo(), gain: { value: 1 } }),
       createAnalyser: () => ({ ...nodo(), fftSize: 2048, getFloatTimeDomainData(b) { b.fill(0); } }),
       createMediaStreamDestination: () => ({ ...nodo(), stream: { getTracks: () => [] } }),
-      createMediaStreamSource: () => nodo(),
+      createMediaStreamSource: (stream) => { const n = { ...nodo(), _stream: stream }; ctx._fuentes.push(n); return n; },
       destination: nodo(),
     };
-  };
+    instancias.push(ctx);
+    return ctx;
+  }
+  AudioContext._instancias = instancias;
+  return AudioContext;
 }
-const nodo = () => ({ connect() {}, disconnect() {}, channelCount: 1, channelCountMode: "max" });
+const nodo = () => {
+  const n = { _destinos: [], connect(d) { n._destinos.push(d); return d; }, disconnect() {}, channelCount: 1, channelCountMode: "max" };
+  return n;
+};
+
+// <audio> de mentira. Con `falla`, play() se rechaza como cuando Chrome no deja
+// reproducir sin un gesto del usuario.
+function nuevoAudioElemento({ falla = false } = {}) {
+  const creados = [];
+  function Audio() {
+    const el = {
+      srcObject: null, paused: true,
+      async play() {
+        if (falla) throw new Error("NotAllowedError: play() failed because the user didn't interact with the document first.");
+        el.paused = false;
+      },
+      pause() { el.paused = true; },
+    };
+    creados.push(el);
+    return el;
+  }
+  Audio._creados = creados;
+  return Audio;
+}
+
+// getUserMedia y MediaRecorder mínimos para arrancar y parar una grabación.
+// Cada stream guarda las restricciones con que se pidió (`_c`).
+function nuevosMedios() {
+  const pista = () => { const p = { parada: false, stop() { p.parada = true; } }; return p; };
+  const mediaDevices = {
+    async getUserMedia(c) {
+      const pistas = [pista()];
+      return { _c: c, getTracks: () => pistas, getAudioTracks: () => pistas };
+    },
+  };
+  function MediaRecorder() {
+    const r = {
+      state: "inactive", ondataavailable: null, onstop: null,
+      start() { r.state = "recording"; },
+      stop() { r.state = "inactive"; setImmediate(() => r.onstop && r.onstop()); },
+    };
+    return r;
+  }
+  return { mediaDevices, MediaRecorder };
+}
 
 // Blob de mentira que transporta las muestras que debe "contener".
 function blobDe(muestras, size) {
@@ -189,4 +243,6 @@ function nuevosAudios(inicial = []) {
   };
 }
 
-module.exports = { almacen, nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, blobDe, nuevosAudios, espera0 };
+module.exports = {
+  almacen, nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, nuevoAudioElemento, nuevosMedios, blobDe, nuevosAudios, espera0,
+};

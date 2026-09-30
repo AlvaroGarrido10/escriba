@@ -89,11 +89,6 @@ async function init() {
 function pintaObjetivo(obj) {
   const modo = document.querySelector(".modo input:checked").value;
   if (modo === "mic") { $("estado").textContent = "🎙️ Se grabará solo tu micrófono."; return; }
-  if (modo === "pc_mic") {
-    $("estado").innerHTML = "💻 Se grabará <b>todo el audio del PC</b> + tu micro.<br>"
-      + '<span style="font-size:10.5px;color:#777">Al empezar, Chrome te pedirá elegir pantalla: elige <b>pantalla completa</b> y marca <b>«Compartir también el audio del sistema»</b>.</span>';
-    return;
-  }
   if (!obj) { $("estado").innerHTML = "⚠️ No hay ninguna pestaña con audio. Abre la reunión o usa «Solo micro»."; return; }
   const t = obj.titulo.length > 34 ? obj.titulo.slice(0, 34) + "…" : obj.titulo;
   $("estado").innerHTML = obj.suena

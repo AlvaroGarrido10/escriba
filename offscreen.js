@@ -23,6 +23,7 @@ const BASE = "https://generativelanguage.googleapis.com";
 const MODELOS_RESERVA = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"];
 
 let mediaRecorder = null, streams = [], audioCtx = null, rotaTimer = null, parcialTimer = null;
+let altavoz = null;        // <audio> que devuelve la pestaña capturada a los altavoces
 const MS_PARCIAL = 30 * 1000;         // cada cuánto se guarda el tramo que se está grabando
 let tramos = [], trozosTramo = [], tabTitle = "", medidores = [], errorMic = "";
 let medidas = [];          // medidas exactas de tramo aún en vuelo
@@ -95,7 +96,10 @@ async function leerConfig() {
 // --- grabación ---
 async function start({ modo, streamId, tabTitle: tt }) {
   tabTitle = tt || "";
-  audioCtx = new AudioContext({ sampleRate: 48000 });
+  // "playback": este contexto no necesita respuesta inmediata, solo alimenta la
+  // grabación. Con el valor por defecto trabaja en bloques de ~10 ms y cualquier
+  // tirón del proceso se oye como un chasquido si algo sale por él a los altavoces.
+  audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: "playback" });
   streams = [];
   medidores.forEach((m) => clearInterval(m.timer));
   medidores = [];
@@ -130,30 +134,13 @@ async function start({ modo, streamId, tabTitle: tt }) {
     const g = audioCtx.createGain();
     src.connect(g);
     g.connect(mezcla);
-    // Capturar una pestaña la silencia: hay que devolver el sonido a los altavoces.
-    src.connect(audioCtx.destination);
+    altavoz = aLosAltavoces(tabStream, audioCtx, src);
     medidores.push(vigila("pestaña", g));
   }
 
-  if (modo === "pc_mic" && streamId) {
-    // Chrome no entrega audio de escritorio sin pedir también vídeo. Se pide al
-    // mínimo y no se usa: si se corta la pista de vídeo, se acaba la captura.
-    const pcStream = await navigator.mediaDevices.getUserMedia({
-      audio: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: streamId } },
-      video: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: streamId, maxWidth: 160, maxHeight: 120, maxFrameRate: 1 } },
-    });
-    streams.push(pcStream);
-    if (!pcStream.getAudioTracks().length) {
-      streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
-      throw new Error("La pantalla se compartió sin audio. Repite y marca «Compartir también el audio del sistema».");
-    }
-    const g = audioCtx.createGain();
-    audioCtx.createMediaStreamSource(pcStream).connect(g);
-    g.connect(mezcla);
-    // OJO: aquí NO se reenvía a los altavoces. El audio del sistema ya está
-    // sonando; devolverlo crearía un bucle de realimentación.
-    medidores.push(vigila("PC", g));
-  }
+  // No hay modo «todo el PC»: Chrome solo deja usar la captura de pantalla al
+  // documento que la pidió, y este documento no puede enseñar el selector (se
+  // quitó en la 3.1.1; no llegó a grabar nunca).
 
   try {
     const mic = await navigator.mediaDevices.getUserMedia({
@@ -234,6 +221,31 @@ function arrancaTramo(stream) {
     else arrancaTramo(stream); // siguiente tramo, la grabación no se interrumpe
   };
   mediaRecorder.start(2000);
+}
+
+// Capturar una pestaña la silencia: su sonido hay que devolverlo a los
+// altavoces. Se hace con un <audio> y no conectando el AudioContext a la salida:
+// por el AudioContext la reunión se oía con microcortes y chasquidos (24/09). El
+// reproductor de Chrome para audio en directo lleva su propio colchón y absorbe
+// esos tirones. No se espera a play(): con una pestaña callada podría tardar, y
+// la grabación no puede quedarse esperando. Si Chrome no deja sonar el <audio>,
+// se vuelve al AudioContext: mejor algún corte que la reunión muda.
+function aLosAltavoces(stream, ctx, src) {
+  const el = new Audio();
+  el.srcObject = stream;
+  el.play().catch((e) => {
+    if (el.srcObject !== stream || ctx.state === "closed") return; // ya se soltó
+    console.warn("Escriba: el <audio> no pudo sonar, la pestaña va por el AudioContext:", e);
+    el.srcObject = null;
+    src.connect(ctx.destination);
+  });
+  return el;
+}
+
+function sueltaAltavoz(el) {
+  if (!el) return;
+  try { el.pause(); } catch (_) {}
+  el.srcObject = null;
 }
 
 function cortaTramo() {
@@ -378,6 +390,8 @@ async function cierraGrabacion() {
   medidores.forEach((m) => clearInterval(m.timer));
   const audio = informeAudio();
   streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+  sueltaAltavoz(altavoz);
+  altavoz = null;
   if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
 
   // Ningún tramo se descarta antes de que su medida exacta esté hecha.
@@ -534,6 +548,7 @@ async function selftest({ modo, streamId }) {
   const ctx = new AudioContext();
   const destino = ctx.createMediaStreamDestination();
   const activos = [];
+  let el = null;
   try {
     // Mide cada fuente por separado: saber CUAL no suena es medio diagnostico.
     const sondas = [];
@@ -558,24 +573,10 @@ async function selftest({ modo, streamId }) {
       });
       activos.push(t);
       const s = ctx.createMediaStreamSource(t);
-      s.connect(destino); s.connect(ctx.destination);
+      s.connect(destino);
+      el = aLosAltavoces(t, ctx, s);
       sonda("pestaña", s);
       fuentes.push("pestaña");
-    }
-    if (modo === "pc_mic" && streamId) {
-      const t = await navigator.mediaDevices.getUserMedia({
-        audio: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: streamId } },
-        video: { mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: streamId, maxWidth: 160, maxHeight: 120, maxFrameRate: 1 } },
-      });
-      activos.push(t);
-      if (t.getAudioTracks().length) {
-        const s = ctx.createMediaStreamSource(t);
-        s.connect(destino); // sin reenviar a los altavoces: haría bucle
-        sonda("PC", s);
-        fuentes.push("audio del PC");
-      } else {
-        fuentes.push("audio del PC NO (no marcaste «compartir audio del sistema»)");
-      }
     }
     try {
       const m = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -599,6 +600,7 @@ async function selftest({ modo, streamId }) {
     await fin;
     sondas.forEach((s) => clearInterval(s.timer));
     activos.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+    sueltaAltavoz(el);
     ctx.close();
 
     const blob = new Blob(trozos, { type: "audio/webm" });
@@ -617,6 +619,7 @@ async function selftest({ modo, streamId }) {
     return res;
   } catch (e) {
     activos.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+    sueltaAltavoz(el);
     try { ctx.close(); } catch (_) {}
     return { ok: false, error: (e && e.message) || String(e) };
   }

@@ -8,7 +8,9 @@
 
 const assert = require("assert");
 const { cargar, mensajero } = require("./load");
-const { nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, blobDe, nuevosAudios, espera0 } = require("./stubs");
+const {
+  nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, nuevoAudioElemento, nuevosMedios, blobDe, nuevosAudios, espera0,
+} = require("./stubs");
 const comun = require("../comun.js");
 
 // --- mini runner ------------------------------------------------------------
@@ -246,6 +248,73 @@ test("el silencio de verdad sigue clasificándose como silencio", async () => {
   const m = await ctx.medirExacto(blobDe(mudo));
   assert.ok(m.pico < 0.005, "pico=" + m.pico);
   assert.strictEqual(m.voz, 0);
+});
+
+// ============================================================================
+grupo("offscreen.js — lo que suena por los altavoces mientras se graba");
+
+// Documento offscreen listo para grabar de verdad: getUserMedia, MediaRecorder y
+// <audio> simulados. `fallaPlay` imita un Chrome que no deja sonar el <audio>.
+function grabador({ fallaPlay = false } = {}) {
+  const chrome = nuevoChrome();
+  chrome.runtime.sendMessage = async (msg) => (msg.cmd === "cfg" ? { geminiKey: "K" } : { ok: true });
+  const medios = nuevosMedios();
+  const entorno = {
+    ...entornoOffscreen(chrome, nuevoFetch([])),
+    navigator: { mediaDevices: medios.mediaDevices },
+    MediaRecorder: medios.MediaRecorder,
+    Audio: nuevoAudioElemento({ falla: fallaPlay }),
+  };
+  return { ctx: cargar(["comun.js", "offscreen.js"], entorno), entorno };
+}
+const vaAAltavoces = (ac) => ac._fuentes.some((f) => f._destinos.includes(ac.destination));
+
+test("REGRESIÓN 24/09: la pestaña vuelve a los altavoces por un <audio>, no por el AudioContext", async () => {
+  // Por el AudioContext la reunión se oía con microcortes y chasquidos.
+  const { ctx, entorno } = grabador();
+  await ctx.start({ modo: "tab_mic", streamId: "s1", tabTitle: "Infomaniak Meet" });
+  const ac = entorno.AudioContext._instancias[0];
+  const [el] = entorno.Audio._creados;
+  assert.ok(el, "tiene que crearse un <audio>");
+  assert.strictEqual(el.paused, false, "y estar sonando");
+  assert.strictEqual(el.srcObject._c.audio.mandatory.chromeMediaSource, "tab", "con el sonido de la pestaña");
+  assert.ok(!vaAAltavoces(ac), "el AudioContext no puede ir a los altavoces: por ahí salían los chasquidos");
+});
+
+test("al parar la grabación el <audio> se suelta", async () => {
+  const { ctx, entorno } = grabador();
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  const [el] = entorno.Audio._creados;
+  ctx.stop();
+  await hasta(() => el.paused && el.srcObject === null, "que se soltara el <audio>");
+});
+
+test("si Chrome no deja sonar el <audio>, la pestaña se oye por el AudioContext y con colchón grande", async () => {
+  const { ctx, entorno } = grabador({ fallaPlay: true });
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  const ac = entorno.AudioContext._instancias[0];
+  await hasta(() => vaAAltavoces(ac), "que la reunión se oyera por el AudioContext");
+  assert.strictEqual(ac._opciones.latencyHint, "playback",
+    "con el valor por defecto trabaja en bloques de ~10 ms y cualquier tirón suena");
+});
+
+test("«Solo micro» no devuelve nada a los altavoces: haría eco", async () => {
+  const { ctx, entorno } = grabador();
+  await ctx.start({ modo: "mic", streamId: "" });
+  const ac = entorno.AudioContext._instancias[0];
+  assert.strictEqual(entorno.Audio._creados.length, 0, "no debe crear <audio>");
+  assert.ok(!vaAAltavoces(ac), "nada al AudioContext de los altavoces");
+});
+
+test("el Diagnóstico también devuelve la pestaña por un <audio> y lo suelta al acabar", async () => {
+  const { ctx, entorno } = grabador();
+  const r = await ctx.selftest({ modo: "tab_mic", streamId: "s1" });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  const ac = entorno.AudioContext._instancias[0];
+  const [el] = entorno.Audio._creados;
+  assert.ok(el, "tiene que crearse un <audio>");
+  assert.ok(!vaAAltavoces(ac));
+  assert.ok(el.paused && el.srcObject === null, "al acabar la prueba se suelta");
 });
 
 // ============================================================================

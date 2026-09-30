@@ -316,23 +316,6 @@ async function podar() {
   return borrar(sobran.map((h) => h.id), true);
 }
 
-// Audio de TODO el PC. Chrome obliga a que el usuario elija la fuente cada vez;
-// no hay forma de saltarse el selector. En Windows el audio del sistema solo
-// viaja si se comparte una PANTALLA COMPLETA y se marca la casilla de audio.
-async function elegirEscritorio() {
-  const [activa] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const r = await new Promise((res) =>
-    chrome.desktopCapture.chooseDesktopMedia(["screen", "audio"], activa,
-      (streamId, opciones) => res({ streamId, opciones: opciones || {} })));
-  if (!r.streamId) {
-    return { ok: false, error: "Has cancelado la selección de pantalla." };
-  }
-  if (r.opciones.canRequestAudioTrack === false) {
-    return { ok: false, error: "Elegiste la pantalla pero sin marcar «Compartir también el audio del sistema». Vuelve a intentarlo y marca esa casilla abajo a la izquierda del selector." };
-  }
-  return { ok: true, streamId: r.streamId };
-}
-
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // IMPORTANTE: descartar de forma SÍNCRONA lo que no es para el service worker.
   // Si devolviéramos true para mensajes dirigidos al offscreen, el canal quedaría
@@ -343,12 +326,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       if (msg.cmd === "start") {
         let streamId = "", tabTitle = "";
-        if (msg.modo === "pc_mic") {
-          const r = await elegirEscritorio();
-          if (!r.ok) { sendResponse(r); return; }
-          streamId = r.streamId;
-          tabTitle = "Todo el audio del PC";
-        } else if (msg.modo === "tab_mic") {
+        if (msg.modo === "tab_mic") {
           const tab = await pestanaObjetivo();
           if (!tab) {
             sendResponse({ ok: false, error: "No encuentro ninguna pestaña con la reunión. Ábrela (Meet, Teams, YouTube…) o usa «Solo micro»." });
@@ -385,11 +363,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
         let streamId = "", tabTitle = "";
-        if (msg.modo === "pc_mic") {
-          const r = await elegirEscritorio();
-          if (!r.ok) { sendResponse(r); return; }
-          streamId = r.streamId;
-        } else if (msg.modo === "tab_mic") {
+        if (msg.modo === "tab_mic") {
           const tab = await pestanaObjetivo();
           if (!tab) {
             sendResponse({ ok: false, error: "No hay ninguna pestaña capturable. Abre la reunión (o un vídeo) y reintenta." });

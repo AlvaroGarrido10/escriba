@@ -85,7 +85,7 @@ Y la de la 2.5: WAV sintético de 13 minutos con 120 puntos numerados → trocea
 
 ## Uso
 
-1. En la pestaña de la reunión, pulsa el icono de Escriba y elige modo: **pestaña + micro**, **todo el PC + micro** o **solo micro**.
+1. En la pestaña de la reunión, pulsa el icono de Escriba y elige modo: **pestaña + micro** (Meet, Teams o cualquier reunión en el navegador) o **solo micro** (presenciales).
 2. **⏺ Empezar a grabar.** Puedes cerrar el popup: el badge REC indica que sigue grabando.
 3. **⏹ Parar y transcribir.** Verás el avance por tramos («3/12»). Una reunión de una hora tarda un par de minutos.
 4. La transcripción se descarga sola, queda en el historial y puedes analizarla con la IA que elijas.

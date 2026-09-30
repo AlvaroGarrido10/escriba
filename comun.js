@@ -199,6 +199,11 @@ function construirMarkdown(h) {
   }
   if (r.perdidos) md += `\n> ⚠️ **${r.perdidos} de ${tramos.length} tramos no se pueden recuperar:** su audio ya no está disponible.\n`;
   if (r.mudos) md += `\n> ℹ️ **${r.mudos} de ${tramos.length} tramos venían sin voz** y se han dejado en blanco a propósito.\n`;
+  if (h.notas && String(h.notas).trim()) md += `\n## Notas\n\n${String(h.notas).trim()}\n`;
+  if (Array.isArray(h.marcas) && h.marcas.length) {
+    md += "\n## Momentos marcados\n\n" +
+      h.marcas.map((x) => `- [${formatoTiempo(x.t)}]${x.nota ? " " + x.nota : ""}`).join("\n") + "\n";
+  }
 
   const cuerpo = tramos.map((t, i) => {
     const cab = `Tramo ${i + 1} de ${tramos.length} (${t.etiqueta || etiquetaTramo(i)})`;

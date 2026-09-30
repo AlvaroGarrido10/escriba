@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Escriba",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "Graba tus reuniones (Meet, Teams o presenciales), transcríbelas con IA y genera actas con Gemini, GPT o Claude.",
   "permissions": [
     "tabCapture",
@@ -10,7 +10,9 @@
     "activeTab",
     "offscreen",
     "unlimitedStorage",
-    "alarms"
+    "alarms",
+    "notifications",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
@@ -34,5 +36,22 @@
     "32": "icon32.png",
     "48": "icon48.png",
     "128": "icon128.png"
+  },
+  "side_panel": {
+    "default_path": "vivo.html"
+  },
+  "commands": {
+    "grabar": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Empezar o parar la grabación"
+    },
+    "marcar": {
+      "suggested_key": {
+        "default": "Alt+Shift+M"
+      },
+      "description": "Marcar este momento de la reunión"
+    }
   }
 }

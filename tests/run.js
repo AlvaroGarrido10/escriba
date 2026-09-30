@@ -1092,6 +1092,180 @@ test("una grabación recuperada tras un cierre sabe dónde empieza cada tramo", 
 });
 
 // ============================================================================
+// 3.3 — grabar mejor (docs/2026-09-30-plan-mejoras.md, tanda B)
+// ============================================================================
+function relojFalso(reloj) {
+  return class extends Date {
+    constructor(...a) { if (a.length) super(...a); else super(reloj.t); }
+    static now() { return reloj.t; }
+  };
+}
+
+// Service worker + documento offscreen GRABANDO de verdad (con los stubs de
+// medios), hablándose como en Chrome. Con `reloj`, Date.now lo decide el test;
+// con `retenerTimeouts`, los setTimeout se guardan en vez de ejecutarse.
+function sistemaGrabando({ fetch: fetchStub = nuevoFetch([]), local = {}, sync = {}, reloj = null, retenerTimeouts = false } = {}) {
+  const chrome = nuevoChrome({ local: { geminiKey: "K", geminiModel: "gemini-flash-latest", ...local }, sync });
+  const aud = nuevosAudios();
+  const bgCtx = cargar("background.js", { chrome, fetch: async () => { throw new Error("bg no debe llamar a la red"); } });
+  bgCtx.audios = aud;
+  const enviarBg = mensajero(chrome);
+  const offChrome = nuevoChrome();
+  offChrome.runtime.sendMessage = (msg) => enviarBg(msg);
+  const medios = nuevosMedios({ conAudio: true });
+  const timeouts = [];
+  const entorno = {
+    ...entornoOffscreen(offChrome, fetchStub),
+    navigator: { mediaDevices: medios.mediaDevices },
+    MediaRecorder: medios.MediaRecorder,
+    Audio: nuevoAudioElemento(),
+  };
+  if (reloj) entorno.Date = relojFalso(reloj);
+  if (retenerTimeouts) entorno.setTimeout = (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length; };
+  const off = cargar(["comun.js", "ia.js", "offscreen.js"], entorno);
+  off.audios = aud;
+  const enviarOff = mensajero(offChrome);
+  chrome.runtime.sendMessage = (msg) => (msg.target === "offscreen" ? enviarOff(msg) : enviarBg(msg));
+  chrome._registro.offscreen = 1;
+  const historial = () => chrome.storage.local._volcado().historial || [];
+  return { chrome, bgCtx, off, audios: aud, medios, timeouts, enviar: enviarBg, historial, entrada: (id) => historial().find((h) => h.id === id) };
+}
+
+grupo("3.3 · transcribir mientras se graba");
+
+test("cada tramo se transcribe en cuanto se cierra, sin esperar a parar", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("[00:10] Hablante 1: uno")], 2: [respGemini("[00:05] Hablante 1: dos")] });
+  const reloj = { t: 3000000 };
+  const s = sistemaGrabando({ fetch: f, reloj });
+  await s.off.start({ modo: "mic" });
+  const id = s.historial()[0].id;
+  reloj.t += comun.DURACION_TRAMO_S * 1000; // el tramo dura lo que dura uno de verdad
+  s.off.cortaTramo();
+  await hasta(() => ((s.entrada(id).tramos || [])[0] || {}).estado === "ok", "que el primer tramo se transcribiera en vivo");
+  reloj.t += 60000;
+  assert.strictEqual(s.entrada(id).estado, "grabando", "la reunión sigue grabándose");
+  assert.strictEqual(s.entrada(id).tramos[0].texto, "[00:10] Hablante 1: uno");
+  s.off.stop();
+  await hasta(() => s.entrada(id).estado === "ok", "que terminara al parar");
+  assert.deepStrictEqual([...s.entrada(id).tramos.map((t) => t.texto)], ["[00:10] Hablante 1: uno", "[05:05] Hablante 1: dos"]);
+  assert.strictEqual(f._llamadas.length, 2, "lo ya transcrito no se vuelve a mandar al parar");
+  assert.strictEqual(s.audios._datos.size, 0);
+});
+
+test("al transcribir en vivo el prompt dice que la reunión sigue en curso", async () => {
+  const ctx = offscreen(nuevoFetch([]));
+  assert.match(ctx.construirPrompt("", 3, null, {}), /TRAMO 3 de una reunión que sigue en curso/);
+});
+
+test("si Chrome se cierra a mitad, lo que ya estaba transcrito se conserva", async () => {
+  const { chrome, ctx } = bg({
+    local: { historial: [{ id: 80, fecha: "x", titulo: "t", estado: "grabando", meta: {},
+      tramos: [{ estado: "ok", texto: "uno", inicioS: 0 }] }] },
+    audios: [[80, 1, blobDe(null)]],
+  });
+  chrome.runtime.sendMessage = async () => ({ ok: true, grabandoId: null, enCurso: [] });
+  chrome._registro.offscreen = 1;
+  await ctx.recuperar();
+  const h = chrome.storage.local._volcado().historial[0];
+  assert.deepStrictEqual([...h.tramos.map((t) => t.estado)], ["ok", "pendiente"]);
+  assert.strictEqual(h.tramos[0].texto, "uno", "el texto del tramo ya transcrito no se pierde");
+});
+
+grupo("3.3 · pausa");
+
+test("pausar para el tramo y el tiempo: las marcas no cuentan la pausa", async () => {
+  const reloj = { t: 1000000 };
+  const f = fetchPorTramo({ 1: [respGemini("[00:30] Hablante 1: antes")], 2: [respGemini("[00:10] Hablante 1: después")] });
+  const s = sistemaGrabando({ fetch: f, reloj, retenerTimeouts: true });
+  await s.off.start({ modo: "mic" });
+  const id = s.historial()[0].id;
+  reloj.t += 60000;
+  s.off.pausar();
+  assert.strictEqual(s.medios.MediaRecorder._creados[0].state, "paused");
+  reloj.t += 140000; // dos minutos y veinte en pausa
+  s.off.reanudar();
+  const corte = s.timeouts.find((x) => x.ms > 1000);
+  assert.strictEqual(corte.ms, comun.DURACION_TRAMO_S * 1000 - 60000, "el tramo se corta cuando lleva 5 min GRABADOS, no de reloj");
+  reloj.t += 100000;
+  s.off.cortaTramo();
+  await hasta(() => ((s.entrada(id).tramos || [])[0] || {}).estado === "ok", "el primer tramo");
+  reloj.t += 30000;
+  s.off.stop();
+  await hasta(() => s.entrada(id).estado === "ok", "que terminara");
+  const h = s.entrada(id);
+  assert.strictEqual(h.tramos[1].inicioS, 160, "el segundo tramo empieza en el minuto 2:40 grabado (60 s + 100 s)");
+  assert.strictEqual(h.tramos[1].texto, "[02:50] Hablante 1: después");
+  assert.strictEqual(h.meta.minutos, 3, "la duración es la grabada (190 s), sin la pausa");
+});
+
+grupo("3.3 · marcadores, notas y silencio");
+
+test("marcar un momento guarda el minuto grabado y la nota", async () => {
+  const reloj = { t: 5000000 };
+  const s = sistemaGrabando({ reloj });
+  await s.off.start({ modo: "mic" });
+  const id = s.historial()[0].id;
+  reloj.t += 125000;
+  const r = await s.enviar({ target: "bg", cmd: "marcar", nota: "presupuesto" });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual([...s.entrada(id).marcas.map((m) => [m.t, m.nota])], [[125, "presupuesto"]]);
+});
+
+test("sin grabación en curso no se puede marcar", async () => {
+  const s = sistemaGrabando();
+  const r = await s.enviar({ target: "bg", cmd: "marcar", nota: "x" });
+  assert.strictEqual(r.ok, false);
+});
+
+test("el .md lleva las notas y los momentos marcados", () => {
+  const md = comun.construirMarkdown({
+    fecha: "x", titulo: "t", meta: { minutos: 1 }, notas: "Llamar a Ribera", marcas: [{ t: 125, nota: "presupuesto" }, { t: 3700 }],
+    tramos: [{ estado: "ok", texto: "[00:01] A: hola" }],
+  });
+  assert.match(md, /## Notas\n\nLlamar a Ribera/);
+  assert.match(md, /## Momentos marcados\n\n- \[02:05\] presupuesto\n- \[1:01:40\]/);
+});
+
+test("dos minutos sin voz avisan una vez, y el aviso se quita al volver la voz", async () => {
+  const reloj = { t: 7000000 };
+  const s = sistemaGrabando({ reloj });
+  await s.off.start({ modo: "mic" });
+  s.off.revisaSilencio(reloj.t + 119000);
+  await espera0();
+  assert.strictEqual(s.chrome._registro.notificaciones.length, 0, "antes de dos minutos, nada");
+  s.off.revisaSilencio(reloj.t + 121000);
+  await hasta(() => s.chrome._registro.notificaciones.length === 1, "el aviso de silencio");
+  s.off.revisaSilencio(reloj.t + 180000);
+  await espera0(); await espera0();
+  assert.strictEqual(s.chrome._registro.notificaciones.length, 1, "no se repite");
+  assert.strictEqual(s.chrome._registro.badges[s.chrome._registro.badges.length - 1], "!");
+  s.off.registraVoz(reloj.t + 190000);
+  await hasta(() => s.chrome._registro.notificaciones.length === 0, "que se quitara el aviso");
+  assert.strictEqual(s.chrome._registro.badges[s.chrome._registro.badges.length - 1], "REC");
+});
+
+test("en pausa no se avisa de silencio", async () => {
+  const reloj = { t: 9000000 };
+  const s = sistemaGrabando({ reloj, retenerTimeouts: true });
+  await s.off.start({ modo: "mic" });
+  s.off.pausar();
+  s.off.revisaSilencio(reloj.t + 600000);
+  await espera0(); await espera0();
+  assert.strictEqual(s.chrome._registro.notificaciones.length, 0);
+});
+
+grupo("3.3 · atajo de teclado");
+
+test("el atajo empieza a grabar con el último modo y, pulsado otra vez, para", async () => {
+  const s = sistemaGrabando({ fetch: fetchPorTramo({ 1: [respGemini("hola")] }) });
+  await s.chrome.storage.session.set({ ultimoModo: "mic" });
+  s.chrome._oyentes.comando.forEach((f) => f("grabar"));
+  await hasta(() => s.chrome.storage.session._volcado().grabando === true, "que empezara a grabar");
+  s.chrome._oyentes.comando.forEach((f) => f("grabar"));
+  await hasta(() => s.chrome.storage.session._volcado().grabando === false, "que parara");
+});
+
+// ============================================================================
 (async function main() {
   let ok = 0, fallos = 0;
   for (const c of casos) {

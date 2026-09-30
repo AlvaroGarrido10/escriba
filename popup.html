@@ -39,6 +39,9 @@
   .item .nota { font-size: 10.5px; color: #7a4a00; margin-top: 3px; line-height: 1.35; }
   .item .acc button:disabled { opacity: .6; cursor: default; }
   .herr { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
+  .ctl { flex: 1; font-size: 11.5px; padding: 6px 4px; border: 1px solid var(--vino); background: #fff; color: var(--vino); border-radius: 7px; cursor: pointer; }
+  .ctl:hover { background: #f7edf2; }
+  #timer.pausa { color: #7b6b73; }
   .herr button { font-size: 11px; padding: 5px 10px; border: 1px solid #bbb; background: #fff; color: #555; border-radius: 6px; cursor: pointer; }
   .herr button:hover { background: #f4f0f2; }
 </style>
@@ -60,9 +63,17 @@
     </div>
     <input id="participantes" maxlength="400" placeholder="👥 Participantes (opcional): Marcos, Ana…" title="Ayuda a poner nombre a cada voz y a sacar el acta" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #ddd;border-radius:8px;font-size:11.5px;margin-bottom:8px">
     <button id="btnRec">⏺ Empezar a grabar</button>
+    <div id="controles" style="display:none;gap:6px;margin-top:6px">
+      <button id="btnPausa" class="ctl">⏸ Pausar</button>
+      <button id="btnMarca" class="ctl" title="Marca este momento (Alt+Shift+M): saldrá en la transcripción y el acta lo tendrá en cuenta">⭐ Marcar</button>
+      <button id="btnVivo" class="ctl" title="Panel lateral con el texto que va llegando, niveles y notas">🪟 En vivo</button>
+    </div>
     <div id="timer">00:00</div>
     <div id="estado"></div>
-    <div style="font-size:10.5px;color:#999;text-align:center">Puedes cerrar este panel: la grabación sigue (verás 🔴 REC en el icono).</div>
+    <div style="font-size:10.5px;color:#999;text-align:center">Puedes cerrar este panel: la grabación sigue (verás 🔴 REC en el icono).<span id="atajo"></span></div>
+    <div id="avisoRgpd" style="display:none;font-size:10.5px;line-height:1.35;color:#6d5f66;background:#f4f0f2;border-radius:6px;padding:5px 8px;margin-top:6px">
+      🔔 Avisa a los asistentes de que grabas la reunión. <a id="ocultaRgpd" style="color:#8c3b57;cursor:pointer">No volver a mostrar</a>
+    </div>
     <div class="herr">
       <button id="btnImportar" title="Transcribir una grabación que ya tienes en el ordenador">📂 Transcribir un archivo</button>
       <button id="btnDiag">🩺 Diagnóstico</button>

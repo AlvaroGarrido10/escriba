@@ -14,6 +14,38 @@ $("lnkBiblio").onclick = () => abrirBiblioteca();
 $("participantes").addEventListener("input", () => {
   chrome.storage.session.set({ participantesBorrador: $("participantes").value });
 });
+
+// El panel lateral solo se puede abrir en respuesta a un clic, y sin esperas
+// por medio: el id de la ventana se averigua antes.
+let ventanaId = null;
+chrome.windows.getCurrent().then((w) => { ventanaId = w.id; }).catch(() => {});
+$("btnVivo").onclick = () => {
+  if (chrome.sidePanel && ventanaId !== null) chrome.sidePanel.open({ windowId: ventanaId }).catch(() => {});
+};
+$("btnPausa").onclick = async () => {
+  const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
+  const r = await chrome.runtime.sendMessage({ target: "bg", cmd: s && s.pausado ? "reanudar" : "pausar" });
+  if (!r || !r.ok) { $("estado").textContent = "❌ " + ((r && r.error) || "No se pudo."); return; }
+  refrescaGrabacion();
+};
+$("btnMarca").onclick = async () => {
+  const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "marcar", nota: "" });
+  $("estado").textContent = r && r.ok ? `⭐ Momento marcado en el ${formatoTiempo(r.marca.t)}. Puedes añadirle una nota en el panel en vivo.` : "❌ " + ((r && r.error) || "No se pudo marcar.");
+};
+
+// Recordatorio legal: grabar a otros sin avisarles no es buena idea (RGPD).
+chrome.storage.sync.get({ avisoRgpdOculto: false }).then(({ avisoRgpdOculto }) => {
+  $("avisoRgpd").style.display = avisoRgpdOculto ? "none" : "block";
+});
+$("ocultaRgpd").onclick = () => { chrome.storage.sync.set({ avisoRgpdOculto: true }); $("avisoRgpd").style.display = "none"; };
+
+// El atajo puede haberlo cambiado el usuario en chrome://extensions/shortcuts.
+if (chrome.commands && chrome.commands.getAll) {
+  chrome.commands.getAll().then((cs) => {
+    const g = cs.find((c) => c.name === "grabar");
+    if (g && g.shortcut) $("atajo").textContent = ` Atajo: ${g.shortcut}.`;
+  }).catch(() => {});
+}
 $("btnArreglaMic").onclick = () => chrome.runtime.openOptionsPage();
 
 // El permiso de micrófono se concede al ORIGEN de la extensión, y solo lo puede
@@ -100,7 +132,7 @@ async function init() {
   const { participantesBorrador } = await chrome.storage.session.get({ participantesBorrador: "" });
   $("participantes").value = participantesBorrador;
   const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
-  if (s && s.grabando) modoGrabando(s.t0);
+  if (s && s.grabando) modoGrabando(s);
   else pintaObjetivo(s && s.objetivo);
   const { historial } = await chrome.storage.local.get({ historial: [] });
   if (historial[0]) ultimoIdVisto = ESTADOS_FINALES.includes(historial[0].estado) ? historial[0].id : null;
@@ -129,13 +161,15 @@ $("btnRec").onclick = async () => {
     const modo = document.querySelector(".modo input:checked").value;
     $("estado").textContent = "Arrancando…";
     const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "start", modo, participantes: $("participantes").value.trim() });
-    if (r && r.ok) modoGrabando(Date.now());
+    if (r && r.ok) refrescaGrabacion();
     else $("estado").textContent = "❌ " + ((r && r.error) || "No se pudo iniciar");
   } else {
     await chrome.runtime.sendMessage({ target: "bg", cmd: "stop" });
     clearInterval(timerInt);
     $("btnRec").textContent = "⏺ Empezar a grabar";
     $("btnRec").classList.remove("grabando");
+    $("controles").style.display = "none";
+    $("timer").classList.remove("pausa");
     $("estado").textContent = "⏳ Transcribiendo… (aparecerá aquí en cuanto esté)";
     $("participantes").value = "";
     $("participantes").disabled = false;
@@ -144,16 +178,27 @@ $("btnRec").onclick = async () => {
   }
 };
 
-function modoGrabando(t0) {
+// s: el estado de la sesión (t0, pausado, pausadoDesde, pausaMs). El reloj
+// cuenta tiempo GRABADO: en pausa se para.
+function modoGrabando(s) {
   $("btnRec").textContent = "⏹ Parar y transcribir";
   $("btnRec").classList.add("grabando");
-  $("estado").textContent = "🔴 Grabando…";
+  $("estado").textContent = s.pausado ? "⏸ En pausa: no se graba nada hasta que reanudes." : "🔴 Grabando…";
   $("participantes").disabled = true;
+  $("controles").style.display = "flex";
+  $("btnPausa").textContent = s.pausado ? "▶ Reanudar" : "⏸ Pausar";
+  $("timer").classList.toggle("pausa", !!s.pausado);
   clearInterval(timerInt);
-  timerInt = setInterval(() => {
-    const s = Math.floor((Date.now() - t0) / 1000);
-    $("timer").textContent = String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
-  }, 500);
+  const pinta = () => {
+    const ms = (s.pausado ? s.pausadoDesde : Date.now()) - s.t0 - (s.pausaMs || 0);
+    $("timer").textContent = formatoTiempo(Math.max(0, ms) / 1000);
+  };
+  pinta();
+  timerInt = setInterval(pinta, 500);
+}
+async function refrescaGrabacion() {
+  const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
+  if (s && s.grabando) modoGrabando(s);
 }
 
 // ---------- Diagnóstico ----------

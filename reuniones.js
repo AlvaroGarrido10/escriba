@@ -140,6 +140,7 @@ function pintaVista(nueva) {
 
   pintaAviso();
   $("btnReintentar").hidden = h.estado !== "pendiente";
+  pintaNotas(nueva);
   pintaHablantes();
   pintaTexto();
   pintaActas();
@@ -279,7 +280,7 @@ function pintaTexto() {
       if (re) nom = nom.replace(re, (m) => { n++; return `<mark>${m}</mark>`; });
       quien = `<span class="h" style="color:${colorVoz(l.orig, etiquetas)}">${nom}</span>`;
     }
-    return `<div class="l"><span class="t">${l.t !== null ? formatoTiempo(l.t) : ""}</span><div>${quien}${cuerpo}</div></div>`;
+    return `<div class="l"${l.t !== null ? ` data-t="${l.t}"` : ""}><span class="t">${l.t !== null ? formatoTiempo(l.t) : ""}</span><div>${quien}${cuerpo}</div></div>`;
   }).join("");
   cont.innerHTML = html || '<div class="l mudo-l">Todavía no hay texto.</div>';
   $("nCoinc").textContent = re ? (n ? `${n} coincidencia${n === 1 ? "" : "s"} · Intro para ir a la siguiente` : "sin coincidencias") : "";
@@ -295,6 +296,46 @@ $("buscarEn").addEventListener("keydown", (e) => {
   marcaActual = (marcaActual + (e.shiftKey ? -1 : 1) + marcas.length) % marcas.length;
   marcas[marcaActual].classList.add("actual");
   marcas[marcaActual].scrollIntoView({ block: "center", behavior: "smooth" });
+});
+
+// --- notas y momentos marcados ---
+function pintaNotas(nueva) {
+  const h = actual, marcas = h.marcas || [];
+  if (nueva || document.activeElement !== $("notas")) $("notas").value = h.notas || "";
+  const partes = [];
+  if ((h.notas || "").trim()) partes.push("con notas");
+  if (marcas.length) partes.push(`${marcas.length} momento${marcas.length > 1 ? "s" : ""}`);
+  $("notasResumen").textContent = partes.length ? "· " + partes.join(" · ") : "";
+  if (nueva) $("notasBox").open = !!partes.length;
+  $("marcasLista").innerHTML = marcas.map((m, i) =>
+    `<span class="chip marca" data-i="${i}" title="Ir a ese momento">⭐ ${formatoTiempo(m.t)}${m.nota ? " · " + escT(m.nota) : ""}<span class="x" data-borra="${i}" title="Quitar">✕</span></span>`).join("");
+  $("marcasLista").querySelectorAll(".chip.marca").forEach((c) => {
+    c.onclick = (e) => {
+      const i = Number(c.dataset.i);
+      if (e.target.dataset.borra !== undefined) {
+        const quedan = (actual.marcas || []).filter((_, k) => k !== i);
+        editar({ marcas: quedan });
+        return;
+      }
+      irA((actual.marcas || [])[i].t);
+    };
+  });
+}
+
+// Lleva a la primera intervención que empieza en ese minuto o después.
+function irA(t) {
+  const lineas = [...$("texto").querySelectorAll(".l[data-t]")];
+  const destino = lineas.find((l) => Number(l.dataset.t) >= t) || lineas[lineas.length - 1];
+  if (!destino) return;
+  destino.scrollIntoView({ block: "center", behavior: "smooth" });
+  destino.classList.add("destacada");
+  setTimeout(() => destino.classList.remove("destacada"), 1800);
+}
+
+// Las notas se guardan al salir del cuadro, no con cada tecla: cada guardado
+// rehace el .md de Descargas.
+$("notas").addEventListener("change", () => {
+  if (actual && $("notas").value !== (actual.notas || "")) editar({ notas: $("notas").value });
 });
 
 // --- pestañas ---

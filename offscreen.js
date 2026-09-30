@@ -41,12 +41,48 @@ let cerrando = false;      // procesar() en marcha, antes de que empiece la rond
 const memoria = new Map();
 const enCurso = new Set(); // reuniones con una ronda de transcripción en marcha
 
+// --- tiempo GRABADO (3.3) ---
+// Con pausa, el reloj de pared y el audio dejan de coincidir. Las marcas de
+// tiempo, los tramos y la duración se cuentan en tiempo grabado: es lo único
+// que casa con el audio.
+let pausado = false;
+let msGrabadosAntes = 0;   // grabado hasta el inicio del tramo en curso
+let msTramoPrevio = 0;     // grabado del tramo en curso antes de la última reanudación
+let tActivoDesde = 0;      // cuándo empezó el trozo activo actual (sin pausa)
+let durCierreMs = 0;       // duración del tramo que se está cerrando
+let inicioTramoS = 0;      // dónde empieza, en la reunión, el tramo en curso
+const msTramoEnCurso = () => msTramoPrevio + (pausado ? 0 : Date.now() - tActivoDesde);
+const segundosGrabados = () => Math.round((msGrabadosAntes + msTramoEnCurso()) / 1000);
+
+// Los tramos que se cierran mientras se sigue grabando se transcriben ya, de uno
+// en uno. Al parar solo queda el último: el resultado llega en segundos.
+let colaVivo = Promise.resolve();
+
+// --- aviso de silencio en vivo (3.3) ---
+// Una pestaña que no suena o un micro silenciado se descubrían al terminar la
+// reunión. Ahora, si en dos minutos no entra voz por ninguna fuente, se avisa.
+const MS_AVISO_SILENCIO = 2 * 60 * 1000;
+let ultimaVoz = 0, avisadoSilencio = false, silencioTimer = null;
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.target !== "offscreen") return false;
   (async () => {
     try {
       if (msg.cmd === "start") { await start(msg); sendResponse({ ok: true, id: reunionActual }); }
       else if (msg.cmd === "stop") { stop(); sendResponse({ ok: true }); }
+      else if (msg.cmd === "pausar") { sendResponse({ ok: pausar() }); }
+      else if (msg.cmd === "reanudar") { sendResponse({ ok: reanudar() }); }
+      // Minuto grabado de la reunión en curso (para marcar momentos).
+      else if (msg.cmd === "tiempo") {
+        sendResponse({ ok: true, id: yaProcesado ? null : reunionActual, t: yaProcesado ? 0 : segundosGrabados(), pausado });
+      }
+      // Para el panel en vivo: nivel de cada fuente ahora mismo.
+      else if (msg.cmd === "niveles") {
+        sendResponse({
+          ok: true, id: yaProcesado ? null : reunionActual, t: yaProcesado ? 0 : segundosGrabados(), pausado,
+          fuentes: medidores.map((m) => ({ nombre: m.nombre, rms: m.ultimoRms || 0 })), sinMicro: !!errorMic,
+        });
+      }
       else if (msg.cmd === "selftest") { sendResponse(await selftest(msg)); }
       else if (msg.cmd === "transcribir") {
         // Se responde YA: una ronda puede durar minutos y quien la pide (una
@@ -166,6 +202,14 @@ async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
   medidas = [];
   finalizando = false;
   tInicio = Date.now();
+  pausado = false;
+  msGrabadosAntes = 0;
+  inicioTramoS = 0;
+  colaVivo = Promise.resolve();
+  ultimaVoz = tInicio;
+  avisadoSilencio = false;
+  clearInterval(silencioTimer);
+  silencioTimer = setInterval(() => revisaSilencio(Date.now()), 10000);
   // La entrada del historial nace YA, no al terminar: si Chrome se cierra a
   // mitad de reunión, el service worker la encuentra en «grabando» al volver y
   // transcribe lo que haya quedado guardado.
@@ -184,6 +228,8 @@ async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
 // Cada tramo es un MediaRecorder propio, así que sale un .webm completo y
 // autónomo (con cabeceras) que Gemini puede leer por su cuenta.
 function arrancaTramo(stream) {
+  msTramoPrevio = 0;
+  tActivoDesde = Date.now();
   mediaRecorder = new MediaRecorder(stream, {
     mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 64000,
   });
@@ -202,22 +248,28 @@ function arrancaTramo(stream) {
     const blob = new Blob(trozosTramo, { type: "audio/webm" });
     trozosTramo = [];
     const nivel = cierraMedidaTramo(); // siempre, aunque el blob venga vacío
+    const inicioS = inicioTramoS;
+    msGrabadosAntes += durCierreMs;
+    inicioTramoS = Math.round(msGrabadosAntes / 1000);
     if (blob.size) {
       // El nivel del analizador vale para el informe por fuente, pero NO para
       // decidir si un tramo es silencio: solo mira 42 ms de cada segundo, así
       // que una intervención corta se le escapa entera. Sobre ese dato se
       // descartaban tramos con voz sin llegar a preguntar al modelo.
-      const entrada = { blob, pico: nivel.pico, voz: nivel.voz };
+      const entrada = { blob, pico: nivel.pico, voz: nivel.voz, inicioS };
       tramos.push(entrada); // se encola YA: así el orden de los tramos es el real
-      guardaAudio(reunionActual, tramos.length - 1, blob);
+      const idx = tramos.length - 1;
+      guardaAudio(reunionActual, idx, blob);
       // La medida exacta va en paralelo. Retrasar aquí el arranque del tramo
       // siguiente dejaría un hueco sin grabar en la reunión.
-      medidas.push(medirExacto(blob).then((m) => {
+      const medida = medirExacto(blob).then((m) => {
         if (m) { entrada.pico = m.pico; entrada.voz = m.voz; }
         // Si no se pudo decodificar, se manda igual: mejor gastar 3 céntimos
         // que tirar un tramo que quizá tenía voz.
         else entrada.pico = Math.max(entrada.pico, PICO_SILENCIO);
-      }, () => { entrada.pico = Math.max(entrada.pico, PICO_SILENCIO); }));
+      }, () => { entrada.pico = Math.max(entrada.pico, PICO_SILENCIO); });
+      medidas.push(medida);
+      if (!finalizando) tramoCerrado(reunionActual, idx, entrada, medida);
     }
     if (finalizando) procesar();
     else arrancaTramo(stream); // siguiente tramo, la grabación no se interrumpe
@@ -253,17 +305,50 @@ function sueltaAltavoz(el) {
 function cortaTramo() {
   if (mediaRecorder && mediaRecorder.state === "recording") {
     cierreEnCurso = true;
+    durCierreMs = msTramoEnCurso();
     mediaRecorder.stop();
   }
+}
+
+// Pausa: el tramo en curso se queda abierto (MediaRecorder.pause) y el corte de
+// tramo se reprograma al reanudar con lo que le falte de tiempo GRABADO.
+function pausar() {
+  if (yaProcesado || finalizando || pausado || !mediaRecorder || mediaRecorder.state !== "recording") return false;
+  msTramoPrevio += Date.now() - tActivoDesde;
+  pausado = true;
+  clearInterval(rotaTimer);
+  clearTimeout(rotaTimer);
+  rotaTimer = null;
+  mediaRecorder.pause();
+  return true;
+}
+
+function reanudar() {
+  if (!pausado || finalizando || !mediaRecorder) return false;
+  pausado = false;
+  tActivoDesde = Date.now();
+  ultimaVoz = tActivoDesde; // la pausa no cuenta como silencio
+  mediaRecorder.resume();
+  const restante = Math.max(1000, MS_TRAMO - msTramoPrevio);
+  rotaTimer = setTimeout(() => {
+    if (pausado || finalizando) return;
+    cortaTramo();
+    rotaTimer = setInterval(cortaTramo, MS_TRAMO);
+  }, restante);
+  return true;
 }
 
 function stop() {
   if (finalizando) return;
   finalizando = true;
   clearInterval(rotaTimer);
+  clearTimeout(rotaTimer);
   rotaTimer = null;
-  if (mediaRecorder && mediaRecorder.state === "recording") {
+  // En pausa también hay que cerrar el tramo: si no, su audio no llega a `tramos`.
+  if (mediaRecorder && (mediaRecorder.state === "recording" || mediaRecorder.state === "paused")) {
     cierreEnCurso = true;
+    durCierreMs = msTramoEnCurso();
+    pausado = false;
     mediaRecorder.stop();
   } else if (!cierreEnCurso) {
     procesar(); // no hay ningún tramo cerrándose: nadie más va a llamar
@@ -286,9 +371,10 @@ function vigila(nombre, nodo) {
     for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
     const rms = Math.sqrt(s / buf.length);
     m.muestras++; m.muestrasTramo++;
+    m.ultimoRms = rms;
     if (rms > m.pico) m.pico = rms;
     if (rms > m.picoTramo) m.picoTramo = rms;
-    if (rms > 0.008) { m.conVoz++; m.vozTramo++; }
+    if (rms > 0.008) { m.conVoz++; m.vozTramo++; registraVoz(Date.now()); }
   }, 1000);
   return m;
 }
@@ -335,6 +421,41 @@ function informeAudio() {
       "(tiene que estar sonando) y que el micro no está silenciado.\n";
   }
   return { linea: partes.join(" · "), alerta };
+}
+
+function registraVoz(ts) {
+  ultimaVoz = ts;
+  if (avisadoSilencio) {
+    avisadoSilencio = false;
+    aBg("silencio", { hay: false }).catch(() => {});
+  }
+}
+
+function revisaSilencio(ahora) {
+  if (yaProcesado || finalizando || pausado || avisadoSilencio) return;
+  if (ahora - ultimaVoz >= MS_AVISO_SILENCIO) {
+    avisadoSilencio = true;
+    aBg("silencio", { hay: true }).catch(() => {});
+  }
+}
+
+// Un tramo recién cerrado mientras se sigue grabando: se mide, se apunta en el
+// historial y se transcribe, sin esperar a que acabe la reunión. Va en cola, de
+// uno en uno, detrás del anterior.
+function tramoCerrado(id, idx, entrada, medida) {
+  colaVivo = colaVivo.then(async () => {
+    await medida; // la medida exacta decide si es silencio
+    const base = { pico: entrada.pico, etiqueta: etiquetaTramo(idx), inicioS: entrada.inicioS };
+    if (entrada.pico < PICO_SILENCIO) {
+      await histTramo(id, idx, { ...base, estado: "mudo" });
+      await olvidaAudio(id, idx);
+      return;
+    }
+    await histTramo(id, idx, { ...base, estado: "pendiente" });
+    const res = await transcribirTramo(id, idx, null, { ...base, estado: "pendiente" }, { participantes });
+    const g = await histTramo(id, idx, res);
+    if (g && g.ok && (res.estado === "ok" || res.estado === "mudo")) await olvidaAudio(id, idx);
+  }).catch((e) => console.warn("Escriba: transcripción en vivo", e));
 }
 
 function entradaNueva() {
@@ -389,7 +510,9 @@ async function procesar() {
 async function cierraGrabacion() {
   clearInterval(rotaTimer);
   clearInterval(parcialTimer);
+  clearInterval(silencioTimer);
   rotaTimer = null;
+  if (avisadoSilencio) { avisadoSilencio = false; aBg("silencio", { hay: false }).catch(() => {}); }
   medidores.forEach((m) => clearInterval(m.timer));
   const audio = informeAudio();
   streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
@@ -397,26 +520,31 @@ async function cierraGrabacion() {
   altavoz = null;
   if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
 
-  // Ningún tramo se descarta antes de que su medida exacta esté hecha.
+  // Ningún tramo se descarta antes de que su medida exacta esté hecha, y lo que
+  // se estaba transcribiendo en vivo termina antes de leer el historial: si no,
+  // su texto se pisaría con «pendiente» y se mandaría otra vez.
   await Promise.all(medidas);
   medidas = [];
+  await colaVivo;
   if (ctxDecode) { try { await ctxDecode.close(); } catch (_) {} ctxDecode = null; }
 
   const partes = tramos.slice();
   tramos = [];
   const id = reunionActual;
-  const minutos = Math.max(1, Math.round((Date.now() - tInicio) / 60000));
+  const minutos = Math.max(1, Math.round(msGrabadosAntes / 60000));
   const bytes = partes.reduce((a, p) => a + p.blob.size, 0);
   const conSonido = partes.filter((p) => p.pico >= PICO_SILENCIO);
 
   // La entrada se creó al empezar; si aquello falló, se crea ahora.
   const existe = await aBg("histLeer", { id }).catch(() => null);
   if (!existe) await histCrear(entradaNueva());
+  // Lo que ya se transcribió (o se dio por mudo) en vivo se queda como está.
+  const hechos = ((existe && existe.tramos) || []).map((t) => (t && ["ok", "mudo"].includes(t.estado) ? t : null));
   const meta = { ...((existe && existe.meta) || {}), fichero: fechaBonita(id).fichero, minutos, audioLinea: audio.linea, audioAlerta: audio.alerta };
 
   // Silencio: NO se manda a Gemini. Ante un audio mudo el modelo no dice "no oigo
   // nada", se inventa una reunión entera con hablantes y acuerdos que no existen.
-  if (!bytes || !conSonido.length) {
+  if (!hechos.some((t) => t && t.estado === "ok") && (!bytes || !conSonido.length)) {
     await histActualizar(id, {
       estado: "error", progreso: "", meta, tramos: [],
       transcript: "# No se grabó audio\n\n" +
@@ -433,12 +561,14 @@ async function cierraGrabacion() {
     return null;
   }
 
-  const lista = partes.map((p, i) => ({
-    estado: p.pico < PICO_SILENCIO ? "mudo" : "pendiente", pico: p.pico, etiqueta: etiquetaTramo(i), inicioS: i * DURACION_TRAMO_S,
+  const lista = partes.map((p, i) => hechos[i] || ({
+    estado: p.pico < PICO_SILENCIO ? "mudo" : "pendiente", pico: p.pico, etiqueta: etiquetaTramo(i),
+    inicioS: typeof p.inicioS === "number" ? p.inicioS : i * DURACION_TRAMO_S,
   }));
-  for (let i = 0; i < lista.length; i++) if (lista[i].estado === "mudo") await olvidaAudio(id, i);
+  for (let i = 0; i < lista.length; i++) if (lista[i].estado === "mudo" && !hechos[i]) await olvidaAudio(id, i);
+  const r = resumenTramos(lista);
   await histActualizar(id, {
-    estado: "transcribiendo", meta, tramos: lista, progreso: `${lista.length - conSonido.length}/${lista.length} tramos`,
+    estado: "transcribiendo", meta, tramos: lista, progreso: `${r.total - r.pendientes}/${r.total} tramos`,
   });
   return id;
 }
@@ -667,9 +797,11 @@ function construirPrompt(glosario, idx, total, opciones) {
   const cabecera = idioma === "auto"
     ? "Transcribe íntegramente este audio de una reunión de trabajo, en el idioma o idiomas en que se hable: si se mezclan, deja cada frase en su idioma original, sin traducir."
     : `Transcribe íntegramente este audio de una reunión de trabajo en ${IDIOMAS[idioma] || "español"}.`;
-  const contexto = total > 1
-    ? `Este audio es el TRAMO ${idx} de ${total} de una misma reunión ya cortada en trozos: empieza y acaba a mitad de conversación. Transcribe solo lo que suene, sin introducción ni despedida propias.\n`
-    : "";
+  const contexto = total === null
+    ? `Este audio es el TRAMO ${idx} de una reunión que sigue en curso, cortada en trozos: puede empezar y acabar a mitad de conversación. Transcribe solo lo que suene, sin introducción ni despedida propias.\n`
+    : total > 1
+      ? `Este audio es el TRAMO ${idx} de ${total} de una misma reunión ya cortada en trozos: empieza y acaba a mitad de conversación. Transcribe solo lo que suene, sin introducción ni despedida propias.\n`
+      : "";
   // Los nombres solo con prueba: un nombre mal puesto es peor que «Hablante 2»,
   // porque parece un dato y nadie lo revisa.
   const nombres = o.participantes

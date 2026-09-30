@@ -49,9 +49,9 @@ function almacen(inicial = {}, avisar = () => {}) {
 // Registro de lo que la extensión le ha pedido al navegador, para poder
 // afirmar sobre efectos que no dejan rastro en el almacenamiento.
 function nuevoChrome(opciones = {}) {
-  const registro = { descargas: [], borrados: [], borradosHist: [], badges: [], offscreen: 0, alarmas: {} };
+  const registro = { descargas: [], borrados: [], borradosHist: [], badges: [], colores: [], offscreen: 0, alarmas: {}, notificaciones: [] };
   let proximoIdDescarga = 1;
-  const oyentes = { mensaje: [], instalado: [], arranque: [], cambios: [], alarma: [] };
+  const oyentes = { mensaje: [], instalado: [], arranque: [], cambios: [], alarma: [], comando: [] };
   const avisa = (area) => (cambios) => oyentes.cambios.forEach((f) => f(cambios, area));
 
   const chrome = {
@@ -89,8 +89,14 @@ function nuevoChrome(opciones = {}) {
     },
     action: {
       setBadgeText(o) { registro.badges.push(o.text); },
-      setBadgeBackgroundColor() {},
+      setBadgeBackgroundColor(o) { registro.colores.push(o.color); },
     },
+    commands: { onCommand: { addListener: (f) => oyentes.comando.push(f) } },
+    notifications: {
+      create(id, o) { registro.notificaciones.push({ id, ...o }); return Promise.resolve(id); },
+      clear(id) { registro.notificaciones = registro.notificaciones.filter((n) => n.id !== id); return Promise.resolve(true); },
+    },
+    sidePanel: { async setPanelBehavior() {}, async open() {} },
     offscreen: {
       async hasDocument() { return registro.offscreen > 0; },
       async createDocument() { registro.offscreen++; },
@@ -192,7 +198,8 @@ function nuevoAudioElemento({ falla = false } = {}) {
 
 // getUserMedia y MediaRecorder mínimos para arrancar y parar una grabación.
 // Cada stream guarda las restricciones con que se pidió (`_c`).
-function nuevosMedios() {
+// Con `conAudio`, cada tramo entrega un trozo de audio al pararse, como uno real.
+function nuevosMedios({ conAudio = false } = {}) {
   const pista = () => { const p = { parada: false, stop() { p.parada = true; } }; return p; };
   const mediaDevices = {
     async getUserMedia(c) {
@@ -200,14 +207,25 @@ function nuevosMedios() {
       return { _c: c, getTracks: () => pistas, getAudioTracks: () => pistas };
     },
   };
+  const creados = [];
   function MediaRecorder() {
     const r = {
-      state: "inactive", ondataavailable: null, onstop: null,
+      state: "inactive", ondataavailable: null, onstop: null, pausas: 0,
       start() { r.state = "recording"; },
-      stop() { r.state = "inactive"; setImmediate(() => r.onstop && r.onstop()); },
+      pause() { r.state = "paused"; r.pausas++; },
+      resume() { r.state = "recording"; },
+      stop() {
+        r.state = "inactive";
+        setImmediate(() => {
+          if (conAudio && r.ondataavailable) r.ondataavailable({ data: { size: 1000, type: "audio/webm" } });
+          if (r.onstop) r.onstop();
+        });
+      },
     };
+    creados.push(r);
     return r;
   }
+  MediaRecorder._creados = creados;
   return { mediaDevices, MediaRecorder };
 }
 

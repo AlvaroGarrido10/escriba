@@ -27,6 +27,16 @@ async function arranque() {
 chrome.runtime.onInstalled.addListener(() => { arranque(); });
 chrome.runtime.onStartup.addListener(() => { arranque(); });
 
+// Atajos de teclado (chrome://extensions/shortcuts): empezar/parar y marcar.
+// Pulsar el atajo cuenta como invocar la extensión en la pestaña activa, así que
+// sirve para capturarla igual que el botón del popup.
+if (chrome.commands) {
+  chrome.commands.onCommand.addListener((orden) => {
+    if (orden === "grabar") alternarGrabacion().catch((e) => console.warn("Escriba: atajo", e));
+    else if (orden === "marcar") marcar("").catch(() => {});
+  });
+}
+
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name.startsWith("reintento:")) lanzar(Number(a.name.slice("reintento:".length)));
 });
@@ -124,8 +134,78 @@ async function finRonda(id) {
   return g.ok ? { ok: true, estado } : g;
 }
 
-// Campos que la biblioteca puede cambiar con «histEditar».
-const CAMPOS_EDITABLES = ["titulo", "participantes", "hablantes", "notas"];
+// Campos que la biblioteca y el panel en vivo pueden cambiar con «histEditar».
+const CAMPOS_EDITABLES = ["titulo", "participantes", "hablantes", "notas", "marcas"];
+
+// --- grabar: lo usan el popup y el atajo de teclado -----------------------------
+async function empezar({ modo, participantes }) {
+  let streamId = "", tabTitle = "";
+  if (modo === "tab_mic") {
+    const tab = await pestanaObjetivo();
+    if (!tab) return { ok: false, error: "No encuentro ninguna pestaña con la reunión. Ábrela (Meet, Teams, YouTube…) o usa «Solo micro»." };
+    try {
+      streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+      tabTitle = tab.title || "";
+    } catch (e) {
+      return { ok: false, error: "No se pudo capturar «" + (tab.title || "la pestaña") + "»: " + ((e && e.message) || e) };
+    }
+  }
+  await ensureOffscreen();
+  const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "start", modo, streamId, tabTitle, participantes: participantes || "" });
+  if (r && r.ok) {
+    await chrome.storage.session.set({
+      grabando: true, t0: Date.now(), tabTitle, pausado: false, pausadoDesde: 0, pausaMs: 0,
+      ultimoModo: modo, participantesBorrador: "", reunionId: r.id,
+    });
+    chrome.action.setBadgeText({ text: "REC" });
+    chrome.action.setBadgeBackgroundColor({ color: "#c0392b" });
+  }
+  return r || { ok: false, error: "El grabador no respondió." };
+}
+
+async function parar() {
+  const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "stop" });
+  await chrome.storage.session.set({ grabando: false, pausado: false });
+  chrome.action.setBadgeText({ text: "…" });
+  chrome.action.setBadgeBackgroundColor({ color: "#5d2a42" });
+  return r || { ok: true };
+}
+
+async function alternarGrabacion() {
+  const s = await chrome.storage.session.get({ grabando: false, ultimoModo: "tab_mic", participantesBorrador: "" });
+  return s.grabando ? parar() : empezar({ modo: s.ultimoModo, participantes: s.participantesBorrador });
+}
+
+async function pausa(pausar) {
+  const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: pausar ? "pausar" : "reanudar" });
+  if (!r || !r.ok) return { ok: false, error: pausar ? "No hay nada grabándose que pausar." : "La grabación no estaba en pausa." };
+  const s = await chrome.storage.session.get({ pausadoDesde: 0, pausaMs: 0 });
+  const ahora = Date.now();
+  await chrome.storage.session.set(pausar
+    ? { pausado: true, pausadoDesde: ahora }
+    : { pausado: false, pausadoDesde: 0, pausaMs: s.pausaMs + (s.pausadoDesde ? ahora - s.pausadoDesde : 0) });
+  chrome.action.setBadgeText({ text: pausar ? "II" : "REC" });
+  chrome.action.setBadgeBackgroundColor({ color: pausar ? "#7b6b73" : "#c0392b" });
+  return { ok: true };
+}
+
+// Marca el minuto GRABADO en curso: lo sabe el documento que graba.
+async function marcar(nota) {
+  let t = null;
+  if (await chrome.offscreen.hasDocument()) {
+    try { t = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "tiempo" }); } catch (_) {}
+  }
+  if (!t || !t.ok || !t.id) return { ok: false, error: "No hay ninguna grabación en curso." };
+  const marca = { t: t.t, nota: String(nota || "").trim() };
+  return enCola(async () => {
+    const historial = await leerHistorial();
+    const h = historial.find((x) => x.id === t.id);
+    if (!h) return { ok: false, error: "La reunión en curso no está en el historial." };
+    h.marcas = [...(h.marcas || []), marca];
+    const g = await guardarHistorial(historial);
+    return g.ok ? { ok: true, marca } : g;
+  });
+}
 
 // El .md de Descargas se rehace cuando el usuario cambia algo que sale en él
 // (título, participantes, nombres de los hablantes). Solo en reuniones que ya
@@ -211,16 +291,22 @@ async function recuperar() {
       if (h.estado === "grabando" && h.id !== vivo.grabandoId) {
         if (!claves) claves = audios ? await audios.claves().catch(() => []) : [];
         const idxs = claves.filter((k) => k[0] === h.id).map((k) => k[1]);
+        // Desde la 3.3 los tramos se transcriben mientras se graba: los que ya
+        // tienen texto no tienen audio (se borra al guardarse el texto) y no
+        // pueden darse por perdidos.
+        const previos = Array.isArray(h.tramos) ? h.tramos : [];
+        const hecho = (t) => t && ["ok", "mudo"].includes(t.estado);
         cambios = true;
-        if (!idxs.length) {
+        if (!idxs.length && !previos.some(hecho)) {
           h.estado = "error";
           h.transcript = "# La grabación se interrumpió\n\nSe cerró Chrome o se reinició la extensión antes de " +
             "completar el primer tramo, así que no llegó a guardarse audio.\n";
           continue;
         }
-        const n = Math.max(...idxs) + 1;
-        h.tramos = Array.from({ length: n }, (_, i) => ({
-          estado: idxs.includes(i) ? "pendiente" : "perdido", etiqueta: etiquetaTramo(i), inicioS: i * DURACION_TRAMO_S,
+        const n = Math.max(idxs.length ? Math.max(...idxs) + 1 : 0, previos.length);
+        h.tramos = Array.from({ length: n }, (_, i) => (hecho(previos[i]) ? previos[i] : {
+          estado: idxs.includes(i) ? "pendiente" : "perdido", etiqueta: etiquetaTramo(i),
+          inicioS: previos[i] && typeof previos[i].inicioS === "number" ? previos[i].inicioS : i * DURACION_TRAMO_S,
         }));
         h.meta = { ...(h.meta || {}), minutos: n * (DURACION_TRAMO_S / 60), interrumpida: true };
         h.estado = "transcribiendo";
@@ -340,36 +426,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
       if (msg.cmd === "start") {
-        let streamId = "", tabTitle = "";
-        if (msg.modo === "tab_mic") {
-          const tab = await pestanaObjetivo();
-          if (!tab) {
-            sendResponse({ ok: false, error: "No encuentro ninguna pestaña con la reunión. Ábrela (Meet, Teams, YouTube…) o usa «Solo micro»." });
-            return;
+        sendResponse(await empezar(msg));
+
+      } else if (msg.cmd === "stop") {
+        sendResponse(await parar());
+
+      } else if (msg.cmd === "pausar" || msg.cmd === "reanudar") {
+        sendResponse(await pausa(msg.cmd === "pausar"));
+
+      } else if (msg.cmd === "marcar") {
+        sendResponse(await marcar(msg.nota));
+
+      // El panel en vivo pide los niveles al documento que graba.
+      } else if (msg.cmd === "niveles") {
+        const hay = await chrome.offscreen.hasDocument();
+        sendResponse(hay ? await chrome.runtime.sendMessage({ target: "offscreen", cmd: "niveles" }).catch(() => null) : { ok: true, id: null });
+
+      // Dos minutos sin voz durante la grabación (lo detecta el offscreen).
+      } else if (msg.cmd === "silencio") {
+        if (msg.hay) {
+          chrome.action.setBadgeText({ text: "!" });
+          chrome.action.setBadgeBackgroundColor({ color: "#e67e22" });
+          if (chrome.notifications) {
+            chrome.notifications.create("escriba-silencio", {
+              type: "basic", iconUrl: "icon128.png", priority: 2,
+              title: "Escriba no oye nada",
+              message: "Llevas dos minutos sin voz en la grabación. ¿Suena la pestaña de la reunión? ¿Está el micrófono silenciado?",
+            });
           }
-          try {
-            streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
-            tabTitle = tab.title || "";
-          } catch (e) {
-            sendResponse({ ok: false, error: "No se pudo capturar «" + (tab.title || "la pestaña") + "»: " + ((e && e.message) || e) });
-            return;
-          }
-        }
-        await ensureOffscreen();
-        const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "start", modo: msg.modo, streamId, tabTitle, participantes: msg.participantes || "" });
-        if (r && r.ok) {
-          await chrome.storage.session.set({ grabando: true, t0: Date.now(), tabTitle });
+        } else {
+          if (chrome.notifications) chrome.notifications.clear("escriba-silencio");
           chrome.action.setBadgeText({ text: "REC" });
           chrome.action.setBadgeBackgroundColor({ color: "#c0392b" });
         }
-        sendResponse(r || { ok: false, error: "El grabador no respondió." });
-
-      } else if (msg.cmd === "stop") {
-        const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "stop" });
-        await chrome.storage.session.set({ grabando: false });
-        chrome.action.setBadgeText({ text: "…" });
-        chrome.action.setBadgeBackgroundColor({ color: "#5d2a42" });
-        sendResponse(r || { ok: true });
+        sendResponse({ ok: true });
 
       } else if (msg.cmd === "selftest") {
         const { grabando } = await chrome.storage.session.get({ grabando: false });
@@ -397,7 +487,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(r || { ok: false, error: "el grabador no respondió" });
 
       } else if (msg.cmd === "estado") {
-        const s = await chrome.storage.session.get({ grabando: false, t0: 0, tabTitle: "" });
+        const s = await chrome.storage.session.get({ grabando: false, t0: 0, tabTitle: "", pausado: false, pausadoDesde: 0, pausaMs: 0, reunionId: null });
         const tab = await pestanaObjetivo();
         s.objetivo = tab ? { titulo: tab.title || "", suena: !!tab.audible } : null;
         sendResponse(s);

@@ -80,7 +80,8 @@ document.addEventListener("click", (e) => { if (!e.target.closest(".menu")) $("m
 // lista de reuniones
 function textoDe(h) {
   if (Array.isArray(h.tramos) && h.tramos.length) {
-    return aplicarHablantes(h.tramos.filter((t) => t.estado === "ok").map((t) => t.texto || "").join("\n"), h.hablantes);
+    const crudo = h.tramos.filter((t) => t.estado === "ok").map((t) => t.texto || "").join("\n");
+    return aplicarHablantes(crudo, mapaVisible(crudo, h.hablantes));
   }
   return h.transcript || "";
 }
@@ -300,10 +301,10 @@ function pintaHablantes() {
   if (cont.querySelector("input")) return; // renombrando: no se toca
   const etiquetas = Array.isArray(h.tramos) && h.tramos.length ? etiquetasOriginales(h) : [];
   if (!etiquetas.length) { cont.innerHTML = ""; return; }
-  const mapa = h.hablantes || {};
+  const mapa = h.hablantes || {}, auto = mapaVisible(textoCrudo(h), {});
   cont.innerHTML = etiquetas.map((o) => {
-    const nuevo = (mapa[o] || "").trim();
-    return `<span class="chipH" data-h="${escT(o)}" title="${escT(t("bib.renombrar_title"))}"><span class="punto" style="background:${colorVoz(o, etiquetas)}"></span><b>${escT(nuevo || o)}</b>${nuevo ? `<span class="orig">(${escT(o)})</span>` : ""} ✎</span>`;
+    const nuevo = (mapa[o] || "").trim(), visible = auto[o] || o;
+    return `<span class="chipH" data-h="${escT(o)}" title="${escT(t("bib.renombrar_title"))}"><span class="punto" style="background:${colorVoz(o, etiquetas)}"></span><b>${escT(nuevo || visible)}</b>${nuevo ? `<span class="orig">(${escT(visible)})</span>` : ""} ✎</span>`;
   }).join("") + `<span class="ayudaH">${escT(t("bib.renombrar_ayuda"))}</span>`;
   cont.querySelectorAll(".chipH").forEach((chip) => { chip.onclick = () => renombrar(chip); });
 }
@@ -311,7 +312,7 @@ function pintaHablantes() {
 function renombrar(chip) {
   const orig = chip.dataset.h, mapa = { ...(actual.hablantes || {}) };
   const sugeridos = (actual.participantes || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
-  chip.innerHTML = `<input value="${escT(mapa[orig] || "")}" placeholder="${escT(orig)}" list="listaNombres">` +
+  chip.innerHTML = `<input value="${escT(mapa[orig] || "")}" placeholder="${escT(mapaVisible(textoCrudo(actual), {})[orig] || orig)}" list="listaNombres">` +
     `<datalist id="listaNombres">${sugeridos.map((s) => `<option value="${escT(s)}">`).join("")}</datalist>`;
   chip.onclick = null;
   const input = chip.querySelector("input");
@@ -357,7 +358,7 @@ function lineasDeVista(h) {
   if (!Array.isArray(h.tramos) || !h.tramos.length) {
     return lineasTranscripcion(h.transcript || "").map((l) => ({ tipo: "l", ...l, orig: l.hablante }));
   }
-  const mapa = h.hablantes || {}, out = [], total = h.tramos.length;
+  const mapa = mapaVisible(textoCrudo(h), h.hablantes), out = [], total = h.tramos.length;
   h.tramos.forEach((tr, i) => {
     const cab = t("bib.tramo_cab", i + 1, total, tr.etiqueta || etiquetaTramo(i));
     if (tr.estado === "ok") {
@@ -473,7 +474,7 @@ const baseFichero = (h) => (h.meta && h.meta.fichero) || fechaBonita(h.id).fiche
 // título, que en el Word ya va como título del documento).
 function mdTranscripcion(h) {
   if (Array.isArray(h.tramos) && h.tramos.length) return construirMarkdown(h);
-  return aplicarHablantes(h.transcript || "", h.hablantes);
+  return aplicarHablantes(h.transcript || "", mapaVisible(h.transcript || "", h.hablantes));
 }
 
 function descargar(datos, tipo, nombre) {
@@ -497,7 +498,7 @@ $("menuExportar").querySelectorAll("button").forEach((b) => {
     else if (b.dataset.fmt === "md") descargar(md, "text/markdown;charset=utf-8", base + ".md");
     else if (b.dataset.fmt === "txt") descargar(textoPlano(md), "text/plain;charset=utf-8", base + ".txt");
     else if (b.dataset.fmt === "srt") {
-      const s = srt(aplicarHablantes(textoCrudo(h), h.hablantes));
+      const s = srt(aplicarHablantes(textoCrudo(h), mapaVisible(textoCrudo(h), h.hablantes)));
       if (!s) { toast(t("bib.srt_sin_tiempos")); return; }
       descargar(s, "application/x-subrip;charset=utf-8", base + ".srt");
     } else if (b.dataset.fmt === "pdf") imprimir("imprimeTexto");

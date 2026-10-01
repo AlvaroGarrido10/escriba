@@ -172,6 +172,7 @@ $("btnRec").onclick = async () => {
     $("btnRec").textContent = t("pop.empezar");
     $("btnRec").classList.remove("grabando");
     $("controles").style.display = "none";
+    $("altavoz").style.display = "none";
     $("timer").classList.remove("pausa");
     $("estado").textContent = t("pop.transcribiendoEspera");
     $("participantes").value = "";
@@ -179,6 +180,16 @@ $("btnRec").onclick = async () => {
     chrome.storage.session.set({ participantesBorrador: "" });
     pintaHistorial();
   }
+};
+
+// «¿No oyes la reunión?»: cambia en vivo cómo vuelve la pestaña a los altavoces
+// (reproductor de Chrome ↔ motor de audio). Lo elegido se recuerda.
+$("btnAltavoz").onclick = async () => {
+  $("estadoAltavoz").textContent = t("pop.altavozCambiando");
+  const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "altavoz", accion: "cambiar" }).catch(() => null);
+  $("estadoAltavoz").textContent = r && r.ok
+    ? t("pop.altavozAhora", t(r.modo === "contexto" ? "pop.altavozContexto" : "pop.altavozAudio"))
+    : t("pop.altavozNoGrabando");
 };
 
 // s: el estado de la sesión (t0, pausado, pausadoDesde, pausaMs). El reloj
@@ -189,6 +200,8 @@ function modoGrabando(s) {
   $("estado").textContent = s.pausado ? t("pop.enPausa") : t("pop.grabando");
   $("participantes").disabled = true;
   $("controles").style.display = "flex";
+  // Solo con pestaña: en «Solo micro» no se devuelve nada a los altavoces.
+  $("altavoz").style.display = s.ultimoModo === "tab_mic" ? "block" : "none";
   $("btnPausa").textContent = s.pausado ? t("pop.reanudar") : t("pop.pausar");
   $("timer").classList.toggle("pausa", !!s.pausado);
   clearInterval(timerInt);

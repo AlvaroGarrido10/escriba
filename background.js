@@ -494,6 +494,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const hay = await chrome.offscreen.hasDocument();
         sendResponse(hay ? await chrome.runtime.sendMessage({ target: "offscreen", cmd: "niveles" }).catch(() => null) : { ok: true, id: null });
 
+      // «¿No oyes la reunión?» del popup: el grabador cambia de forma en vivo, y
+      // la elegida se recuerda para las próximas grabaciones.
+      } else if (msg.cmd === "altavoz") {
+        const hay = await chrome.offscreen.hasDocument();
+        const r = hay ? await chrome.runtime.sendMessage({ target: "offscreen", cmd: "altavoz", accion: msg.accion }).catch(() => null) : null;
+        if (r && r.ok && msg.accion === "cambiar") await guardarConfig({ modoAltavoz: r.modo });
+        sendResponse(r && r.ok ? r : { ok: false, modo: null });
+
       // Dos minutos sin voz durante la grabación (lo detecta el offscreen).
       } else if (msg.cmd === "silencio") {
         if (msg.hay) {
@@ -539,7 +547,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(r || { ok: false, error: t("bg.diagSinGrabador") });
 
       } else if (msg.cmd === "estado") {
-        const s = await chrome.storage.session.get({ grabando: false, t0: 0, tabTitle: "", pausado: false, pausadoDesde: 0, pausaMs: 0, reunionId: null });
+        const s = await chrome.storage.session.get({ grabando: false, t0: 0, tabTitle: "", pausado: false, pausadoDesde: 0, pausaMs: 0, reunionId: null, ultimoModo: "tab_mic" });
         const tab = await pestanaObjetivo();
         s.objetivo = tab ? { titulo: tab.title || "", suena: !!tab.audible } : null;
         sendResponse(s);

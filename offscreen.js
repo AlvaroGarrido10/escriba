@@ -84,6 +84,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         });
       }
       else if (msg.cmd === "selftest") { sendResponse(await selftest(msg)); }
+      // «¿No oyes la reunión?» del popup: cambia en vivo la forma de devolver el sonido.
+      else if (msg.cmd === "altavoz") {
+        const a = altavozActual();
+        if (!a) sendResponse({ ok: false, modo: null });
+        else sendResponse({ ok: true, modo: msg.accion === "cambiar" ? await cambiaAltavoz() : a.modo });
+      }
       else if (msg.cmd === "transcribir") {
         // Se responde YA: una ronda puede durar minutos y quien la pide (una
         // alarma, el popup) no tiene por qué esperar.
@@ -142,7 +148,9 @@ async function leerConfig() {
 
 // --- grabación ---
 async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
-  await ponIdioma();
+  // Una sola petición, sin reintentos: no puede retrasar la grabación.
+  const cfgInicio = await aBg("cfg").catch(() => null);
+  await ponIdioma(cfgInicio);
   tabTitle = tt || "";
   participantes = (pp || "").trim();
   // "playback": este contexto no necesita respuesta inmediata, solo alimenta la
@@ -183,7 +191,9 @@ async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
     const g = audioCtx.createGain();
     src.connect(g);
     g.connect(mezcla);
-    altavoz = aLosAltavoces(tabStream, audioCtx, src);
+    abreAltavoz(tabStream, cfgInicio && cfgInicio.modoAltavoz);
+    clearInterval(vigiaAltavoz);
+    vigiaAltavoz = setInterval(vigilaAltavoz, 2000);
     medidores.push(vigila("pestaña", g));
   }
 
@@ -217,6 +227,7 @@ async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
   msGrabadosAntes = 0;
   inicioTramoS = 0;
   colaVivo = Promise.resolve();
+  textoVivoAnterior = "";
   ultimaVoz = tInicio;
   avisadoSilencio = false;
   clearInterval(silencioTimer);
@@ -288,29 +299,104 @@ function arrancaTramo(stream) {
   mediaRecorder.start(2000);
 }
 
-// Capturar una pestaña la silencia: su sonido hay que devolverlo a los
-// altavoces. Se hace con un <audio> y no conectando el AudioContext a la salida:
-// por el AudioContext la reunión se oía con microcortes y chasquidos (24/09). El
-// reproductor de Chrome para audio en directo lleva su propio colchón y absorbe
-// esos tirones. No se espera a play(): con una pestaña callada podría tardar, y
-// la grabación no puede quedarse esperando. Si Chrome no deja sonar el <audio>,
-// se vuelve al AudioContext: mejor algún corte que la reunión muda.
-function aLosAltavoces(stream, ctx, src) {
-  const el = new Audio();
-  el.srcObject = stream;
-  el.play().catch((e) => {
-    if (el.srcObject !== stream || ctx.state === "closed") return; // ya se soltó
-    console.warn("Escriba: el <audio> no pudo sonar, la pestaña va por el AudioContext:", e);
-    el.srcObject = null;
-    src.connect(ctx.destination);
-  });
-  return el;
+// --- devolver la pestaña a los altavoces (3.5.1) ---
+// Capturar una pestaña la deja muda (Chrome no deja evitarlo: probado el 01/10),
+// así que su sonido hay que devolverlo. Dos formas:
+//  «audio»: un <audio> con el stream. El reproductor de Chrome para audio en
+//    directo lleva su propio colchón; por el AudioContext de la grabación la
+//    reunión se oía con microcortes (24/09). Es la que mejor aguantó en las
+//    medidas: 0 % de huecos, también con el equipo al 100 %.
+//  «contexto»: un AudioContext APARTE solo para sonar, con colchón grande
+//    («playback»), sin tocar el de la grabación.
+// Ninguna vale para todos los equipos (en un monitor por HDMI el <audio> salió
+// troceado), así que: si cambia el dispositivo de salida se rehace; un vigía
+// reinicia el <audio> que se atasca y, en automático, a los tres reinicios pasa
+// al motor; y desde el popup («¿No oyes la reunión?») se cambia en vivo.
+let vigiaAltavoz = null;
+if (typeof navigator !== "undefined" && navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  // Se desconecta el monitor, se enchufan unos cascos…: el sonido se rehace en la salida nueva.
+  navigator.mediaDevices.addEventListener("devicechange", () => { if (altavoz) reiniciaAltavoz(); });
 }
 
-function sueltaAltavoz(el) {
+// preferencia: "auto" (por defecto), "audio" o "contexto" (Opciones o el popup).
+function abreAltavoz(stream, preferencia) {
+  const auto = !preferencia || preferencia === "auto";
+  altavoz = { stream, modo: auto ? "audio" : preferencia, auto, el: null, ctx: null, reinicios: 0, quietos: 0, ultimoT: 0 };
+  enciendeAltavoz();
+  return altavoz;
+}
+
+function enciendeAltavoz() {
+  const a = altavoz;
+  if (!a) return;
+  a.quietos = 0;
+  a.ultimoT = 0; // un <audio> recién creado empieza en 0: si no se mueve de ahí, no suena
+  if (a.modo === "contexto") {
+    a.ctx = new AudioContext({ latencyHint: "playback" });
+    a.ctx.createMediaStreamSource(a.stream).connect(a.ctx.destination);
+    if (a.ctx.state === "suspended") a.ctx.resume().catch(() => {});
+    return;
+  }
+  const el = new Audio();
+  el.srcObject = a.stream;
+  a.el = el;
+  // No se espera a play(): con una pestaña callada podría tardar, y la grabación
+  // no puede quedarse esperando. Si Chrome no deja sonar el <audio>, motor.
+  el.play().catch((e) => {
+    if (altavoz !== a || a.el !== el) return; // ya se soltó o se cambió
+    console.warn("Escriba: el <audio> no pudo sonar, la pestaña va por el motor de audio:", e);
+    cambiaAltavoz("contexto");
+  });
+}
+
+function apagaAltavoz() {
+  const a = altavoz;
+  if (!a) return;
+  if (a.el) { try { a.el.pause(); } catch (_) {} a.el.srcObject = null; a.el = null; }
+  if (a.ctx) { try { a.ctx.close(); } catch (_) {} a.ctx = null; }
+}
+
+// Sin argumento, alterna. Devuelve la forma que queda (null sin grabación).
+async function cambiaAltavoz(modo) {
+  if (!altavoz) return null;
+  apagaAltavoz();
+  altavoz.modo = modo || (altavoz.modo === "audio" ? "contexto" : "audio");
+  enciendeAltavoz();
+  return altavoz.modo;
+}
+
+function reiniciaAltavoz() {
+  apagaAltavoz();
+  enciendeAltavoz();
+}
+
+function altavozActual() { return altavoz; }
+
+function cierraAltavoz() {
+  clearInterval(vigiaAltavoz);
+  vigiaAltavoz = null;
+  apagaAltavoz();
+  altavoz = null;
+}
+
+// Cada 2 s. Un <audio> en directo avanza siempre, aunque la reunión calle: si no
+// se mueve dos vueltas seguidas, está atascado.
+async function vigilaAltavoz() {
+  const a = altavoz;
+  if (!a) return;
+  if (a.modo === "contexto") {
+    if (a.ctx && a.ctx.state === "suspended") a.ctx.resume().catch(() => {});
+    return;
+  }
+  const el = a.el;
   if (!el) return;
-  try { el.pause(); } catch (_) {}
-  el.srcObject = null;
+  const atascado = el.paused || el.ended || el.readyState < 2 || el.currentTime === a.ultimoT;
+  a.ultimoT = el.currentTime;
+  a.quietos = atascado ? a.quietos + 1 : 0;
+  if (a.quietos < 2) return;
+  a.reinicios++;
+  if (a.auto && a.reinicios >= 3) await cambiaAltavoz("contexto");
+  else reiniciaAltavoz();
 }
 
 function cortaTramo() {
@@ -448,6 +534,16 @@ function revisaSilencio(ahora) {
   }
 }
 
+// El final del último tramo transcrito en vivo: se le pasa al siguiente para que
+// siga con las mismas etiquetas de hablante (3.5.1). Se vacía al empezar.
+let textoVivoAnterior = "";
+
+// Las últimas líneas de un tramo, cortas: lo justo para seguir la conversación.
+function finalDeTramo(texto) {
+  const lineas = String(texto || "").split("\n").filter((l) => l.trim()).slice(-6).join("\n");
+  return lineas.length > 600 ? lineas.slice(-600) : lineas;
+}
+
 // Un tramo recién cerrado mientras se sigue grabando: se mide, se apunta en el
 // historial y se transcribe, sin esperar a que acabe la reunión. Va en cola, de
 // uno en uno, detrás del anterior.
@@ -461,7 +557,8 @@ function tramoCerrado(id, idx, entrada, medida) {
       return;
     }
     await histTramo(id, idx, { ...base, estado: "pendiente" });
-    const res = await transcribirTramo(id, idx, null, { ...base, estado: "pendiente" }, { participantes });
+    const res = await transcribirTramo(id, idx, null, { ...base, estado: "pendiente" }, { participantes, anterior: textoVivoAnterior });
+    if (res.estado === "ok") textoVivoAnterior = res.texto || "";
     const g = await histTramo(id, idx, res);
     if (g && g.ok && res.estado === "ok") await conservaAudio(id, idx, await leerConfig().catch(() => null));
     if (g && g.ok && (res.estado === "ok" || res.estado === "mudo")) await olvidaAudio(id, idx);
@@ -539,8 +636,9 @@ async function cierraGrabacion() {
   medidores.forEach((m) => clearInterval(m.timer));
   const audio = informeAudio();
   streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
-  sueltaAltavoz(altavoz);
-  altavoz = null;
+  // Para el diagnóstico de «no oigo nada»: con qué forma sonó y cuántas veces se reinició.
+  const infoAltavoz = altavoz ? { modo: altavoz.modo, reinicios: altavoz.reinicios } : null;
+  cierraAltavoz();
   if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
 
   // Ningún tramo se descarta antes de que su medida exacta esté hecha, y lo que
@@ -563,7 +661,7 @@ async function cierraGrabacion() {
   if (!existe) await histCrear(entradaNueva());
   // Lo que ya se transcribió (o se dio por mudo) en vivo se queda como está.
   const hechos = ((existe && existe.tramos) || []).map((t) => (t && ["ok", "mudo"].includes(t.estado) ? t : null));
-  const meta = { ...((existe && existe.meta) || {}), fichero: fechaBonita(id).fichero, minutos, audioLinea: audio.linea, audioAlerta: audio.alerta };
+  const meta = { ...((existe && existe.meta) || {}), fichero: fechaBonita(id).fichero, minutos, audioLinea: audio.linea, audioAlerta: audio.alerta, ...(infoAltavoz ? { altavoz: infoAltavoz } : {}) };
 
   // Silencio: NO se manda a Gemini. Ante un audio mudo el modelo no dice "no oigo
   // nada", se inventa una reunión entera con hablantes y acuerdos que no existen.
@@ -667,7 +765,10 @@ async function transcribirTramo(id, i, total, tramo, reunion) {
   if (pico < PICO_SILENCIO) return { estado: "mudo", pico };
 
   try {
-    const r = await transcribirGemini(blob, i + 1, total, { participantes: (reunion && reunion.participantes) || "" });
+    // El tramo anterior: en vivo llega ya; en una ronda, el del historial si está transcrito.
+    const previo = reunion && reunion.anterior !== undefined ? reunion.anterior
+      : (reunion && Array.isArray(reunion.tramos) && reunion.tramos[i - 1] && reunion.tramos[i - 1].estado === "ok" ? reunion.tramos[i - 1].texto : "");
+    const r = await transcribirGemini(blob, i + 1, total, { participantes: (reunion && reunion.participantes) || "", anterior: finalDeTramo(previo) });
     if (r.sinVoz) return { estado: "mudo", pico };
     // Las marcas del modelo cuentan desde el principio del tramo: se pasan a
     // tiempo de la reunión aquí, una vez, para que el .md, el visor y los
@@ -728,12 +829,12 @@ async function actaAutomatica(id) {
 
 // --- prueba de 3 s de punta a punta (botón Diagnóstico) ---
 async function selftest({ modo, streamId }) {
-  await ponIdioma();
+  const cfgPrueba = await aBg("cfg").catch(() => null);
+  await ponIdioma(cfgPrueba);
   const fuentes = [];
   const ctx = new AudioContext();
   const destino = ctx.createMediaStreamDestination();
   const activos = [];
-  let el = null;
   try {
     // Mide cada fuente por separado: saber CUAL no suena es medio diagnostico.
     const sondas = [];
@@ -759,7 +860,7 @@ async function selftest({ modo, streamId }) {
       activos.push(pest);
       const s = ctx.createMediaStreamSource(pest);
       s.connect(destino);
-      el = aLosAltavoces(pest, ctx, s);
+      abreAltavoz(pest, cfgPrueba && cfgPrueba.modoAltavoz); // igual que al grabar
       sonda(t("off.fuentePestana"), s);
       fuentes.push(t("off.fuentePestana"));
     }
@@ -785,7 +886,7 @@ async function selftest({ modo, streamId }) {
     await fin;
     sondas.forEach((s) => clearInterval(s.timer));
     activos.forEach((s) => s.getTracks().forEach((t) => t.stop()));
-    sueltaAltavoz(el);
+    cierraAltavoz();
     ctx.close();
 
     const blob = new Blob(trozos, { type: "audio/webm" });
@@ -804,7 +905,7 @@ async function selftest({ modo, streamId }) {
     return res;
   } catch (e) {
     activos.forEach((s) => s.getTracks().forEach((t) => t.stop()));
-    sueltaAltavoz(el);
+    cierraAltavoz();
     try { ctx.close(); } catch (_) {}
     return { ok: false, error: (e && e.message) || String(e) };
   }
@@ -830,18 +931,26 @@ function construirPrompt(glosario, idx, total, opciones) {
     : total > 1
       ? `Este audio es el TRAMO ${idx} de ${total} de una misma reunión ya cortada en trozos: empieza y acaba a mitad de conversación. Transcribe solo lo que suene, sin introducción ni despedida propias.\n`
       : "";
+  // La etiqueta genérica va en el idioma de la interfaz («Hablante 1» / «Speaker 1»):
+  // es lo que verá el usuario. comun.js reconoce las dos.
+  const h1 = etiquetaGenerica(1), h2 = etiquetaGenerica(2);
   // Los nombres solo con prueba: un nombre mal puesto es peor que «Hablante 2»,
   // porque parece un dato y nadie lo revisa.
   const nombres = o.participantes
-    ? `- Asistentes de la reunión: ${o.participantes}. Usa el nombre de una persona SOLO si se presenta o alguien la llama por su nombre de forma clara; si hay la menor duda, usa "Hablante 1", "Hablante 2"… y mantén la misma etiqueta para la misma voz.\n`
+    ? `- Asistentes de la reunión: ${o.participantes}. Usa el nombre de una persona SOLO si se presenta o alguien la llama por su nombre de forma clara; si hay la menor duda, usa "${h1}", "${h2}"… y mantén la misma etiqueta para la misma voz.\n`
+    : "";
+  // El modelo no oye el tramo anterior, pero con su final puede seguir la
+  // conversación y no renumerar a quien ya hablaba (3.5.1).
+  const previo = o.anterior
+    ? `- Así terminaba el tramo anterior de esta misma reunión (solo como referencia; NO lo repitas en tu respuesta):\n«${o.anterior}»\n  Si siguen hablando las mismas personas, mantén sus mismas etiquetas.\n`
     : "";
   return `${cabecera}
 ${contexto}Reglas:
 - Si el audio está en silencio, solo tiene ruido de fondo o no contiene ninguna voz inteligible, responde EXACTAMENTE la palabra SIN_VOZ y nada más. No inventes una reunión bajo ningún concepto.
 - Transcripción literal y COMPLETA, desde el primer segundo hasta el último. No resumas, no omitas y no te detengas antes de que termine el audio.
-- Cada intervención en su propia línea, empezando por la marca de tiempo [MM:SS] contada desde el principio de ESTE audio y la etiqueta del hablante: "[MM:SS] Hablante 1: texto".
-- Si distingues hablantes, etiquétalos como "Hablante 1:", "Hablante 2:"...
-${nombres}- Marca con [inaudible] únicamente lo que de verdad no se entienda.
+- Cada intervención en su propia línea, empezando por la marca de tiempo [MM:SS] contada desde el principio de ESTE audio y la etiqueta del hablante: "[MM:SS] ${h1}: texto".
+- Si distingues hablantes, etiquétalos como "${h1}:", "${h2}:"...
+${nombres}${previo}- Marca con [inaudible] únicamente lo que de verdad no se entienda.
 ${glosario ? `- Vocabulario del dominio (respeta esta ortografía exacta): ${glosario}.` : ""}
 Devuelve SOLO la transcripción.`;
 }
@@ -856,7 +965,7 @@ async function transcribirGemini(blob, idx = 1, total = 1, opciones) {
 
   const { parte: parteAudio, fileName } = await prepararAudio(blob, key);
   const prompt = construirPrompt((cfg && cfg.glosario) || "", idx, total,
-    { participantes: (opciones && opciones.participantes) || "", idioma: cfg.idioma || "es" });
+    { participantes: (opciones && opciones.participantes) || "", idioma: cfg.idioma || "es", anterior: (opciones && opciones.anterior) || "" });
 
   try {
     let ultimo = null;

@@ -44,6 +44,7 @@ async function guarda(campos) {
   $("autoActaPlantilla").value = d.autoActaPlantilla || "acta";
   $("autoActaProv").value = d.autoActaProv || "gemini";
   $("conservarAudio").checked = !!d.conservarAudio;
+  $("modoAltavoz").value = d.modoAltavoz || "auto";
   for (const el of document.querySelectorAll(".precios input")) el.value = ((d.precios || {})[el.dataset.prov] || {})[el.dataset.tipo] || "";
   // Activado solo si además sigue el permiso: el usuario puede retirarlo desde Chrome.
   $("avisoReunion").checked = !!d.avisoReunion && await chrome.permissions.contains({ origins: ORIGENES_REUNION }).catch(() => false);
@@ -276,6 +277,12 @@ for (const id of ["openaiKey", "claudeKey"]) {
 }
 
 // --- avanzado: se guarda solo ---
+// Cómo vuelve la pestaña a los altavoces mientras se graba (offscreen.js: abreAltavoz).
+$("modoAltavoz").addEventListener("change", async () => {
+  await guardarConfig({ modoAltavoz: $("modoAltavoz").value });
+  pinta("e3", () => t("opc.altavozGuardado"), true);
+});
+
 for (const id of ["glosario", "plantillaPersonalizada", "openaiKey", "openaiModel", "claudeKey", "claudeModel"]) {
   $(id).addEventListener("input", () => {
     guarda({ [id]: $(id).value.trim() });

@@ -200,3 +200,12 @@ Origen: Álvaro no oye la reunión mientras graba, y pide probar con Gemini de v
 - Repetir la medida del sonido devuelto con el monitor BenQ (audio HDMI) conectado.
 - Las etiquetas «Hablante N» vienen del modelo y salen en español también en la interfaz inglesa; la numeración no se mantiene entre tramos.
 - Lo ya guardado en el historial (títulos, errores, etiquetas de tramo) queda en el idioma en que se escribió.
+
+## 7. 3.5.1 (02/10/2026): que dé igual por dónde se escuche
+
+Pedido por Álvaro: «debería ser irrelevante que lo escuches con monitor o no».
+- **Altavoz robusto** (offscreen.js): dos formas de devolver la pestaña, `<audio>` (por defecto) y un motor de audio aparte (AudioContext con colchón, sin tocar el de la grabación). Si cambia el dispositivo de salida se rehace; un vigía reinicia el `<audio>` que deja de avanzar y, en automático, a los tres reinicios pasa al motor. En el popup, mientras se graba una pestaña: «🔊 ¿No oyes la reunión? Prueba la otra forma», que cambia en vivo y se recuerda. En Opciones (avanzadas), la forma fija. Cada grabación apunta con qué forma sonó (`meta.altavoz`).
+- **Hablantes**: el prompt pide la etiqueta genérica en el idioma de la interfaz («Hablante N» / «Speaker N») y la biblioteca, el .md y las exportaciones muestran las de reuniones viejas en el idioma actual, debajo de los nombres puestos. El tramo siguiente recibe el final del anterior para seguir con las mismas etiquetas.
+- Verificado en Chrome 154 con clic real y sonido medido: automático, cambio en vivo al motor, cambio de dispositivo y vuelta al reproductor se oyen sin huecos (19/19). 140 tests.
+
+**Microcortes que Álvaro oye al grabar (02/10, de oído, «se entiende todo»): sin reproducir con medida.** La pista de la pestaña llega sin procesar (sin cancelación de eco, supresión de ruido ni control de volumen; 48 kHz estéreo). Con un tono de 1234 Hz y detector de cortes de 1 ms, ni el reproductor, ni el motor, ni abrir el micro (con o sin cancelación de eco), ni grabar sin micro empeoran el sonido frente a la reproducción normal (~70 dB de pureza en todas). Durante su escucha la prueba cambió tres veces de forma y simuló un cambio de dispositivo, y cada cambio deja un corte breve. Pendiente: comparar de oído las dos formas con el botón, y medir con voz y música, no solo con un tono.

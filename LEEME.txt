@@ -40,10 +40,11 @@ YA ESTÁ. Para grabar una reunión, elige modo:
      Atajos: Alt+Shift+G empieza/para, Alt+Shift+M marca un momento.
    - Si en 2 minutos no entra voz, Escriba te avisa (pestaña equivocada, micro
      silenciado...).
-   - ¿No oyes la reunión mientras grabas? Al capturar la pestaña, Chrome la silencia
-     y Escriba te devuelve su sonido. Mira el volumen de Windows y la salida de sonido
-     (icono del altavoz, abajo a la derecha): si sale por el monitor (HDMI) y no se
-     oye bien, cambia a los altavoces o cascos del ordenador.
+   - ¿No oyes bien la reunión mientras grabas? Al capturar la pestaña, Chrome la
+     silencia y Escriba te devuelve su sonido. Abre el panel y pulsa "🔊 ¿No oyes la
+     reunión? Prueba la otra forma": cambia al momento y se recuerda. Si aun así no,
+     mira el volumen de Windows y la salida de sonido (icono del altavoz, abajo a la
+     derecha).
    - Opcional, en Opciones: "Aviso al entrar en una reunión" (Meet, Teams, Zoom
      web, kMeet...) para que no se te olvide grabar, y "Coste estimado" con lo que
      te cobra tu proveedor: la biblioteca te dirá cuánto costó cada reunión.

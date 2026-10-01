@@ -255,9 +255,9 @@ grupo("offscreen.js — lo que suena por los altavoces mientras se graba");
 
 // Documento offscreen listo para grabar de verdad: getUserMedia, MediaRecorder y
 // <audio> simulados. `fallaPlay` imita un Chrome que no deja sonar el <audio>.
-function grabador({ fallaPlay = false } = {}) {
+function grabador({ fallaPlay = false, modoAltavoz } = {}) {
   const chrome = nuevoChrome();
-  chrome.runtime.sendMessage = async (msg) => (msg.cmd === "cfg" ? { geminiKey: "K" } : { ok: true });
+  chrome.runtime.sendMessage = async (msg) => (msg.cmd === "cfg" ? { geminiKey: "K", ...(modoAltavoz ? { modoAltavoz } : {}) } : { ok: true });
   const medios = nuevosMedios();
   const entorno = {
     ...entornoOffscreen(chrome, nuevoFetch([])),
@@ -289,13 +289,93 @@ test("al parar la grabación el <audio> se suelta", async () => {
   await hasta(() => el.paused && el.srcObject === null, "que se soltara el <audio>");
 });
 
-test("si Chrome no deja sonar el <audio>, la pestaña se oye por el AudioContext y con colchón grande", async () => {
+test("si Chrome no deja sonar el <audio>, la pestaña se oye por un motor de audio APARTE, con colchón", async () => {
   const { ctx, entorno } = grabador({ fallaPlay: true });
   await ctx.start({ modo: "tab_mic", streamId: "s1" });
-  const ac = entorno.AudioContext._instancias[0];
-  await hasta(() => vaAAltavoces(ac), "que la reunión se oyera por el AudioContext");
-  assert.strictEqual(ac._opciones.latencyHint, "playback",
+  await hasta(() => entorno.AudioContext._instancias.length === 2, "el contexto de salida");
+  const [grab, salida] = entorno.AudioContext._instancias;
+  await hasta(() => vaAAltavoces(salida), "que la reunión se oyera por el motor de audio");
+  assert.ok(!vaAAltavoces(grab), "el contexto de la grabación no va a los altavoces");
+  assert.strictEqual(salida._opciones.latencyHint, "playback",
     "con el valor por defecto trabaja en bloques de ~10 ms y cualquier tirón suena");
+  assert.strictEqual(ctx.altavozActual().modo, "contexto");
+});
+
+// ---------------------------------------------------------------------------- 3.5.1
+test("cambiar la forma de devolver el sonido en vivo: del <audio> al motor y vuelta", async () => {
+  const { ctx, entorno } = grabador();
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  const [el1] = entorno.Audio._creados;
+  assert.strictEqual(await ctx.cambiaAltavoz(), "contexto");
+  assert.ok(el1.paused && el1.srcObject === null, "el <audio> se suelta");
+  const salida = entorno.AudioContext._instancias[1];
+  assert.ok(vaAAltavoces(salida), "suena por el motor");
+  assert.strictEqual(await ctx.cambiaAltavoz(), "audio");
+  assert.strictEqual(salida.state, "closed", "el motor se cierra");
+  const el2 = entorno.Audio._creados[1];
+  assert.ok(el2 && !el2.paused && el2.srcObject, "un <audio> nuevo, sonando");
+});
+
+test("si cambia el dispositivo de salida (se desconecta el monitor…), el sonido se rehace en el nuevo", async () => {
+  const { ctx, entorno } = grabador();
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  const [el1] = entorno.Audio._creados;
+  entorno.navigator.mediaDevices._dispara("devicechange");
+  await hasta(() => entorno.Audio._creados.length === 2, "un <audio> nuevo");
+  assert.ok(el1.srcObject === null, "el viejo se suelta");
+  assert.strictEqual(entorno.Audio._creados[1].paused, false);
+  assert.strictEqual(ctx.altavozActual().modo, "audio", "en la misma forma");
+});
+
+test("vigía: un <audio> que deja de avanzar se reinicia, y tras tres reinicios pasa al motor (en automático)", async () => {
+  const { ctx, entorno } = grabador();
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  // Sano: el tiempo avanza → no se toca.
+  for (let i = 1; i <= 3; i++) { entorno.Audio._creados[0].currentTime = i; await ctx.vigilaAltavoz(); }
+  assert.strictEqual(entorno.Audio._creados.length, 1, "un <audio> que avanza no se reinicia");
+  // Atascado: dos vueltas sin avanzar → reinicio. Tres reinicios → motor.
+  for (let r = 0; r < 3; r++) { await ctx.vigilaAltavoz(); await ctx.vigilaAltavoz(); }
+  assert.strictEqual(ctx.altavozActual().modo, "contexto");
+  assert.strictEqual(ctx.altavozActual().reinicios, 3);
+});
+
+test("el service worker pasa «¿No oyes la reunión?» al grabador y recuerda la forma elegida", async () => {
+  const { chrome, enviar } = bg();
+  chrome._registro.offscreen = 1;
+  const pedidos = [];
+  chrome.runtime.sendMessage = async (m) => { pedidos.push(m); return m.target === "offscreen" ? { ok: true, modo: "contexto" } : { ok: true }; };
+  const r = await enviar({ target: "bg", cmd: "altavoz", accion: "cambiar" });
+  assert.deepStrictEqual({ ...r }, { ok: true, modo: "contexto" });
+  assert.deepStrictEqual(pedidos.map((m) => [m.target, m.cmd, m.accion]), [["offscreen", "altavoz", "cambiar"]]);
+  assert.strictEqual(chrome.storage.sync._volcado().modoAltavoz, "contexto", "la próxima grabación empieza así");
+  const sinGrabar = bg();
+  assert.deepStrictEqual({ ...(await sinGrabar.enviar({ target: "bg", cmd: "altavoz", accion: "cambiar" })) }, { ok: false, modo: null });
+});
+
+test("con la forma fijada en Opciones, el vigía reinicia pero no la cambia", async () => {
+  const { ctx } = grabador({ modoAltavoz: "audio" });
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  for (let r = 0; r < 5; r++) { await ctx.vigilaAltavoz(); await ctx.vigilaAltavoz(); }
+  assert.strictEqual(ctx.altavozActual().modo, "audio");
+});
+
+test("«motor de audio» elegido en Opciones se usa desde el principio, y al parar se cierra", async () => {
+  const { ctx, entorno } = grabador({ modoAltavoz: "contexto" });
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  assert.strictEqual(entorno.Audio._creados.length, 0);
+  const salida = entorno.AudioContext._instancias[1];
+  assert.ok(vaAAltavoces(salida));
+  ctx.stop();
+  await hasta(() => salida.state === "closed", "que se cerrara el motor");
+});
+
+test("la orden «altavoz» del popup cambia la forma y dice cuál queda; sin grabación, no hace nada", async () => {
+  const { ctx, entorno } = grabador();
+  const enviar = mensajero(entorno.chrome);
+  assert.deepStrictEqual({ ...(await enviar({ target: "offscreen", cmd: "altavoz", accion: "cambiar" })) }, { ok: false, modo: null });
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  assert.deepStrictEqual({ ...(await enviar({ target: "offscreen", cmd: "altavoz", accion: "cambiar" })) }, { ok: true, modo: "contexto" });
+  assert.deepStrictEqual({ ...(await enviar({ target: "offscreen", cmd: "altavoz", accion: "estado" })) }, { ok: true, modo: "contexto" });
 });
 
 test("«Solo micro» no devuelve nada a los altavoces: haría eco", async () => {
@@ -1632,6 +1712,43 @@ test("REGRESIÓN 01/10: sin chrome.i18n (documento offscreen) el idioma sale de 
   assert.strictEqual(i18n.idiomaNavegador(), "es");
   delete global.chrome;
   if (antes) Object.defineProperty(global, "navigator", antes); else delete global.navigator;
+});
+
+test("las etiquetas genéricas salen en el idioma de la interfaz, debajo de los nombres puestos", () => {
+  const txt = "[00:01] Hablante 1: hola\n[00:02] Speaker 2: hi\n[00:03] Marta: buenas\n[00:04] Hablante 3: adiós";
+  i18n._ponIdioma("en");
+  assert.deepStrictEqual({ ...comun.mapaVisible(txt, { "Hablante 3": "Luis" }) }, { "Hablante 1": "Speaker 1", "Hablante 3": "Luis" });
+  i18n._ponIdioma("es");
+  assert.deepStrictEqual({ ...comun.mapaVisible(txt, {}) }, { "Speaker 2": "Hablante 2" }, "y al revés en español");
+  assert.match(comun.construirMarkdown({ fecha: "x", tramos: [{ estado: "ok", texto: "[00:01] Speaker 1: hi" }] }), /\[00:01\] Hablante 1: hi/);
+});
+
+test("el tramo siguiente recibe cómo terminaba el anterior, para seguir con las mismas etiquetas", async () => {
+  const reloj = { t: 5000000 };
+  const base = fetchPorTramo({
+    1: [respGemini("[00:01] Hablante 1: empezamos con el presupuesto\n[04:58] Hablante 2: y yo cierro el punto")],
+    2: [respGemini("[00:02] Hablante 2: sigo")],
+  });
+  const prompts = [];
+  const f = async (url, opts = {}) => { prompts.push(JSON.parse(opts.body || "{}").contents?.[0]?.parts?.[0]?.text || ""); return base(url, opts); };
+  const s = sistemaGrabando({ fetch: f, reloj });
+  await s.off.start({ modo: "mic" });
+  const id = s.historial()[0].id;
+  reloj.t += comun.DURACION_TRAMO_S * 1000;
+  s.off.cortaTramo();
+  await hasta(() => ((s.entrada(id).tramos || [])[0] || {}).estado === "ok", "el tramo 1 en vivo");
+  s.off.stop();
+  await hasta(() => s.entrada(id).estado === "ok", "que terminara");
+  const p1 = prompts.find((p) => /TRAMO 1 /.test(p)), p2 = prompts.find((p) => /TRAMO 2 /.test(p));
+  assert.match(p2, /y yo cierro el punto/, "lleva el final del tramo 1");
+  assert.match(p2, /NO lo repitas/);
+  assert.doesNotMatch(p1, /terminaba el tramo anterior/, "el primero no tiene anterior");
+});
+
+test("el prompt pide la etiqueta genérica en el idioma de la interfaz", () => {
+  const off = offscreen(nuevoFetch([]));
+  i18n._ponIdioma("es");
+  assert.match(off.construirPrompt("", 1, 1, {}), /"\[MM:SS\] Hablante 1: texto"/);
 });
 
 test("la fecha de una reunión: en español la guardada; en inglés se rehace, que 01/10 sería 10 de enero", () => {

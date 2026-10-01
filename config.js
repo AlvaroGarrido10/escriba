@@ -29,6 +29,7 @@ const CFG_SYNC = {
   precios: {},                 // € por millón de tokens, los que ponga el usuario (comun.js: costeReunion)
   avisoReunion: false,         // avisar al entrar en una reunión (pide permiso para ORIGENES_REUNION)
   idiomaUI: "auto",            // idioma de la interfaz: "auto" (el de Chrome), "es" o "en" (i18n.js)
+  modoAltavoz: "auto",         // cómo vuelve la pestaña a los altavoces: "auto", "audio" o "contexto" (offscreen.js)
 };
 
 // Webs de reunión que se vigilan para el aviso. Van en optional_host_permissions

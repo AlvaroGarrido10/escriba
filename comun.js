@@ -209,6 +209,22 @@ function aplicarHablantes(texto, mapa) {
   }).join("\n");
 }
 
+// Etiquetas genéricas en el idioma de la interfaz: «Hablante 2» ↔ «Speaker 2».
+// Las pone el modelo según el idioma que había al transcribir, así que una
+// reunión vieja puede traer las del otro idioma. Van DEBAJO de los nombres que
+// haya puesto el usuario, y solo al mostrar y exportar: el texto no se toca.
+const RE_GENERICA = /^(?:Hablante|Speaker)\s+(\d+)$/i;
+function etiquetaGenerica(n) { return t("com.hablanteN", n); }
+function mapaVisible(texto, mapa) {
+  const out = {};
+  for (const h of hablantesDe(texto)) {
+    const m = RE_GENERICA.exec(h);
+    if (m && etiquetaGenerica(m[1]) !== h) out[h] = etiquetaGenerica(m[1]);
+  }
+  for (const [k, v] of Object.entries(mapa || {})) if (v && String(v).trim()) out[k] = String(v).trim();
+  return out;
+}
+
 // El .md se rehace entero desde el historial cada vez que cambia algo, así que
 // un reintento que completa un hueco deja un documento limpio, sin avisos viejos.
 function construirMarkdown(h) {
@@ -242,7 +258,7 @@ function construirMarkdown(h) {
   const cuerpo = tramos.map((tr, i) => {
     const cab = t("com.mdCabTramo", i + 1, tramos.length, tr.etiqueta || etiquetaTramo(i));
     if (tr.estado === "ok") {
-      return aplicarHablantes(tr.texto || "", h.hablantes) +
+      return aplicarHablantes(tr.texto || "", mapaVisible(tr.texto || "", h.hablantes)) +
         (tr.truncado ? `\n\n> ⚠️ ${t("com.mdTruncado")}` : "");
     }
     if (tr.estado === "mudo") return `> _(${t("com.mdTramoMudo", cab)})_`;
@@ -419,6 +435,6 @@ if (typeof module !== "undefined" && module.exports) {
     DURACION_TRAMO_S, PICO_SILENCIO, UMBRAL_VOZ, abrirAudios, MENSAJES_ERROR, CODIGOS_CLAVE, textoError, resumenTramos, estadoFinal,
     etiquetaTramo, construirMarkdown, medirMuestras, trocear, planificarTramos, codificarWav, fechaBonita,
     formatoTiempo, ajustarTiempos, inicioTramo, lineasTranscripcion, hablantesDe, aplicarHablantes,
-    precioValido, costeReunion, costeMes, formatoEuros, plataformaReunion, fechaVisible,
+    precioValido, costeReunion, costeMes, formatoEuros, plataformaReunion, fechaVisible, mapaVisible, etiquetaGenerica,
   };
 }

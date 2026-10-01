@@ -165,6 +165,14 @@
       <textarea id="plantillaPersonalizada" style="height:110px" placeholder="Ej: Devuelve una tabla con los riesgos que se mencionen, quién los detectó y qué se decidió hacer. Después, una lista de compromisos con fecha." data-i18n-placeholder="opc.plantillaPlaceholder"></textarea>
       <small data-i18n="opc.plantillaAyuda">Aparece como «Mi plantilla» en la biblioteca y en el acta automática. Participantes, glosario y notas se le añaden solos.</small>
 
+      <label data-i18n="opc.altavozLabel">Sonido de la pestaña mientras grabas</label>
+      <select id="modoAltavoz" style="padding:7px;border:1px solid #bbb;border-radius:8px;font-size:12.5px">
+        <option value="auto" data-i18n="opc.altavozAuto">Automático (recomendado)</option>
+        <option value="audio" data-i18n="opc.altavozAudio">Reproductor de Chrome</option>
+        <option value="contexto" data-i18n="opc.altavozContexto">Motor de audio</option>
+      </select>
+      <small data-i18n="opc.altavozAyuda">Al grabar una pestaña, Chrome la silencia y Escriba te devuelve su sonido. Si no oyes bien la reunión (pasa con algunos monitores y altavoces), prueba otra forma. También se cambia en vivo desde el panel mientras grabas.</small>
+
       <label data-i18n="opc.modeloGemini">Modelo de Gemini</label>
       <input type="text" id="geminiModel" readonly>
       <small data-i18n="opc.modeloGeminiAyuda">Se elige automáticamente el que funcione con tu clave.</small>

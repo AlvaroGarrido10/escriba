@@ -156,6 +156,8 @@ function nuevoAudioContext() {
       _opciones: opciones,
       _fuentes: [],
       sampleRate: 16000,
+      state: "running",
+      async resume() { ctx.state = "running"; },
       async decodeAudioData(buffer) {
         const muestras = buffer && buffer._muestras;
         if (!muestras) throw new Error("audio no decodificable");
@@ -165,7 +167,7 @@ function nuevoAudioContext() {
           getChannelData: () => muestras,
         };
       },
-      async close() {},
+      async close() { ctx.state = "closed"; },
       createDynamicsCompressor: () => ({
         ...nodo(), threshold: { value: 0 }, knee: { value: 0 }, ratio: { value: 1 }, attack: { value: 0 }, release: { value: 0 },
       }),
@@ -182,7 +184,7 @@ function nuevoAudioContext() {
   return AudioContext;
 }
 const nodo = () => {
-  const n = { _destinos: [], connect(d) { n._destinos.push(d); return d; }, disconnect() {}, channelCount: 1, channelCountMode: "max" };
+  const n = { _destinos: [], connect(d) { n._destinos.push(d); return d; }, disconnect() { n._destinos = []; }, channelCount: 1, channelCountMode: "max" };
   return n;
 };
 
@@ -192,7 +194,7 @@ function nuevoAudioElemento({ falla = false } = {}) {
   const creados = [];
   function Audio() {
     const el = {
-      srcObject: null, paused: true,
+      srcObject: null, paused: true, currentTime: 0, readyState: 4, ended: false,
       async play() {
         if (falla) throw new Error("NotAllowedError: play() failed because the user didn't interact with the document first.");
         el.paused = false;
@@ -211,7 +213,10 @@ function nuevoAudioElemento({ falla = false } = {}) {
 // Con `conAudio`, cada tramo entrega un trozo de audio al pararse, como uno real.
 function nuevosMedios({ conAudio = false } = {}) {
   const pista = () => { const p = { parada: false, stop() { p.parada = true; } }; return p; };
+  const oyentes = {};
   const mediaDevices = {
+    addEventListener(tipo, f) { (oyentes[tipo] = oyentes[tipo] || []).push(f); },
+    _dispara(tipo) { (oyentes[tipo] || []).forEach((f) => f({ type: tipo })); },
     async getUserMedia(c) {
       const pistas = [pista()];
       return { _c: c, getTracks: () => pistas, getAudioTracks: () => pistas };

@@ -8,6 +8,11 @@
 // había forma de reintentar. Ahora cada tramo se guarda en IndexedDB en cuanto
 // se graba y solo se borra cuando su texto ya está a salvo en el historial.
 
+// t() la define i18n.js, que se carga antes en las páginas y en el service
+// worker. En Node (tests) se trae con require.
+if (typeof t !== "function" && typeof require === "function") var t = require("./i18n.js").t;
+if (typeof LOCALE_UI !== "function" && typeof require === "function") var LOCALE_UI = require("./i18n.js").LOCALE_UI;
+
 const DURACION_TRAMO_S = 5 * 60; // cada tramo que se manda al modelo
 // Por debajo de este pico un tramo es silencio digital. NO se manda al modelo:
 // Gemini, ante silencio, se inventa una reunión entera de cero.
@@ -102,14 +107,15 @@ var audios = typeof indexedDB !== "undefined" ? abrirAudios(indexedDB) : null;
 // Cada fallo lleva un código. Con él se decide cuándo reintentar y se le dice al
 // usuario qué ha pasado de verdad: la 3.0 decía «falta la clave» también cuando
 // lo que había fallado era la comunicación interna de la extensión.
+// Con getters: el texto sale en el idioma vigente al leerlo, no en el de la carga.
 const MENSAJES_ERROR = {
-  sin_clave: "Falta la clave de Gemini. Ponla en Opciones: en cuanto la guardes, Escriba lo reintentará sola.",
-  clave_invalida: "Google rechaza la clave de Gemini (caducada, borrada o sin permisos). Pon una nueva en Opciones y Escriba lo reintentará sola.",
-  saturado: "Gemini está saturado en este momento. Escriba lo reintentará sola dentro de unos minutos.",
-  red: "No había conexión con Gemini. Escriba lo reintentará sola.",
-  interno: "Fallo interno de Escriba al preparar la transcripción. Se reintentará sola.",
-  otro: "Gemini devolvió un error inesperado. Escriba lo reintentará sola.",
-  perdido: "El audio de este tramo ya no está disponible, así que no se puede transcribir.",
+  get sin_clave() { return t("com.errSinClave"); },
+  get clave_invalida() { return t("com.errClaveInvalida"); },
+  get saturado() { return t("com.errSaturado"); },
+  get red() { return t("com.errRed"); },
+  get interno() { return t("com.errInterno"); },
+  get otro() { return t("com.errOtro"); },
+  get perdido() { return t("com.errPerdido"); },
 };
 // Estos no se arreglan esperando: hace falta que el usuario cambie la clave.
 const CODIGOS_CLAVE = ["sin_clave", "clave_invalida"];
@@ -138,7 +144,7 @@ function estadoFinal(tramos) {
 
 const etiquetaTramo = (i) => {
   const min = DURACION_TRAMO_S / 60;
-  return `≈ minuto ${i * min} al ${(i + 1) * min}`;
+  return t("com.etiquetaTramo", i * min, (i + 1) * min);
 };
 
 // --- marcas de tiempo (3.2) ------------------------------------------------------
@@ -209,39 +215,40 @@ function construirMarkdown(h) {
   const tramos = h.tramos || [];
   const r = resumenTramos(tramos);
   const m = h.meta || {};
-  let md = `# Transcripción de reunión — ${h.fecha}\n\n`;
-  if (h.titulo) md += `**Origen:** ${h.titulo}\n`;
-  if (h.participantes) md += `**Participantes:** ${h.participantes}\n`;
-  md += `**Duración:** ${m.minutos || 1} min · ${tramos.length} tramo${tramos.length === 1 ? "" : "s"}\n`;
-  if (m.audioLinea) md += `**Audio:** ${m.audioLinea}\n`;
+  let md = `# ${t("com.mdTitulo", fechaVisible(h))}\n\n`;
+  if (h.titulo) md += `**${t("com.mdOrigen")}:** ${h.titulo}\n`;
+  if (h.participantes) md += `**${t("com.mdParticipantes")}:** ${h.participantes}\n`;
+  const minYTramos = tramos.length === 1 ? t("com.mdMinTramo", m.minutos || 1, tramos.length)
+    : t("com.mdMinTramos", m.minutos || 1, tramos.length);
+  md += `**${t("com.mdDuracion")}:** ${minYTramos}\n`;
+  if (m.audioLinea) md += `**${t("com.mdAudio")}:** ${m.audioLinea}\n`;
   md += m.audioAlerta || "";
-  if (m.interrumpida) {
-    md += "\n> ⚠️ **La grabación se cortó antes de tiempo** (se cerró Chrome o se reinició la extensión). " +
-      "Se ha recuperado lo grabado hasta ese momento; puede faltar el último medio minuto.\n";
-  }
+  if (m.interrumpida) md += `\n> ⚠️ ${t("com.mdCortada")}\n`;
   if (r.pendientes) {
-    const cuantos = tramos.length === 1 ? "El audio sigue" : `${r.pendientes} de ${tramos.length} tramos ${r.pendientes === 1 ? "sigue" : "siguen"}`;
-    md += `\n> ⏳ **${cuantos} sin transcribir.** ` +
-      "Su audio está a salvo dentro de Escriba: se reintentará sola, y también puedes pulsar «Reintentar» en el historial.\n";
+    const cuantos = tramos.length === 1 ? t("com.mdPendUnico")
+      : r.pendientes === 1 ? t("com.mdPendUno", r.pendientes, tramos.length)
+        : t("com.mdPendVarios", r.pendientes, tramos.length);
+    md += `\n> ⏳ ${cuantos} ${t("com.mdPendTxt")}\n`;
   }
-  if (r.perdidos) md += `\n> ⚠️ **${r.perdidos} de ${tramos.length} tramos no se pueden recuperar:** su audio ya no está disponible.\n`;
-  if (r.mudos) md += `\n> ℹ️ **${r.mudos} de ${tramos.length} tramos venían sin voz** y se han dejado en blanco a propósito.\n`;
-  if (h.notas && String(h.notas).trim()) md += `\n## Notas\n\n${String(h.notas).trim()}\n`;
+  if (r.perdidos) md += `\n> ⚠️ ${t("com.mdPerdidos", r.perdidos, tramos.length)}\n`;
+  if (r.mudos) md += `\n> ℹ️ ${t("com.mdMudos", r.mudos, tramos.length)}\n`;
+  if (h.notas && String(h.notas).trim()) md += `\n## ${t("com.mdNotas")}\n\n${String(h.notas).trim()}\n`;
   if (Array.isArray(h.marcas) && h.marcas.length) {
-    md += "\n## Momentos marcados\n\n" +
+    md += `\n## ${t("com.mdMarcas")}\n\n` +
       h.marcas.map((x) => `- [${formatoTiempo(x.t)}]${x.nota ? " " + x.nota : ""}`).join("\n") + "\n";
   }
 
-  const cuerpo = tramos.map((t, i) => {
-    const cab = `Tramo ${i + 1} de ${tramos.length} (${t.etiqueta || etiquetaTramo(i)})`;
-    if (t.estado === "ok") {
-      return aplicarHablantes(t.texto || "", h.hablantes) +
-        (t.truncado ? "\n\n> ⚠️ Este tramo se cortó por límite de longitud del modelo." : "");
+  // `tr` y no `t`: `t` es la función de los textos (i18n.js).
+  const cuerpo = tramos.map((tr, i) => {
+    const cab = t("com.mdCabTramo", i + 1, tramos.length, tr.etiqueta || etiquetaTramo(i));
+    if (tr.estado === "ok") {
+      return aplicarHablantes(tr.texto || "", h.hablantes) +
+        (tr.truncado ? `\n\n> ⚠️ ${t("com.mdTruncado")}` : "");
     }
-    if (t.estado === "mudo") return `> _(${cab}: sin voz — no se transcribe para no inventar texto.)_`;
-    if (t.estado === "perdido") return `> ⚠️ **${cab}: no se puede transcribir.**\n> ${textoError("perdido")}`;
-    return `> ⏳ **${cab}: pendiente de transcribir.**\n> ${t.error || textoError(t.codigo)}` +
-      (t.dlAudio ? "\n> Hay además una copia de su audio en Descargas/reuniones." : "");
+    if (tr.estado === "mudo") return `> _(${t("com.mdTramoMudo", cab)})_`;
+    if (tr.estado === "perdido") return `> ⚠️ ${t("com.mdTramoPerdido", cab)}\n> ${textoError("perdido")}`;
+    return `> ⏳ ${t("com.mdTramoPendiente", cab)}\n> ${tr.error || textoError(tr.codigo)}` +
+      (tr.dlAudio ? `\n> ${t("com.mdCopiaDescargas")}` : "");
   }).join("\n\n");
   return md + `\n---\n\n${cuerpo}\n`;
 }
@@ -288,7 +295,7 @@ function planificarTramos(archivos) {
       const min = (x) => Math.round(x / sr / 60);
       plan.push({
         archivo: a.nombre, desde, hasta,
-        etiqueta: (archivos.length > 1 ? a.nombre + ", " : "") + `minuto ${min(desde)} al ${Math.max(1, min(hasta))}`,
+        etiqueta: (archivos.length > 1 ? a.nombre + ", " : "") + t("com.etiquetaArchivo", min(desde), Math.max(1, min(hasta))),
       });
     }
   }
@@ -321,10 +328,97 @@ function fechaBonita(ts) {
   };
 }
 
+// La fecha de una reunión para enseñarla. En español, la que se guardó al crearla
+// («01/10/2026 22:11»); en inglés se rehace desde el id, que es su marca de
+// tiempo, porque «01/10/2026» se leería como 10 de enero.
+function fechaVisible(h) {
+  if (LOCALE_UI() === "en-US" && typeof h.id === "number" && h.id > 1e12) {
+    return new Date(h.id).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+  return h.fecha || "";
+}
+
+// --- coste estimado (3.5) ---
+// Con los precios que pone el usuario en Opciones, en € por millón de tokens:
+// { gemini: { audio, entrada, salida }, gpt: { entrada, salida }, claude: { entrada, salida } }.
+// Escriba no se inventa precios: cambian cada pocos meses y dependen del plan de
+// cada clave. Un precio vacío es «sin precio» (null); un 0 es la capa gratuita.
+function precioValido(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim().replace(",", ".");
+  return /^\d+(\.\d+)?$/.test(s) ? parseFloat(s) : null;
+}
+
+// Transcribir es audio de Gemini; las actas y preguntas, texto del proveedor que
+// las hizo (va en la clave: «acta·gpt», «pregunta·claude», o «gemini» a secas en
+// las de la 3.1). Devuelve { euros (null si no se puede saber), faltan, tokens }.
+function costeReunion(h, precios) {
+  const p = precios || {};
+  let euros = 0, conPrecio = false, tokens = 0;
+  const faltan = new Set();
+  const suma = (prov, tipoEntrada, entrada, salida) => {
+    tokens += entrada + salida;
+    for (const [n, tipo] of [[entrada, tipoEntrada], [salida, "salida"]]) {
+      if (!n) continue;
+      const precio = precioValido((p[prov] || {})[tipo]);
+      if (precio === null) faltan.add(prov);
+      else { euros += (n * precio) / 1e6; conPrecio = true; }
+    }
+  };
+  for (const t of (h && h.tramos) || []) {
+    if (t && t.uso) suma("gemini", "audio", t.uso.entrada || 0, t.uso.salida || 0);
+  }
+  for (const u of (h && h.usoIA) || []) suma(String(u.clave || "").split("·").pop(), "entrada", u.entrada || 0, u.salida || 0);
+  return { euros: tokens && conPrecio ? euros : null, faltan: [...faltan], tokens };
+}
+
+// Lo gastado en el mes natural de `ahora` (por defecto, el actual).
+function costeMes(historial, precios, ahora) {
+  const ref = new Date(ahora || Date.now());
+  let euros = 0, reuniones = 0;
+  const faltan = new Set();
+  for (const h of historial || []) {
+    const d = new Date(h.id);
+    if (d.getFullYear() !== ref.getFullYear() || d.getMonth() !== ref.getMonth()) continue;
+    const c = costeReunion(h, precios);
+    if (c.euros === null) continue;
+    euros += c.euros;
+    reuniones++;
+    c.faltan.forEach((f) => faltan.add(f));
+  }
+  return { euros: reuniones ? euros : null, reuniones, faltan: [...faltan] };
+}
+
+// --- aviso al entrar en una reunión (3.5) ---
+// Solo salas de reunión, no la portada de cada web: avisar en meet.google.com a
+// secas sería ruido. Las webs tienen que estar en ORIGENES_REUNION (config.js).
+const SALAS_REUNION = [
+  [/^https:\/\/meet\.google\.com\/[a-z]{3,4}-[a-z]{4}-[a-z]{3,4}(?:[/?#]|$)/i, "Google Meet"],
+  [/^https:\/\/teams\.(?:microsoft|live)\.com\/(?:.*meetup-join|meet\/\d|.*meetingjoin)/i, "Microsoft Teams"],
+  [/^https:\/\/(?:[a-z0-9-]+\.)?zoom\.us\/wc\//i, "Zoom"],
+  // Un nombre que cambia con el idioma va como función: se traduce al usarlo.
+  [/^https:\/\/kmeet\.infomaniak\.com\/[^/?#]+/i, () => t("com.kmeet")],
+  [/^https:\/\/meet\.jit\.si\/[^/?#]+/i, "Jitsi Meet"],
+];
+function plataformaReunion(url) {
+  const s = String(url || "");
+  const hit = SALAS_REUNION.find(([re]) => re.test(s));
+  return hit ? (typeof hit[1] === "function" ? hit[1]() : hit[1]) : "";
+}
+
+// Coma decimal en español, punto en inglés; el símbolo, donde toque en cada uno.
+function formatoEuros(n) {
+  if (n === 0) return t("com.euros", "0");
+  if (n < 0.005) return t("com.menosCentimo");
+  const cifra = n.toFixed(2);
+  return t("com.euros", LOCALE_UI() === "en-US" ? cifra : cifra.replace(".", ","));
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     DURACION_TRAMO_S, PICO_SILENCIO, UMBRAL_VOZ, abrirAudios, MENSAJES_ERROR, CODIGOS_CLAVE, textoError, resumenTramos, estadoFinal,
     etiquetaTramo, construirMarkdown, medirMuestras, trocear, planificarTramos, codificarWav, fechaBonita,
     formatoTiempo, ajustarTiempos, inicioTramo, lineasTranscripcion, hablantesDe, aplicarHablantes,
+    precioValido, costeReunion, costeMes, formatoEuros, plataformaReunion, fechaVisible,
   };
 }

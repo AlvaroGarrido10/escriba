@@ -25,12 +25,12 @@ $("btnVivo").onclick = () => {
 $("btnPausa").onclick = async () => {
   const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
   const r = await chrome.runtime.sendMessage({ target: "bg", cmd: s && s.pausado ? "reanudar" : "pausar" });
-  if (!r || !r.ok) { $("estado").textContent = "❌ " + ((r && r.error) || "No se pudo."); return; }
+  if (!r || !r.ok) { $("estado").textContent = "❌ " + ((r && r.error) || t("pop.noSePudo")); return; }
   refrescaGrabacion();
 };
 $("btnMarca").onclick = async () => {
   const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "marcar", nota: "" });
-  $("estado").textContent = r && r.ok ? `⭐ Momento marcado en el ${formatoTiempo(r.marca.t)}. Puedes añadirle una nota en el panel en vivo.` : "❌ " + ((r && r.error) || "No se pudo marcar.");
+  $("estado").textContent = r && r.ok ? t("pop.momentoMarcado", formatoTiempo(r.marca.t)) : "❌ " + ((r && r.error) || t("pop.noSePudoMarcar"));
 };
 
 // Recordatorio legal: grabar a otros sin avisarles no es buena idea (RGPD).
@@ -40,10 +40,12 @@ chrome.storage.sync.get({ avisoRgpdOculto: false }).then(({ avisoRgpdOculto }) =
 $("ocultaRgpd").onclick = () => { chrome.storage.sync.set({ avisoRgpdOculto: true }); $("avisoRgpd").style.display = "none"; };
 
 // El atajo puede haberlo cambiado el usuario en chrome://extensions/shortcuts.
-if (chrome.commands && chrome.commands.getAll) {
+// Se pinta desde init(), cuando ya se sabe el idioma.
+function pintaAtajo() {
+  if (!chrome.commands || !chrome.commands.getAll) return;
   chrome.commands.getAll().then((cs) => {
     const g = cs.find((c) => c.name === "grabar");
-    if (g && g.shortcut) $("atajo").textContent = ` Atajo: ${g.shortcut}.`;
+    if (g && g.shortcut) $("atajo").textContent = " " + t("pop.atajo", g.shortcut);
   }).catch(() => {});
 }
 $("btnArreglaMic").onclick = () => chrome.runtime.openOptionsPage();
@@ -65,9 +67,7 @@ async function revisaMicro() {
 }
 function pintaAvisoMic() {
   const modo = document.querySelector(".modo input:checked").value;
-  $("avisoMicTxt").textContent = modo === "mic"
-    ? "En modo «Solo micro» no se grabará nada."
-    : "Solo se grabará la pestaña: tu voz no saldrá en la transcripción.";
+  $("avisoMicTxt").textContent = modo === "mic" ? t("pop.micModoMicNada") : t("pop.micSoloPestana");
   $("avisoMic").style.display = micOk ? "none" : "block";
 }
 document.querySelectorAll(".modo input").forEach(r => r.addEventListener("change", pintaModo));
@@ -78,14 +78,15 @@ function pintaModo() {
 pintaModo();
 
 // Repintar en cuanto la transcripción termine (aunque el popup esté abierto).
-chrome.storage.onChanged.addListener((cambios, area) => {
+// Se engancha desde init(), cuando ya se sabe el idioma.
+function alCambiarHistorial(cambios, area) {
   if (area === "local" && cambios.historial) {
     const nuevos = cambios.historial.newValue || [];
     pintaHistorial();
     const ultimo = nuevos[0];
     // Mientras trocea y transcribe, ir cantando por dónde va.
     if (ultimo && ultimo.estado === "transcribiendo" && ultimo.progreso) {
-      $("estado").textContent = `⏳ Transcribiendo… ${ultimo.progreso}`;
+      $("estado").textContent = t("pop.transcribiendoProg", ultimo.progreso);
     }
     // Si la última grabación acaba de terminar, se avisa con un botón para abrirla.
     if (ultimo && ESTADOS_FINALES.includes(ultimo.estado) && ultimo.id !== ultimoIdVisto) {
@@ -93,18 +94,18 @@ chrome.storage.onChanged.addListener((cambios, area) => {
       avisaLista(ultimo);
     }
   }
-});
+}
 
 const ESTADOS_FINALES = ["ok", "pendiente", "error"];
 
 function avisaLista(h) {
   const caja = $("listo");
-  const txt = h.estado === "ok" ? "✅ Transcripción lista"
-    : h.estado === "pendiente" ? "⏳ Falta algún tramo; su audio está a salvo y se reintentará sola"
-      : "❌ La transcripción falló";
+  const txt = h.estado === "ok" ? t("pop.listaOk")
+    : h.estado === "pendiente" ? t("pop.listaPendiente")
+      : t("pop.listaError");
   caja.innerHTML = `${txt}: <b>${esc(h.titulo)}</b>. `;
   const b = document.createElement("button");
-  b.textContent = "📖 Abrir";
+  b.textContent = t("pop.abrir");
   b.style.cssText = "font-size:11px;padding:3px 8px;border:1px solid #2e7d32;background:#fff;color:#1f5b22;border-radius:5px;cursor:pointer;margin-left:4px";
   b.onclick = () => abrirBiblioteca(h.id);
   caja.appendChild(b);
@@ -116,14 +117,18 @@ $("btnImportar").onclick = () => chrome.tabs.create({ url: "importar.html" });
 
 init();
 async function init() {
+  // Antes de pintar nada: el idioma elegido en Opciones (traduce el HTML).
+  await cargarIdiomaUI();
+  pintaAtajo();
+  chrome.storage.onChanged.addListener(alCambiarHistorial);
   // Lo que quedó pendiente se reintenta al abrir el popup, sin esperar a la
   // alarma (el service worker decide si ya toca). No se espera la respuesta.
   chrome.runtime.sendMessage({ target: "bg", cmd: "revisarPendientes" }).catch(() => {});
   // Primer uso: sin clave no se puede transcribir → llevar a la configuración.
   const { geminiKey } = await leerConfig();
   if (!geminiKey) {
-    $("estado").innerHTML = '⚠️ Falta configurar la clave (1 min).';
-    $("btnRec").textContent = "⚙️ Configurar ahora";
+    $("estado").innerHTML = t("pop.faltaClave");
+    $("btnRec").textContent = t("pop.configurarAhora");
     $("btnRec").onclick = () => chrome.runtime.openOptionsPage();
     pintaHistorial(); // el historial se ve igual: puede haber reuniones esperando la clave
     return;
@@ -142,12 +147,10 @@ async function init() {
 // Muestra qué pestaña se va a grabar y avisa si no está sonando.
 function pintaObjetivo(obj) {
   const modo = document.querySelector(".modo input:checked").value;
-  if (modo === "mic") { $("estado").textContent = "🎙️ Se grabará solo tu micrófono."; return; }
-  if (!obj) { $("estado").innerHTML = "⚠️ No hay ninguna pestaña con audio. Abre la reunión o usa «Solo micro»."; return; }
-  const t = obj.titulo.length > 34 ? obj.titulo.slice(0, 34) + "…" : obj.titulo;
-  $("estado").innerHTML = obj.suena
-    ? `🔊 Se grabará: <b>${esc(t)}</b>`
-    : `⚠️ <b>${esc(t)}</b> no está sonando. Dale al play en la reunión (o usa «Solo micro»).`;
+  if (modo === "mic") { $("estado").textContent = t("pop.soloTuMicro"); return; }
+  if (!obj) { $("estado").innerHTML = t("pop.sinPestanaAudio"); return; }
+  const tit = obj.titulo.length > 34 ? obj.titulo.slice(0, 34) + "…" : obj.titulo;
+  $("estado").innerHTML = obj.suena ? t("pop.seGrabara", esc(tit)) : t("pop.noSuena", esc(tit));
 }
 document.querySelectorAll(".modo input").forEach(r => r.addEventListener("change", async () => {
   pintaAvisoMic();
@@ -159,18 +162,18 @@ $("btnRec").onclick = async () => {
   const grabando = $("btnRec").classList.contains("grabando");
   if (!grabando) {
     const modo = document.querySelector(".modo input:checked").value;
-    $("estado").textContent = "Arrancando…";
+    $("estado").textContent = t("pop.arrancando");
     const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "start", modo, participantes: $("participantes").value.trim() });
     if (r && r.ok) refrescaGrabacion();
-    else $("estado").textContent = "❌ " + ((r && r.error) || "No se pudo iniciar");
+    else $("estado").textContent = "❌ " + ((r && r.error) || t("pop.noSePudoIniciar"));
   } else {
     await chrome.runtime.sendMessage({ target: "bg", cmd: "stop" });
     clearInterval(timerInt);
-    $("btnRec").textContent = "⏺ Empezar a grabar";
+    $("btnRec").textContent = t("pop.empezar");
     $("btnRec").classList.remove("grabando");
     $("controles").style.display = "none";
     $("timer").classList.remove("pausa");
-    $("estado").textContent = "⏳ Transcribiendo… (aparecerá aquí en cuanto esté)";
+    $("estado").textContent = t("pop.transcribiendoEspera");
     $("participantes").value = "";
     $("participantes").disabled = false;
     chrome.storage.session.set({ participantesBorrador: "" });
@@ -181,12 +184,12 @@ $("btnRec").onclick = async () => {
 // s: el estado de la sesión (t0, pausado, pausadoDesde, pausaMs). El reloj
 // cuenta tiempo GRABADO: en pausa se para.
 function modoGrabando(s) {
-  $("btnRec").textContent = "⏹ Parar y transcribir";
+  $("btnRec").textContent = t("pop.parar");
   $("btnRec").classList.add("grabando");
-  $("estado").textContent = s.pausado ? "⏸ En pausa: no se graba nada hasta que reanudes." : "🔴 Grabando…";
+  $("estado").textContent = s.pausado ? t("pop.enPausa") : t("pop.grabando");
   $("participantes").disabled = true;
   $("controles").style.display = "flex";
-  $("btnPausa").textContent = s.pausado ? "▶ Reanudar" : "⏸ Pausar";
+  $("btnPausa").textContent = s.pausado ? t("pop.reanudar") : t("pop.pausar");
   $("timer").classList.toggle("pausa", !!s.pausado);
   clearInterval(timerInt);
   const pinta = () => {
@@ -207,49 +210,49 @@ $("btnDiag").onclick = async () => {
   out.style.display = "block";
   const log = [];
   const escribe = (l) => { log.push(l); out.textContent = log.join("\n"); };
-  escribe("🩺 Diagnóstico de Escriba\n");
+  escribe(t("pop.diagTitulo") + "\n");
 
   // 1. Configuración
   const cfg = await leerConfig();
-  escribe(cfg.geminiKey ? `1. Clave guardada .......... OK (${cfg.geminiKey.slice(0, 6)}…)` : "1. Clave guardada .......... FALTA → ve a Opciones");
-  escribe(`   Modelo: ${cfg.geminiModel}`);
+  escribe(cfg.geminiKey ? t("pop.diagClaveOk", cfg.geminiKey.slice(0, 6)) : t("pop.diagClaveFalta"));
+  escribe("   " + t("pop.diagModelo", cfg.geminiModel));
 
   // 2. La clave habla con Gemini
   if (cfg.geminiKey) {
     try {
       const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models", { headers: { "x-goog-api-key": cfg.geminiKey } });
-      escribe(r.ok ? "2. Conexión con Gemini ..... OK" : `2. Conexión con Gemini ..... FALLA (HTTP ${r.status})`);
-    } catch (e) { escribe("2. Conexión con Gemini ..... FALLA (" + e.message + ")"); }
+      escribe(r.ok ? t("pop.diagGeminiOk") : t("pop.diagGeminiHttp", r.status));
+    } catch (e) { escribe(t("pop.diagGeminiErr", e.message)); }
   }
 
   // 3. Permiso de micrófono (origen de la extensión)
   try {
     const p = await navigator.permissions.query({ name: "microphone" });
-    escribe(`3. Permiso micrófono ....... ${p.state === "granted" ? "OK" : p.state.toUpperCase() + " → Opciones ▸ Permitir micrófono"}`);
-  } catch (e) { escribe("3. Permiso micrófono ....... ? (" + e.message + ")"); }
+    escribe(p.state === "granted" ? t("pop.diagMicOk") : t("pop.diagMicNo", p.state.toUpperCase()));
+  } catch (e) { escribe(t("pop.diagMicErr", e.message)); }
 
   // 4. Motor de grabación (offscreen) + captura real de 3 s
-  escribe("4. Grabador (3 s de prueba). …");
+  escribe(t("pop.diagGrabador"));
   const modo = document.querySelector(".modo input:checked").value;
   const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "selftest", modo });
   if (!r || !r.ok) {
-    escribe("   → FALLA: " + ((r && r.error) || "sin respuesta del grabador"));
+    escribe("   " + t("pop.diagFalla", (r && r.error) || t("pop.diagSinRespuesta")));
   } else {
-    escribe(`   → Audio capturado: ${(r.bytes / 1024).toFixed(0)} KB  (${r.fuentes})`);
-    if (r.niveles) escribe(`   → Niveles: ${r.niveles}`);
-    if (!r.bytes) escribe("   ⚠️ 0 KB: no entra sonido. En modo pestaña, la pestaña debe estar sonando.");
+    escribe("   " + t("pop.diagAudio", (r.bytes / 1024).toFixed(0), r.fuentes));
+    if (r.niveles) escribe("   " + t("pop.diagNiveles", r.niveles));
+    if (!r.bytes) escribe("   " + t("pop.diag0kb"));
     if (r.silencio) {
-      escribe("   ⚠️ SILENCIO: se graba, pero no entra voz por ninguna fuente.");
-      escribe("      Habla al micro mientras dura la prueba, o pon la reunión a sonar.");
-      escribe("5. Transcripción de prueba .. NO PROBADA (no se manda silencio a Gemini:");
-      escribe("      con audio mudo se inventa una reunión entera).");
+      escribe("   " + t("pop.diagSilencio"));
+      escribe("      " + t("pop.diagSilencioConsejo"));
+      escribe(t("pop.diagNoProbada1"));
+      escribe("      " + t("pop.diagNoProbada2"));
     } else {
-      escribe("5. Transcripción de prueba .. " + (r.transcripcion ? "OK" : "FALLA"));
-      if (r.transcripcion) escribe("   Texto: " + r.transcripcion.slice(0, 90));
+      escribe(r.transcripcion ? t("pop.diagTransOk") : t("pop.diagTransFalla"));
+      if (r.transcripcion) escribe("   " + t("pop.diagTexto", r.transcripcion.slice(0, 90)));
       if (r.errorTranscripcion) escribe("   → " + r.errorTranscripcion.slice(0, 160));
     }
   }
-  escribe("\nCopia esto y pásaselo a quien te ayude.");
+  escribe("\n" + t("pop.diagCopia"));
 };
 
 // ---------- Historial ----------
@@ -257,23 +260,24 @@ async function pintaHistorial() {
   const { historial } = await chrome.storage.local.get({ historial: [] });
   const cont = $("historial");
   cont.innerHTML = "";
-  if (!historial.length) { cont.innerHTML = '<div style="font-size:11px;color:#999">Aún no hay grabaciones.</div>'; return; }
+  if (!historial.length) { cont.innerHTML = `<div style="font-size:11px;color:#999">${esc(t("pop.sinGrabaciones"))}</div>`; return; }
   for (const h of historial) {
     const div = document.createElement("div");
     div.className = "item";
-    const badge = h.estado === "ok" ? '<span class="badge-estado ok">lista</span>'
-      : h.estado === "error" ? '<span class="badge-estado err">error</span>'
-      : h.estado === "pendiente" ? '<span class="badge-estado pend">incompleta</span>'
-      : h.estado === "grabando" ? '<span class="badge-estado rec">● grabando</span>'
-      : `<span class="badge-estado proc">transcribiendo… ${esc(h.progreso || "")}</span>`;
+    const badge = h.estado === "ok" ? `<span class="badge-estado ok">${esc(t("pop.badgeLista"))}</span>`
+      : h.estado === "error" ? `<span class="badge-estado err">${esc(t("pop.badgeError"))}</span>`
+      : h.estado === "pendiente" ? `<span class="badge-estado pend">${esc(t("pop.badgeIncompleta"))}</span>`
+      : h.estado === "grabando" ? `<span class="badge-estado rec">${esc(t("pop.badgeGrabando"))}</span>`
+      : `<span class="badge-estado proc">${esc(t("pop.badgeTranscribiendo", h.progreso || ""))}</span>`;
     const icono = h.origen === "archivo" ? "📂 " : "";
-    div.innerHTML = `<div class="tit">${icono}${esc(h.titulo)} ${badge}</div><div class="fec">${esc(h.fecha)}</div>` +
+    div.innerHTML = `<div class="tit">${icono}${esc(h.titulo)} ${badge}</div><div class="fec">${esc(fechaVisible(h))}</div>` +
       (h.estado === "pendiente" ? `<div class="nota">${esc(notaPendiente(h))}</div>` : "") + '<div class="acc"></div>';
     const acc = div.querySelector(".acc");
     if (ESTADOS_FINALES.includes(h.estado)) {
-      if (h.estado === "pendiente") boton(acc, "🔄 Reintentar ahora", (ev) => reintentar(ev.target, h));
+      if (h.estado === "pendiente") boton(acc, t("pop.reintentarAhora"), (ev) => reintentar(ev.target, h));
       const nActas = Object.keys(h.analisis || {}).length;
-      boton(acc, h.estado === "error" ? "⚠️ Ver error" : "📖 Abrir" + (nActas ? ` · ${nActas} acta${nActas > 1 ? "s" : ""}` : ""), () => abrirBiblioteca(h.id));
+      const actas = nActas ? " · " + t(nActas > 1 ? "pop.actasVarias" : "pop.actasUna", nActas) : "";
+      boton(acc, h.estado === "error" ? t("pop.verError") : t("pop.abrir") + actas, () => abrirBiblioteca(h.id));
       boton(acc, "🗑", () => pideBorrar(acc, h));
     }
     cont.appendChild(div);
@@ -286,28 +290,26 @@ function notaPendiente(h) {
   const r = resumenTramos(h.tramos);
   const re = h.reintento || {};
   const codigo = ((h.tramos || []).find((t) => t.estado === "pendiente") || {}).codigo;
-  let luego = "se reintentará sola";
+  let luego = t("pop.luegoSola");
   if (re.esperaClave) {
-    luego = codigo === "sin_clave" ? "falta la clave: ponla en Opciones y se reintentará sola"
-      : "Google rechaza la clave: pon una nueva en Opciones y se reintentará sola";
+    luego = codigo === "sin_clave" ? t("pop.luegoSinClave") : t("pop.luegoClaveMala");
   } else if (re.agotado) {
-    luego = "ya no se reintenta sola: pulsa «Reintentar ahora»";
+    luego = t("pop.luegoAgotado");
   } else if (re.proximo) {
     const d = new Date(re.proximo);
-    luego = `se reintentará sola a las ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    luego = t("pop.luegoALas", `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
   }
-  const cuantos = r.total === 1 ? "El tramo está" : `${r.pendientes} de ${r.total} tramos están`;
-  return `${cuantos} sin transcribir · ${luego}`;
+  return r.total === 1 ? t("pop.notaUno", luego) : t("pop.notaVarios", r.pendientes, r.total, luego);
 }
 
 async function reintentar(btn, h) {
   btn.disabled = true;
-  btn.textContent = "⏳ Reintentando…";
+  btn.textContent = t("pop.reintentando");
   const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "reintentar", id: h.id });
   if (!r || !r.ok) {
     btn.disabled = false;
-    btn.textContent = "🔄 Reintentar ahora";
-    $("estado").textContent = "❌ " + ((r && r.error) || "No se pudo reintentar.");
+    btn.textContent = t("pop.reintentarAhora");
+    $("estado").textContent = "❌ " + ((r && r.error) || t("pop.noSePudoReintentar"));
   }
   // Si arranca, el historial se repinta solo con el progreso.
 }
@@ -319,16 +321,16 @@ function pideBorrar(acc, h) {
   acc.innerHTML = "";
   const caja = document.createElement("div");
   caja.style.cssText = "font-size:11px;line-height:1.45;background:#fdecef;border:1px solid #e6a9ba;color:#7d2d43;border-radius:6px;padding:7px 8px;width:100%";
-  caja.innerHTML = "<b>¿Borrar esta transcripción?</b><br>Se borrará también su <code>.md</code> de Descargas/reuniones."
-    + (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" class="cbAudio" checked> Borrar también su audio de respaldo (${nAudio} fichero${nAudio > 1 ? "s" : ""})</label>` : "");
+  caja.innerHTML = t("pop.borrarUnaHtml")
+    + (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" class="cbAudio" checked> ${esc(t(nAudio > 1 ? "pop.borrarAudioVarios" : "pop.borrarAudioUno", nAudio))}</label>` : "");
   const fila = document.createElement("div");
   fila.style.cssText = "display:flex;gap:4px;margin-top:6px";
-  boton(fila, "Sí, borrar", async () => {
+  boton(fila, t("pop.siBorrar"), async () => {
     const cb = caja.querySelector(".cbAudio");
     await chrome.runtime.sendMessage({ target: "bg", cmd: "borrar", ids: [h.id], conAudio: !!(cb && cb.checked) });
     pintaHistorial();
   });
-  boton(fila, "Cancelar", () => pintaHistorial());
+  boton(fila, t("pop.cancelar"), () => pintaHistorial());
   caja.appendChild(fila);
   acc.appendChild(caja);
 }
@@ -340,21 +342,20 @@ $("btnBorrarTodo").onclick = async () => {
   if (!historial.length) return;
   const nAudio = historial.reduce((a, h) => a + (h.filesAudio || []).length, 0);
   caja.style.display = "block";
-  caja.innerHTML = `<b>¿Borrar las ${historial.length} transcripciones?</b><br>`
-    + "Se borrarán del historial y sus <code>.md</code> de Descargas/reuniones. No hay vuelta atrás."
-    + (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" id="cbAudioTodo" checked> Borrar también el audio de respaldo (${nAudio} fichero${nAudio > 1 ? "s" : ""})</label>` : "");
+  caja.innerHTML = t("pop.borrarTodasHtml", historial.length)
+    + (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" id="cbAudioTodo" checked> ${esc(t(nAudio > 1 ? "pop.borrarAudioTodoVarios" : "pop.borrarAudioTodoUno", nAudio))}</label>` : "");
   const fila = document.createElement("div");
   fila.style.cssText = "display:flex;gap:4px;margin-top:6px";
-  boton(fila, "Sí, borrar todo", async () => {
+  boton(fila, t("pop.siBorrarTodo"), async () => {
     const cb = $("cbAudioTodo");
     const r = await chrome.runtime.sendMessage({
       target: "bg", cmd: "borrar", ids: historial.map((h) => h.id), conAudio: !!(cb && cb.checked),
     });
     caja.style.display = "none";
     pintaHistorial();
-    $("estado").textContent = `🗑 Borradas ${r.entradas} transcripciones y ${r.ficheros} ficheros.`;
+    $("estado").textContent = t("pop.borradas", r.entradas, r.ficheros);
   });
-  boton(fila, "Cancelar", () => { caja.style.display = "none"; });
+  boton(fila, t("pop.cancelar"), () => { caja.style.display = "none"; });
   caja.appendChild(fila);
 };
 function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }

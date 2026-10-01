@@ -49,9 +49,9 @@ function almacen(inicial = {}, avisar = () => {}) {
 // Registro de lo que la extensión le ha pedido al navegador, para poder
 // afirmar sobre efectos que no dejan rastro en el almacenamiento.
 function nuevoChrome(opciones = {}) {
-  const registro = { descargas: [], borrados: [], borradosHist: [], badges: [], colores: [], offscreen: 0, alarmas: {}, notificaciones: [] };
+  const registro = { descargas: [], borrados: [], borradosHist: [], badges: [], colores: [], offscreen: 0, alarmas: {}, notificaciones: [], pestanasActivadas: [], ventanasEnfocadas: [] };
   let proximoIdDescarga = 1;
-  const oyentes = { mensaje: [], instalado: [], arranque: [], cambios: [], alarma: [], comando: [] };
+  const oyentes = { mensaje: [], instalado: [], arranque: [], cambios: [], alarma: [], comando: [], pestana: [], clicAviso: [] };
   const avisa = (area) => (cambios) => oyentes.cambios.forEach((f) => f(cambios, area));
 
   const chrome = {
@@ -91,17 +91,27 @@ function nuevoChrome(opciones = {}) {
       setBadgeText(o) { registro.badges.push(o.text); },
       setBadgeBackgroundColor(o) { registro.colores.push(o.color); },
     },
-    commands: { onCommand: { addListener: (f) => oyentes.comando.push(f) } },
+    commands: {
+      onCommand: { addListener: (f) => oyentes.comando.push(f) },
+      async getAll() { return opciones.atajos || [{ name: "grabar", shortcut: "Alt+Shift+G" }, { name: "marcar", shortcut: "Alt+Shift+M" }]; },
+    },
     notifications: {
       create(id, o) { registro.notificaciones.push({ id, ...o }); return Promise.resolve(id); },
       clear(id) { registro.notificaciones = registro.notificaciones.filter((n) => n.id !== id); return Promise.resolve(true); },
+      onClicked: { addListener: (f) => oyentes.clicAviso.push(f) },
     },
+    windows: { async update(id, o) { registro.ventanasEnfocadas.push({ id, ...o }); return { id }; } },
+    i18n: { getUILanguage: () => opciones.idiomaNavegador || "es-ES" },
     sidePanel: { async setPanelBehavior() {}, async open() {} },
     offscreen: {
       async hasDocument() { return registro.offscreen > 0; },
       async createDocument() { registro.offscreen++; },
     },
-    tabs: { async query() { return []; } },
+    tabs: {
+      async query() { return []; },
+      async update(id, o) { registro.pestanasActivadas.push({ id, ...o }); return { id, windowId: 7 }; },
+      onUpdated: { addListener: (f) => oyentes.pestana.push(f) },
+    },
     tabCapture: { async getMediaStreamId() { return "stream-de-prueba"; } },
   };
   return chrome;

@@ -6,6 +6,10 @@
 // Un .docx es un zip con unos pocos XML. Se genera sin comprimir (método
 // «store»): Word lo abre igual y así no hace falta ningún compresor.
 
+// t() y LOCALE_UI() los define i18n.js, que la biblioteca carga antes. En Node
+// (tests) se traen con require.
+if (typeof t !== "function" && typeof require === "function") var { t, LOCALE_UI } = require("./i18n.js");
+
 // --- zip ---------------------------------------------------------------------------
 const TABLA_CRC = (() => {
   const t = new Uint32Array(256);
@@ -153,7 +157,7 @@ const ESTILOS_DOCX = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 // titulo: texto; md: cuerpo en markdown → Uint8Array del .docx
 function docx(titulo, md) {
-  const cuerpo = [parrafoXml("Title", titulo || "Reunión")];
+  const cuerpo = [parrafoXml("Title", titulo || t("com.reunion"))];
   for (const b of bloquesMd(md)) {
     if (b.tipo === "tabla") cuerpo.push(tablaXml(b.filas));
     else if (b.tipo === "h1") cuerpo.push(parrafoXml("Heading1", b.texto));

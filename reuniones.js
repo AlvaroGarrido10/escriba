@@ -31,6 +31,8 @@ const resalta = (html, re) => (re ? html.replace(re, (m) => `<mark>${m}</mark>`)
 // ---------------------------------------------------------------------------------
 // carga y sincronización
 (async function init() {
+  await cargarIdiomaUI(); // antes de pintar nada: todo lo que sigue sale ya en su idioma
+  pintaVelocidades();
   cfg = await leerConfig();
   historial = (await chrome.storage.local.get({ historial: [] })).historial;
   pintaSelectores();
@@ -45,10 +47,20 @@ chrome.storage.onChanged.addListener(async (cambios, area) => {
     pintaLista();
     pintaVista();
   } else if (area === "local" || area === "sync") {
+    // Cambiaron el idioma en Opciones con la biblioteca abierta: se traduce sin recargar.
+    const otroIdioma = area === "sync" && !!cambios.idiomaUI;
+    if (otroIdioma) { await cargarIdiomaUI(); pintaVelocidades(); }
     cfg = await leerConfig();
     pintaSelectores();
+    if (cambios.precios || otroIdioma) { pintaLista(); pintaVista(); }
+    if (otroIdioma && actual && !$("reproductor").hidden) pintaRepInfo();
   }
 });
+
+// Las velocidades del reproductor con la coma o el punto decimal del idioma.
+function pintaVelocidades() {
+  for (const o of $("velocidad").options) o.textContent = Number(o.value).toLocaleString(LOCALE_UI()) + "×";
+}
 
 window.addEventListener("hashchange", () => {
   const id = Number(location.hash.slice(1));
@@ -75,8 +87,9 @@ function textoDe(h) {
 
 function badge(h) {
   const b = {
-    ok: ["ok", "lista"], error: ["err", "error"], pendiente: ["pend", "incompleta"], grabando: ["rec", "● grabando"],
-  }[h.estado] || ["proc", "transcribiendo… " + (h.progreso || "")];
+    ok: ["ok", t("bib.estado_ok")], error: ["err", t("bib.estado_error")],
+    pendiente: ["pend", t("bib.estado_pendiente")], grabando: ["rec", t("bib.estado_grabando")],
+  }[h.estado] || ["proc", t("bib.estado_transcribiendo", h.progreso || "")];
   return `<span class="badge ${b[0]}">${escT(b[1])}</span>`;
 }
 
@@ -86,11 +99,11 @@ function pintaLista() {
   const q = normaliza(filtro.trim());
   const visibles = historial.filter((h) => !q || normaliza([h.titulo, h.participantes, h.fecha, textoDe(h)].join("\n")).includes(q));
   if (!historial.length) {
-    cont.innerHTML = '<div class="sinResultados">Aún no hay reuniones. Graba una desde el icono de Escriba o transcribe un archivo.</div>';
+    cont.innerHTML = `<div class="sinResultados">${escT(t("bib.lista_vacia"))}</div>`;
     return;
   }
-  if (!visibles.length) { cont.innerHTML = `<div class="sinResultados">Nada coincide con «${escT(filtro)}».</div>`; return; }
-  cont.innerHTML = visibles.map((h) => {
+  if (!visibles.length) { cont.innerHTML = `<div class="sinResultados">${escT(t("bib.nada_coincide", filtro))}</div>`; return; }
+  cont.innerHTML = resumenMes() + visibles.map((h) => {
     let extracto = "";
     if (q) {
       const texto = textoDe(h), pos = normaliza(texto).indexOf(q);
@@ -101,10 +114,27 @@ function pintaLista() {
     }
     const min = h.meta && h.meta.minutos ? ` · ${h.meta.minutos} min` : "";
     return `<div class="item${actual && actual.id === h.id ? " activa" : ""}" data-id="${h.id}">
-      <div class="tit">${h.origen === "archivo" ? "📂 " : ""}${escT(h.titulo || "Reunión")}</div>
-      <div class="sub">${escT(h.fecha)}${min} ${badge(h)}</div>${extracto}</div>`;
+      <div class="tit">${h.origen === "archivo" ? "📂 " : ""}${escT(h.titulo || t("com.reunion"))}</div>
+      <div class="sub">${escT(fechaVisible(h))}${min} ${badge(h)}</div>${extracto}</div>`;
   }).join("");
   cont.querySelectorAll(".item").forEach((el) => { el.onclick = () => abrir(Number(el.dataset.id), true); });
+  const enlace = cont.querySelector(".mes a");
+  if (enlace) enlace.onclick = (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); };
+}
+
+// Lo que llevas gastado este mes con tus claves. Sin precios no se adivina: se
+// ofrece ponerlos, y solo si hay alguna reunión con tokens apuntados.
+function resumenMes() {
+  const m = costeMes(historial, cfg.precios);
+  const mes = new Date().toLocaleDateString(LOCALE_UI(), { month: "long" });
+  if (m.euros !== null) {
+    const falta = m.faltan.length ? ` <span title="${escT(t("bib.sin_precio_title", m.faltan.map(nombreProv).join(", ")))}">${escT(t("bib.sin_precio_corto"))}</span>` : "";
+    const n = m.reuniones === 1 ? t("bib.n_reunion", m.reuniones) : t("bib.n_reuniones", m.reuniones);
+    return `<div class="mes" title="${escT(t("bib.estimacion_title"))}">💶 ${escT(mes)}: ≈ ${escT(formatoEuros(m.euros))}${falta} · ${escT(n)}</div>`;
+  }
+  return historial.some((h) => costeReunion(h, {}).tokens)
+    ? `<div class="mes">💶 ${t("bib.pon_precios_html")}</div>`
+    : "";
 }
 
 function abrir(id, empujar) {
@@ -134,8 +164,14 @@ async function miraAudio() {
   }
   if (!actual || actual.id !== id) return;
   $("reproductor").hidden = !conAudio.size;
-  if (conAudio.size) $("repInfo").textContent = "🔊 Pulsa ▶ junto a una frase para oírla";
+  if (conAudio.size) pintaRepInfo();
   pintaTexto();
+}
+
+function pintaRepInfo() {
+  $("repInfo").textContent = sonando
+    ? t("bib.rep_tramo", sonando.tramo + 1, actual.tramos.length)
+    : t("bib.rep_pulsa");
 }
 
 function paraAudio() {
@@ -148,19 +184,19 @@ function paraAudio() {
 }
 
 async function suena(tramo, desdeS) {
-  const t = (actual.tramos || [])[tramo];
+  const tr = (actual.tramos || [])[tramo];
   const blob = await audios.leerEscucha(actual.id, tramo).catch(() => null);
-  if (!blob) { toast("El audio de ese trozo ya no está guardado."); return; }
+  if (!blob) { toast(t("bib.audio_no_guardado")); return; }
   paraAudio();
   const a = $("audio");
-  sonando = { tramo, inicioS: inicioTramo(t, tramo) };
+  sonando = { tramo, inicioS: inicioTramo(tr, tramo) };
   a.src = URL.createObjectURL(blob);
   a.playbackRate = Number($("velocidad").value) || 1;
   a.onloadedmetadata = () => {
     a.currentTime = Math.max(0, desdeS - sonando.inicioS - 1); // un segundo antes, para no cortar la frase
     a.play().catch(() => {});
   };
-  $("repInfo").textContent = `🔊 Tramo ${tramo + 1} de ${actual.tramos.length}`;
+  pintaRepInfo();
 }
 
 $("audio").addEventListener("timeupdate", () => {
@@ -187,7 +223,7 @@ $("quitarAudio").onclick = async () => {
   if (!actual) return;
   paraAudio();
   await audios.borrarEscucha(actual.id).catch(() => {});
-  toast("🗑 Audio borrado. La transcripción se queda.");
+  toast(t("bib.audio_borrado"));
   miraAudio();
 };
 
@@ -199,17 +235,20 @@ function pintaVista(nueva) {
   if (!actual) return;
   const h = actual;
   // Un campo que el usuario está escribiendo no se repinta: se le borraría lo tecleado.
-  if (nueva || document.activeElement !== $("titulo")) $("titulo").value = h.titulo || "Reunión";
+  if (nueva || document.activeElement !== $("titulo")) $("titulo").value = h.titulo || t("com.reunion");
   if (nueva || document.activeElement !== $("participantes")) $("participantes").value = h.participantes || "";
-  document.title = (h.titulo || "Reunión") + " — Escriba";
+  document.title = (h.titulo || t("com.reunion")) + " — Escriba";
 
   const tokens = sumaTokens(h);
+  const coste = costeReunion(h, cfg.precios);
+  const sinPrecio = coste.faltan.length ? ` (${t("bib.sin_precio_min", coste.faltan.map(nombreProv).join(", "))})` : "";
   $("meta").innerHTML = [
-    escT(h.fecha),
+    escT(fechaVisible(h)),
     h.meta && h.meta.minutos ? `${h.meta.minutos} min` : "",
-    h.origen === "archivo" ? "📂 archivo importado" : "🎙️ grabación",
+    escT(h.origen === "archivo" ? t("bib.origen_archivo") : t("bib.origen_grabacion")),
     badge(h),
-    tokens ? `<span title="Tokens gastados en la transcripción y en las actas">≈ ${tokens.toLocaleString("es-ES")} tokens</span>` : "",
+    tokens ? `<span title="${escT(t("bib.tokens_title"))}">≈ ${tokens.toLocaleString(LOCALE_UI())} tokens</span>` : "",
+    coste.euros !== null ? `<span title="${escT(t("bib.estimacion_title") + sinPrecio)}">💶 ≈ ${escT(formatoEuros(coste.euros))}${coste.faltan.length ? " +" : ""}</span>` : "",
   ].filter(Boolean).join(" · ");
 
   pintaAviso();
@@ -235,14 +274,14 @@ function pintaAviso() {
   if (h.estado === "pendiente") {
     const r = resumenTramos(h.tramos);
     a.className = "aviso pend";
-    a.textContent = `⏳ ${r.pendientes} de ${r.total} tramos siguen sin transcribir. El audio está a salvo y Escriba lo reintentará sola; también puedes pulsar «Reintentar ahora».`;
+    a.textContent = t("bib.aviso_pendiente", r.pendientes, r.total);
     a.hidden = false;
   } else if (h.estado === "transcribiendo" || h.estado === "grabando") {
-    a.textContent = h.estado === "grabando" ? "🔴 Esta reunión se está grabando ahora mismo." : `✍️ Transcribiendo… ${h.progreso || ""}`;
+    a.textContent = h.estado === "grabando" ? t("bib.aviso_grabando") : t("bib.aviso_transcribiendo", h.progreso || "");
     a.hidden = false;
   } else if (h.errorActa) {
     a.className = "aviso pend";
-    a.textContent = "⚠️ El acta automática no se pudo generar: " + h.errorActa + " Puedes pedirla a mano en «Acta y resúmenes».";
+    a.textContent = t("bib.aviso_error_acta", h.errorActa);
     a.hidden = false;
   }
 }
@@ -264,8 +303,8 @@ function pintaHablantes() {
   const mapa = h.hablantes || {};
   cont.innerHTML = etiquetas.map((o) => {
     const nuevo = (mapa[o] || "").trim();
-    return `<span class="chipH" data-h="${escT(o)}" title="Pulsa para ponerle nombre"><span class="punto" style="background:${colorVoz(o, etiquetas)}"></span><b>${escT(nuevo || o)}</b>${nuevo ? `<span class="orig">(${escT(o)})</span>` : ""} ✎</span>`;
-  }).join("") + '<span class="ayudaH">Pulsa una voz para ponerle nombre en toda la reunión.</span>';
+    return `<span class="chipH" data-h="${escT(o)}" title="${escT(t("bib.renombrar_title"))}"><span class="punto" style="background:${colorVoz(o, etiquetas)}"></span><b>${escT(nuevo || o)}</b>${nuevo ? `<span class="orig">(${escT(o)})</span>` : ""} ✎</span>`;
+  }).join("") + `<span class="ayudaH">${escT(t("bib.renombrar_ayuda"))}</span>`;
   cont.querySelectorAll(".chipH").forEach((chip) => { chip.onclick = () => renombrar(chip); });
 }
 
@@ -298,7 +337,7 @@ function renombrar(chip) {
 
 async function editar(cambios) {
   const r = await aBgMsg("histEditar", { id: actual.id, cambios });
-  if (!r || !r.ok) toast("❌ " + ((r && r.error) || "No se pudo guardar."));
+  if (!r || !r.ok) toast("❌ " + ((r && r.error) || t("bib.no_se_pudo_guardar_punto")));
   return r;
 }
 
@@ -319,16 +358,16 @@ function lineasDeVista(h) {
     return lineasTranscripcion(h.transcript || "").map((l) => ({ tipo: "l", ...l, orig: l.hablante }));
   }
   const mapa = h.hablantes || {}, out = [], total = h.tramos.length;
-  h.tramos.forEach((t, i) => {
-    const cab = `Tramo ${i + 1} de ${total} (${t.etiqueta || etiquetaTramo(i)})`;
-    if (t.estado === "ok") {
-      for (const l of lineasTranscripcion(t.texto || "")) {
+  h.tramos.forEach((tr, i) => {
+    const cab = t("bib.tramo_cab", i + 1, total, tr.etiqueta || etiquetaTramo(i));
+    if (tr.estado === "ok") {
+      for (const l of lineasTranscripcion(tr.texto || "")) {
         out.push({ tipo: "l", ...l, tramo: i, orig: l.hablante, hablante: (mapa[l.hablante] || "").trim() || l.hablante });
       }
-      if (t.truncado) out.push({ tipo: "aviso", texto: `⚠️ ${cab}: se cortó por el límite de longitud del modelo.` });
-    } else if (t.estado === "mudo") out.push({ tipo: "mudo", texto: `${cab}: sin voz — no se transcribe para no inventar texto.` });
-    else if (t.estado === "perdido") out.push({ tipo: "aviso", texto: `⚠️ ${cab}: ${textoError("perdido")}` });
-    else out.push({ tipo: "aviso", texto: `⏳ ${cab}: pendiente de transcribir. ${t.error || ""}` });
+      if (tr.truncado) out.push({ tipo: "aviso", texto: t("bib.tramo_truncado", cab) });
+    } else if (tr.estado === "mudo") out.push({ tipo: "mudo", texto: t("bib.tramo_mudo", cab) });
+    else if (tr.estado === "perdido") out.push({ tipo: "aviso", texto: `⚠️ ${cab}: ${textoError("perdido")}` });
+    else out.push({ tipo: "aviso", texto: t("bib.tramo_pendiente", cab, tr.error || "") });
   });
   return out;
 }
@@ -336,7 +375,7 @@ function lineasDeVista(h) {
 function pintaTexto() {
   const h = actual, cont = $("texto");
   if (h.estado === "error" || (!Array.isArray(h.tramos) && !h.transcript)) {
-    cont.innerHTML = `<div class="md">${mdAHtml(h.transcript || "Sin texto.")}</div>`;
+    cont.innerHTML = `<div class="md">${mdAHtml(h.transcript || t("bib.sin_texto"))}</div>`;
     $("nCoinc").textContent = "";
     return;
   }
@@ -356,13 +395,13 @@ function pintaTexto() {
     }
     const escuchable = l.t !== null && typeof l.tramo === "number" && conAudio.has(l.tramo);
     return `<div class="l"${l.t !== null ? ` data-t="${l.t}"` : ""}${typeof l.tramo === "number" ? ` data-tramo="${l.tramo}"` : ""}>` +
-      `<span class="t${escuchable ? " play" : ""}"${escuchable ? ' title="Escuchar desde aquí"' : ""}>${l.t !== null ? formatoTiempo(l.t) : ""}</span><div>${quien}${cuerpo}</div></div>`;
+      `<span class="t${escuchable ? " play" : ""}"${escuchable ? ` title="${escT(t("bib.escuchar_title"))}"` : ""}>${l.t !== null ? formatoTiempo(l.t) : ""}</span><div>${quien}${cuerpo}</div></div>`;
   }).join("");
-  cont.innerHTML = html || '<div class="l mudo-l">Todavía no hay texto.</div>';
+  cont.innerHTML = html || `<div class="l mudo-l">${escT(t("bib.sin_texto_aun"))}</div>`;
   cont.querySelectorAll(".t.play").forEach((el) => {
     el.onclick = () => { const l = el.closest(".l"); suena(Number(l.dataset.tramo), Number(l.dataset.t)); };
   });
-  $("nCoinc").textContent = re ? (n ? `${n} coincidencia${n === 1 ? "" : "s"} · Intro para ir a la siguiente` : "sin coincidencias") : "";
+  $("nCoinc").textContent = re ? (n === 1 ? t("bib.n_coincidencia", n) : n ? t("bib.n_coincidencias", n) : t("bib.sin_coincidencias")) : "";
 }
 
 $("buscarEn").addEventListener("input", () => { marcaActual = -1; pintaTexto(); });
@@ -382,12 +421,12 @@ function pintaNotas(nueva) {
   const h = actual, marcas = h.marcas || [];
   if (nueva || document.activeElement !== $("notas")) $("notas").value = h.notas || "";
   const partes = [];
-  if ((h.notas || "").trim()) partes.push("con notas");
-  if (marcas.length) partes.push(`${marcas.length} momento${marcas.length > 1 ? "s" : ""}`);
+  if ((h.notas || "").trim()) partes.push(t("bib.con_notas"));
+  if (marcas.length) partes.push(marcas.length > 1 ? t("bib.n_momentos", marcas.length) : t("bib.n_momento", marcas.length));
   $("notasResumen").textContent = partes.length ? "· " + partes.join(" · ") : "";
   if (nueva) $("notasBox").open = !!partes.length;
   $("marcasLista").innerHTML = marcas.map((m, i) =>
-    `<span class="chip marca" data-i="${i}" title="Ir a ese momento">⭐ ${formatoTiempo(m.t)}${m.nota ? " · " + escT(m.nota) : ""}<span class="x" data-borra="${i}" title="Quitar">✕</span></span>`).join("");
+    `<span class="chip marca" data-i="${i}" title="${escT(t("bib.ir_momento_title"))}">⭐ ${formatoTiempo(m.t)}${m.nota ? " · " + escT(m.nota) : ""}<span class="x" data-borra="${i}" title="${escT(t("bib.quitar_title"))}">✕</span></span>`).join("");
   $("marcasLista").querySelectorAll(".chip.marca").forEach((c) => {
     c.onclick = (e) => {
       const i = Number(c.dataset.i);
@@ -441,7 +480,7 @@ function descargar(datos, tipo, nombre) {
   const url = URL.createObjectURL(new Blob([datos], { type: tipo }));
   const fin = () => setTimeout(() => URL.revokeObjectURL(url), 60000);
   if (chrome.downloads) {
-    chrome.downloads.download({ url, filename: "reuniones/" + nombre, saveAs: false }, () => { fin(); toast("💾 Guardado en Descargas/reuniones/" + nombre); });
+    chrome.downloads.download({ url, filename: "reuniones/" + nombre, saveAs: false }, () => { fin(); toast(t("bib.guardado_en", nombre)); });
   } else {
     const a = document.createElement("a");
     a.href = url; a.download = nombre; a.click(); fin();
@@ -454,12 +493,12 @@ $("menuExportar").querySelectorAll("button").forEach((b) => {
     $("menuExportar").hidden = true;
     const h = actual, md = mdTranscripcion(h), base = "reunion_" + baseFichero(h);
     const cuerpo = md.replace(/^# .*\n+/, "");
-    if (b.dataset.fmt === "docx") descargar(docx(h.titulo || "Reunión", cuerpo), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", base + ".docx");
+    if (b.dataset.fmt === "docx") descargar(docx(h.titulo || t("com.reunion"), cuerpo), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", base + ".docx");
     else if (b.dataset.fmt === "md") descargar(md, "text/markdown;charset=utf-8", base + ".md");
     else if (b.dataset.fmt === "txt") descargar(textoPlano(md), "text/plain;charset=utf-8", base + ".txt");
     else if (b.dataset.fmt === "srt") {
       const s = srt(aplicarHablantes(textoCrudo(h), h.hablantes));
-      if (!s) { toast("Esta reunión no tiene marcas de tiempo (se transcribió con una versión anterior de Escriba)."); return; }
+      if (!s) { toast(t("bib.srt_sin_tiempos")); return; }
       descargar(s, "application/x-subrip;charset=utf-8", base + ".srt");
     } else if (b.dataset.fmt === "pdf") imprimir("imprimeTexto");
   };
@@ -473,23 +512,24 @@ function imprimir(clase) {
 
 $("btnCopiar").onclick = async () => {
   await navigator.clipboard.writeText(textoPlano(mdTranscripcion(actual)));
-  toast("📋 Transcripción copiada.");
+  toast(t("bib.transcripcion_copiada"));
 };
 
 $("btnReintentar").onclick = async () => {
   $("btnReintentar").disabled = true;
   const r = await aBgMsg("reintentar", { id: actual.id });
   $("btnReintentar").disabled = false;
-  toast(r && r.ok ? "🔄 Reintentando…" : "❌ " + ((r && r.error) || "No se pudo reintentar."));
+  toast(r && r.ok ? t("bib.reintentando") : "❌ " + ((r && r.error) || t("bib.no_se_pudo_reintentar")));
 };
 
 // Borrar es irreversible: se pregunta siempre, y el audio de respaldo aparte.
 $("btnBorrar").onclick = () => {
   const caja = $("confirmaBorrar"), h = actual, nAudio = (h.filesAudio || []).length;
   caja.hidden = false;
-  caja.innerHTML = "<b>¿Borrar esta reunión?</b> Se borrará también su <code>.md</code> de Descargas/reuniones. No hay vuelta atrás." +
-    (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" id="cbAudio" checked> Borrar también su audio de respaldo (${nAudio} fichero${nAudio > 1 ? "s" : ""})</label>` : "") +
-    '<div class="acciones"><button id="siBorrar" class="principal">Sí, borrar</button><button id="noBorrar">Cancelar</button></div>';
+  const cbTexto = nAudio > 1 ? t("bib.borrar_audio_n", nAudio) : t("bib.borrar_audio_1", nAudio);
+  caja.innerHTML = t("bib.borrar_pregunta_html") +
+    (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" id="cbAudio" checked> ${escT(cbTexto)}</label>` : "") +
+    `<div class="acciones"><button id="siBorrar" class="principal">${escT(t("bib.si_borrar"))}</button><button id="noBorrar">${escT(t("bib.cancelar"))}</button></div>`;
   $("noBorrar").onclick = () => { caja.hidden = true; };
   $("siBorrar").onclick = async () => {
     const cb = $("cbAudio");
@@ -502,24 +542,30 @@ $("btnBorrar").onclick = () => {
 // actas y resúmenes
 function pintaSelectores() {
   const plant = $("plantilla"), previa = plant.value;
-  plant.innerHTML = Object.entries(PLANTILLAS).map(([k, p]) => {
+  plant.innerHTML = Object.keys(PLANTILLAS).map((k) => {
     const sinTexto = k === "personalizada" && !(cfg.plantillaPersonalizada || "").trim();
-    return `<option value="${k}"${sinTexto ? " disabled" : ""}>${escT(p.nombre)}${sinTexto ? " (créala en Opciones)" : ""}</option>`;
+    return `<option value="${k}"${sinTexto ? " disabled" : ""}>${escT(nombrePlantilla(k))}${sinTexto ? ` (${escT(t("bib.creala_en_opciones"))})` : ""}</option>`;
   }).join("");
   plant.value = previa || cfg.autoActaPlantilla || "acta";
   for (const id of ["provActa", "provChat"]) {
     const sel = $(id), prev = sel.value;
     sel.innerHTML = PROVEEDORES.map(([k, n, clave]) =>
-      `<option value="${k}"${cfg[clave] ? "" : " disabled"}>${n}${cfg[clave] ? "" : " (sin clave)"}</option>`).join("");
+      `<option value="${k}"${cfg[clave] ? "" : " disabled"}>${n}${cfg[clave] ? "" : ` (${escT(t("bib.sin_clave"))})`}</option>`).join("");
     const conClave = PROVEEDORES.filter(([, , c]) => cfg[c]).map(([k]) => k);
     sel.value = conClave.includes(prev) ? prev : (conClave.includes(cfg.autoActaProv) ? cfg.autoActaProv : conClave[0] || "gemini");
   }
 }
 
+// El nombre de cada plantilla en el idioma de la interfaz: lo da ia.js
+// (PLANTILLAS[x].nombre se traduce al leerlo).
+function nombrePlantilla(id) {
+  return (PLANTILLAS[id] || PLANTILLAS.acta).nombre;
+}
+
 function etiquetaAnalisis(clave) {
   const [plantilla, prov] = clave.includes("·") ? clave.split("·") : ["acta", clave];
-  const nom = (PLANTILLAS[plantilla] || PLANTILLAS.acta).nombre;
-  return `${nom} · ${nombreProv(prov)}${clave.includes("·") ? "" : " (versión anterior)"}`;
+  const nom = nombrePlantilla(PLANTILLAS[plantilla] ? plantilla : "acta");
+  return `${nom} · ${nombreProv(prov)}${clave.includes("·") ? "" : ` (${t("bib.version_anterior")})`}`;
 }
 
 function pintaActas() {
@@ -532,23 +578,23 @@ function pintaActas() {
   $("accionesActa").hidden = !actaSel;
   const hayTexto = ["ok", "pendiente"].includes(h.estado) && textoDe(h).trim();
   $("btnGenerar").disabled = !hayTexto;
-  if (!hayTexto && !$("estadoActa").textContent) $("estadoActa").textContent = h.estado === "error" ? "No hay transcripción de la que sacar un acta." : "";
+  if (!hayTexto && !$("estadoActa").textContent) $("estadoActa").textContent = h.estado === "error" ? t("bib.acta_sin_transcripcion") : "";
 }
 
 $("btnGenerar").onclick = async () => {
   const h = actual, plantilla = $("plantilla").value, prov = $("provActa").value;
   $("btnGenerar").disabled = true;
-  $("estadoActa").textContent = `⏳ Generando «${PLANTILLAS[plantilla].nombre}» con ${nombreProv(prov)}…`;
+  $("estadoActa").textContent = t("bib.generando", nombrePlantilla(plantilla), nombreProv(prov));
   try {
     const r = await analizarReunion(h, plantilla, prov, cfg, { alEstado: (t) => { $("estadoActa").textContent = t; } });
     const g = await aBgMsg("histAnalisis", { id: h.id, clave: r.clave, texto: r.texto, uso: r.uso });
     actaSel = r.clave;
     if (g && g.ok) {
-      $("estadoActa").textContent = "✅ Listo y guardado en la reunión.";
+      $("estadoActa").textContent = t("bib.acta_guardada");
     } else {
       // Ya está hecho y pagado: se enseña aunque no se haya podido guardar.
       actual = { ...h, analisis: { ...(h.analisis || {}), [r.clave]: r.texto } };
-      $("estadoActa").textContent = "⚠️ " + ((g && g.error) || "No se pudo guardar") + " — cópialo o descárgalo ahora.";
+      $("estadoActa").textContent = t("bib.acta_no_guardada", (g && g.error) || t("bib.no_se_pudo_guardar"));
     }
     pintaActas();
   } catch (e) {
@@ -560,9 +606,9 @@ $("btnGenerar").onclick = async () => {
 
 const textoActa = () => actual.analisis[actaSel] || "";
 const nombreActa = () => `${actaSel.replace("·", "_")}_${baseFichero(actual)}`;
-$("actaCopiar").onclick = async () => { await navigator.clipboard.writeText(textoPlano(textoActa())); toast("📋 Copiado."); };
+$("actaCopiar").onclick = async () => { await navigator.clipboard.writeText(textoPlano(textoActa())); toast(t("bib.copiado")); };
 $("actaMd").onclick = () => descargar(textoActa(), "text/markdown;charset=utf-8", nombreActa() + ".md");
-$("actaWord").onclick = () => descargar(docx(`${etiquetaAnalisis(actaSel)} — ${actual.titulo || "Reunión"}`, textoActa()),
+$("actaWord").onclick = () => descargar(docx(`${etiquetaAnalisis(actaSel)} — ${actual.titulo || t("com.reunion")}`, textoActa()),
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", nombreActa() + ".docx");
 $("actaImprimir").onclick = () => imprimir("imprimeActa");
 // Con formato: Outlook, Gmail y Teams pegan el HTML con sus títulos y tablas.
@@ -574,10 +620,10 @@ $("actaCorreo").onclick = async () => {
       "text/html": new Blob([html], { type: "text/html" }),
       "text/plain": new Blob([textoPlano(textoActa())], { type: "text/plain" }),
     })]);
-    toast("✉️ Copiado con formato: pégalo en el correo.");
+    toast(t("bib.copiado_formato"));
   } catch (_) {
     await navigator.clipboard.writeText(textoPlano(textoActa()));
-    toast("📋 Copiado como texto (este navegador no deja copiar con formato).");
+    toast(t("bib.copiado_texto"));
   }
 };
 
@@ -586,7 +632,7 @@ $("actaCorreo").onclick = async () => {
 function pintaChat() {
   const chat = actual.chat || [];
   $("chat").innerHTML = chat.map((m) => {
-    const hora = m.fecha ? new Date(m.fecha).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "";
+    const hora = m.fecha ? new Date(m.fecha).toLocaleTimeString(LOCALE_UI(), { hour: "2-digit", minute: "2-digit" }) : "";
     return `<div class="burbuja p">${escT(m.p)}</div><div class="burbuja r">${mdAHtml(m.r)}<div class="quien">${escT(nombreProv(m.prov))}${hora ? " · " + hora : ""}</div></div>`;
   }).join("");
   $("sugerencias").hidden = chat.length > 0;
@@ -602,14 +648,14 @@ $("formPregunta").onsubmit = async (e) => {
   if (!q || !actual) return;
   const h = actual, prov = $("provChat").value, boton = $("formPregunta").querySelector("button");
   boton.disabled = true;
-  $("estadoChat").textContent = `⏳ ${nombreProv(prov)} está leyendo la reunión…`;
+  $("estadoChat").textContent = t("bib.chat_leyendo", nombreProv(prov));
   try {
     const r = await preguntarReunion(h, q, prov, cfg, { alEstado: (t) => { $("estadoChat").textContent = t; } });
     const g = await aBgMsg("histChat", { id: h.id, mensaje: { p: q, r: r.texto, prov, uso: r.uso } });
     if (!g || !g.ok) {
       actual = { ...h, chat: [...(h.chat || []), { p: q, r: r.texto, prov, fecha: Date.now() }] };
       pintaChat();
-      $("estadoChat").textContent = "⚠️ " + ((g && g.error) || "No se pudo guardar la respuesta.");
+      $("estadoChat").textContent = "⚠️ " + ((g && g.error) || t("bib.chat_no_guardada"));
     } else {
       $("estadoChat").textContent = "";
     }

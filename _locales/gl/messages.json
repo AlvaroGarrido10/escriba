@@ -1,0 +1,14 @@
+{
+  "descripcion": {
+    "message": "Graba tus reuniones (Meet, Teams o presenciales), transcríbelas con IA y genera actas con Gemini, GPT o Claude."
+  },
+  "tituloAccion": {
+    "message": "Escriba"
+  },
+  "comandoGrabar": {
+    "message": "Empezar o parar la grabación"
+  },
+  "comandoMarcar": {
+    "message": "Marcar este momento de la reunión"
+  }
+}

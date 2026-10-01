@@ -49,40 +49,40 @@
 <body>
 <header>
   <b style="display:flex;align-items:center;gap:7px"><img src="icon32.png" alt="" style="width:20px;height:20px">Escriba</b>
-  <span style="display:flex;gap:10px"><a id="lnkBiblio" title="Leer, exportar y sacar actas">📚 Reuniones</a><a id="lnkOpc">⚙️ Opciones</a></span>
+  <span style="display:flex;gap:10px"><a id="lnkBiblio" title="Leer, exportar y sacar actas" data-i18n="pop.reuniones" data-i18n-title="pop.reunionesTitle">📚 Reuniones</a><a id="lnkOpc" data-i18n="pop.opciones">⚙️ Opciones</a></span>
 </header>
 <main>
   <div id="panelGrabar">
     <div id="avisoMic" style="display:none;font-size:11px;line-height:1.4;background:#fff4e5;border:1px solid #f0c48a;color:#7a4a00;border-radius:6px;padding:7px 9px;margin-bottom:8px">
-      ⚠️ <b>El micrófono no está autorizado.</b> <span id="avisoMicTxt">Solo se grabará la pestaña: tu voz no saldrá en la transcripción.</span>
-      <div style="text-align:center;margin-top:6px"><button id="btnArreglaMic" style="font-size:11px;padding:4px 9px;border:1px solid #d09a4a;background:#fff;color:#7a4a00;border-radius:5px;cursor:pointer">Autorizar micrófono</button></div>
+      ⚠️ <b data-i18n="pop.micNoAutorizado">El micrófono no está autorizado.</b> <span id="avisoMicTxt" data-i18n="pop.micSoloPestana">Solo se grabará la pestaña: tu voz no saldrá en la transcripción.</span>
+      <div style="text-align:center;margin-top:6px"><button id="btnArreglaMic" style="font-size:11px;padding:4px 9px;border:1px solid #d09a4a;background:#fff;color:#7a4a00;border-radius:5px;cursor:pointer" data-i18n="pop.autorizarMic">Autorizar micrófono</button></div>
     </div>
     <div class="modo">
-      <label id="lblTab"><input type="radio" name="modo" value="tab_mic" checked><span>🖥️+🎙️ Pestaña + micro</span></label>
-      <label><input type="radio" name="modo" value="mic"><span>🎙️ Solo micro</span></label>
+      <label id="lblTab"><input type="radio" name="modo" value="tab_mic" checked><span data-i18n="pop.modoTabMic">🖥️+🎙️ Pestaña + micro</span></label>
+      <label><input type="radio" name="modo" value="mic"><span data-i18n="pop.modoMic">🎙️ Solo micro</span></label>
     </div>
-    <input id="participantes" maxlength="400" placeholder="👥 Participantes (opcional): Marcos, Ana…" title="Ayuda a poner nombre a cada voz y a sacar el acta" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #ddd;border-radius:8px;font-size:11.5px;margin-bottom:8px">
-    <button id="btnRec">⏺ Empezar a grabar</button>
+    <input id="participantes" maxlength="400" placeholder="👥 Participantes (opcional): Marcos, Ana…" title="Ayuda a poner nombre a cada voz y a sacar el acta" data-i18n-placeholder="pop.participantesPh" data-i18n-title="pop.participantesTitle" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #ddd;border-radius:8px;font-size:11.5px;margin-bottom:8px">
+    <button id="btnRec" data-i18n="pop.empezar">⏺ Empezar a grabar</button>
     <div id="controles" style="display:none;gap:6px;margin-top:6px">
-      <button id="btnPausa" class="ctl">⏸ Pausar</button>
-      <button id="btnMarca" class="ctl" title="Marca este momento (Alt+Shift+M): saldrá en la transcripción y el acta lo tendrá en cuenta">⭐ Marcar</button>
-      <button id="btnVivo" class="ctl" title="Panel lateral con el texto que va llegando, niveles y notas">🪟 En vivo</button>
+      <button id="btnPausa" class="ctl" data-i18n="pop.pausar">⏸ Pausar</button>
+      <button id="btnMarca" class="ctl" title="Marca este momento (Alt+Shift+M): saldrá en la transcripción y el acta lo tendrá en cuenta" data-i18n="pop.marcar" data-i18n-title="pop.marcarTitle">⭐ Marcar</button>
+      <button id="btnVivo" class="ctl" title="Panel lateral con el texto que va llegando, niveles y notas" data-i18n="pop.vivo" data-i18n-title="pop.vivoTitle">🪟 En vivo</button>
     </div>
     <div id="timer">00:00</div>
     <div id="estado"></div>
-    <div style="font-size:10.5px;color:#999;text-align:center">Puedes cerrar este panel: la grabación sigue (verás 🔴 REC en el icono).<span id="atajo"></span></div>
+    <div style="font-size:10.5px;color:#999;text-align:center"><span data-i18n="pop.puedesCerrar">Puedes cerrar este panel: la grabación sigue (verás 🔴 REC en el icono).</span><span id="atajo"></span></div>
     <div id="avisoRgpd" style="display:none;font-size:10.5px;line-height:1.35;color:#6d5f66;background:#f4f0f2;border-radius:6px;padding:5px 8px;margin-top:6px">
-      🔔 Avisa a los asistentes de que grabas la reunión. <a id="ocultaRgpd" style="color:#8c3b57;cursor:pointer">No volver a mostrar</a>
+      <span data-i18n="pop.avisaAsistentes">🔔 Avisa a los asistentes de que grabas la reunión.</span> <a id="ocultaRgpd" style="color:#8c3b57;cursor:pointer" data-i18n="pop.noVolverMostrar">No volver a mostrar</a>
     </div>
     <div class="herr">
-      <button id="btnImportar" title="Transcribir una grabación que ya tienes en el ordenador">📂 Transcribir un archivo</button>
-      <button id="btnDiag">🩺 Diagnóstico</button>
+      <button id="btnImportar" title="Transcribir una grabación que ya tienes en el ordenador" data-i18n="pop.importar" data-i18n-title="pop.importarTitle">📂 Transcribir un archivo</button>
+      <button id="btnDiag" data-i18n="pop.diagnostico">🩺 Diagnóstico</button>
     </div>
     <pre id="diag" style="display:none;background:#2b2229;color:#e8dfe4;font-size:10.5px;padding:8px;border-radius:6px;white-space:pre-wrap;margin-top:6px;max-height:220px;overflow:auto"></pre>
 
     <h3 style="display:flex;align-items:center;justify-content:space-between">
-      <span>Historial</span>
-      <button id="btnBorrarTodo" style="font-size:10.5px;font-weight:400;padding:3px 8px;border:1px solid #d3b3bf;background:#fff;color:#8c3b57;border-radius:5px;cursor:pointer">🗑 Borrar todo</button>
+      <span data-i18n="pop.historial">Historial</span>
+      <button id="btnBorrarTodo" style="font-size:10.5px;font-weight:400;padding:3px 8px;border:1px solid #d3b3bf;background:#fff;color:#8c3b57;border-radius:5px;cursor:pointer" data-i18n="pop.borrarTodo">🗑 Borrar todo</button>
     </h3>
     <div id="confirmaTodo" style="display:none;font-size:11px;line-height:1.45;background:#fdecef;border:1px solid #e6a9ba;color:#7d2d43;border-radius:6px;padding:8px 9px;margin-bottom:8px"></div>
     <div id="listo" style="display:none;font-size:11.5px;line-height:1.4;background:#eef8ee;border:1px solid #b9dfb8;color:#1f5b22;border-radius:6px;padding:7px 9px;margin-bottom:8px"></div>
@@ -90,7 +90,7 @@
   </div>
 
 </main>
-<script src="config.js"></script>
+<script src="i18n.js"></script><script src="config.js"></script>
 <script src="comun.js"></script>
 <script src="popup.js"></script>
 </body>

@@ -24,18 +24,23 @@ function cargar(fichero, globales = {}) {
   contexto.globalThis = contexto;
   contexto.self = contexto;
 
-  // El service worker carga sus dependencias con importScripts: se evalúan en
-  // ESTE mismo contexto, igual que hace Chrome.
-  contexto.importScripts = (...ficheros) => {
-    for (const f of ficheros) {
-      vm.runInContext(fs.readFileSync(path.join(RAIZ, f), "utf8"), contexto, { filename: f });
-    }
+  // Cada fichero, una sola vez por contexto: evaluar dos veces el mismo script
+  // redeclararía sus `const` y reventaría.
+  const cargados = new Set();
+  const evalua = (f) => {
+    if (cargados.has(f)) return;
+    cargados.add(f);
+    vm.runInContext(fs.readFileSync(path.join(RAIZ, f), "utf8"), contexto, { filename: f });
   };
 
-  const ctx = vm.createContext(contexto);
-  for (const f of [].concat(fichero)) {
-    vm.runInContext(fs.readFileSync(path.join(RAIZ, f), "utf8"), ctx, { filename: f });
-  }
+  // El service worker carga sus dependencias con importScripts: se evalúan en
+  // ESTE mismo contexto, igual que hace Chrome.
+  contexto.importScripts = (...ficheros) => ficheros.forEach(evalua);
+
+  vm.createContext(contexto);
+  // i18n.js va primero en todas las páginas y en el service worker: aquí también.
+  evalua("i18n.js");
+  [].concat(fichero).forEach(evalua);
   return contexto;
 }
 

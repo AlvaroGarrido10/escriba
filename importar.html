@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Escriba — Transcribir un archivo</title>
+<title data-i18n="imp.tituloPagina">Escriba — Transcribir un archivo</title>
 <link rel="icon" href="icon32.png">
 <style>
   :root { --vino: #5d2a42; --rosa: #d6336c; --ok: #2e7d32; --err: #c0392b; --borde: #e6dce1; }
@@ -37,48 +37,48 @@
 </style>
 </head>
 <body>
-  <h1><img src="icon128.png" alt="">Transcribir un archivo</h1>
-  <div class="sub">Para grabaciones que ya tienes en el ordenador: notas de voz, reuniones grabadas con otra herramienta o audios que no llegaron a transcribirse.</div>
+  <h1><img src="icon128.png" alt=""><span data-i18n="imp.titulo">Transcribir un archivo</span></h1>
+  <div class="sub" data-i18n="imp.sub">Para grabaciones que ya tienes en el ordenador: notas de voz, reuniones grabadas con otra herramienta o audios que no llegaron a transcribirse.</div>
 
   <div id="zona" tabindex="0" role="button">
-    <b>Arrastra aquí el audio o pulsa para elegirlo</b>
-    <small>mp3, m4a, wav, webm, ogg, flac o vídeo mp4 · Si eliges varios, se tratan como partes seguidas de la misma reunión, por orden de nombre.</small>
+    <b data-i18n="imp.zona">Arrastra aquí el audio o pulsa para elegirlo</b>
+    <small data-i18n="imp.formatos">mp3, m4a, wav, webm, ogg, flac o vídeo mp4 · Si eliges varios, se tratan como partes seguidas de la misma reunión, por orden de nombre.</small>
   </div>
   <input type="file" id="fichero" multiple accept="audio/*,video/*,.webm,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.mp4,.mov" hidden>
   <ul id="lista"></ul>
 
   <div id="formulario" hidden>
-    <label class="campo" for="titulo">Nombre de la reunión</label>
+    <label class="campo" for="titulo" data-i18n="imp.nombreReunion">Nombre de la reunión</label>
     <input type="text" id="titulo" maxlength="120">
-    <label class="campo" for="participantes">Participantes <span style="font-weight:400;color:#8b7c83">(opcional: ayuda a poner nombre a cada voz)</span></label>
-    <input type="text" id="participantes" maxlength="400" placeholder="Ej: Marcos, Ana, Clara">
+    <label class="campo" for="participantes"><span data-i18n="imp.participantes">Participantes</span> <span style="font-weight:400;color:#8b7c83" data-i18n="imp.participantesAyuda">(opcional: ayuda a poner nombre a cada voz)</span></label>
+    <input type="text" id="participantes" maxlength="400" placeholder="Ej: Marcos, Ana, Clara" data-i18n-placeholder="imp.participantesPh">
     <div class="acciones">
-      <button id="btnTranscribir">✍️ Transcribir</button>
-      <button id="btnOtro" class="sec">Elegir otro</button>
+      <button id="btnTranscribir" data-i18n="imp.transcribir">✍️ Transcribir</button>
+      <button id="btnOtro" class="sec" data-i18n="imp.elegirOtro">Elegir otro</button>
     </div>
   </div>
 
-  <div id="avisoClave" class="aviso pend" hidden>
+  <div id="avisoClave" class="aviso pend" hidden data-i18n-html="imp.avisoClaveHtml">
     ⚠️ Todavía no hay clave de Gemini. Puedes importar igual: el audio queda guardado y se transcribirá solo en cuanto la pongas en <a href="options.html" target="_blank">Opciones</a>.
   </div>
 
   <div id="progreso" hidden>
     <div id="progresoTxt" class="aviso info"></div>
     <div class="barra"><div id="progresoBarra"></div></div>
-    <p class="nota">Puedes cerrar esta pestaña cuando pase a «Transcribiendo»: sigue sola y el resultado aparecerá en la <a href="reuniones.html" target="_blank">biblioteca de Escriba</a> y en Descargas/reuniones.</p>
+    <p class="nota" data-i18n-html="imp.notaCerrarHtml">Puedes cerrar esta pestaña cuando pase a «Transcribiendo»: sigue sola y el resultado aparecerá en la <a href="reuniones.html" target="_blank">biblioteca de Escriba</a> y en Descargas/reuniones.</p>
   </div>
 
   <div id="resultado" hidden>
     <div id="resultadoTxt" class="aviso"></div>
     <textarea id="texto" readonly></textarea>
     <div class="acciones">
-      <button id="btnCopiar" class="sec">📋 Copiar</button>
-      <button id="btnAbrir" class="sec" hidden>📚 Abrir en la biblioteca</button>
-      <button id="btnNuevo" class="sec">📂 Transcribir otro</button>
+      <button id="btnCopiar" class="sec" data-i18n="imp.copiar">📋 Copiar</button>
+      <button id="btnAbrir" class="sec" hidden data-i18n="imp.abrirBiblio">📚 Abrir en la biblioteca</button>
+      <button id="btnNuevo" class="sec" data-i18n="imp.transcribirOtro">📂 Transcribir otro</button>
     </div>
   </div>
 
-  <script src="config.js"></script>
+  <script src="i18n.js"></script><script src="config.js"></script>
   <script src="comun.js"></script>
   <script src="importar.js"></script>
 </body>

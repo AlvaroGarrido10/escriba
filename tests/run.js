@@ -993,6 +993,14 @@ test("el prompt pide marcas de tiempo, usa los participantes con cautela y respe
   assert.match(auto, /idioma/i);
 });
 
+test("REGRESIÓN 01/10: con un idioma fijado, lo que se hable en otro se transcribe; SIN_VOZ es solo para el silencio", () => {
+  // Con «en español» a secas, una entrevista en inglés volvió como SIN_VOZ y el tramo se perdió.
+  const p = offscreen(nuevoFetch([])).construirPrompt("", 1, 1, { idioma: "es" });
+  assert.match(p, /se espera en español/);
+  assert.match(p, /otro idioma, transcríbelo igualmente/);
+  assert.match(p, /nunca lo dejes fuera ni respondas SIN_VOZ por eso/);
+});
+
 test("cada tramo guarda su texto con el tiempo de la reunión y los tokens gastados", async () => {
   const conUso = (t) => ({ cuerpo: { candidates: [{ finishReason: "STOP", content: { parts: [{ text: t }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 3 } } });
   const f = fetchPorTramo({ 1: [conUso("[00:10] Hablante 1: uno")], 2: [conUso("[00:20] Hablante 2: dos")] });
@@ -1332,6 +1340,308 @@ test("podar se lleva el audio conservado de las reuniones que salen", async () =
   for (const h of hist) await audios.guardarEscucha(h.id, 0, blobDe(null));
   await enviar({ target: "bg", cmd: "podar" });
   assert.deepStrictEqual([...(await audios.clavesEscucha()).map((k) => k[0])], [95]);
+});
+
+// ============================================================================
+grupo("3.5 · el acta aguanta a Gemini saturado (ia.js)");
+
+// Respuestas por modelo de Gemini: { "gemini-flash-latest": [r1, r2…] }. Lo
+// que no está en el mapa, o se acaba, falla el test.
+function fetchPorModelo(mapa) {
+  const colas = Object.fromEntries(Object.entries(mapa).map(([m, rs]) => [m, rs.slice()]));
+  const llamadas = [];
+  const fn = async (url) => {
+    const modelo = (String(url).match(/models\/([^:]+):/) || [])[1];
+    llamadas.push(modelo);
+    const r = (colas[modelo] || []).shift();
+    if (!r) throw new Error("fetch inesperado para " + modelo);
+    const cuerpo = typeof r.cuerpo === "string" ? r.cuerpo : JSON.stringify(r.cuerpo ?? {});
+    const status = r.status === undefined ? 200 : r.status;
+    return { ok: status < 300, status, async text() { return cuerpo; }, async json() { return JSON.parse(cuerpo); } };
+  };
+  fn._llamadas = llamadas;
+  return fn;
+}
+const saturado = { status: 503, cuerpo: '{\n  "error": {\n    "code": 503,\n    "message": "This model is currently experiencing high demand.",\n    "status": "UNAVAILABLE"\n  }\n}\n' };
+const cuatroVeces = (r) => [r, r, r, r]; // el intento y los tres reintentos
+
+test("REGRESIÓN 01/10: con el modelo de Gemini saturado, el acta sale con un modelo de reserva", async () => {
+  const f = fetchPorModelo({
+    "gemini-flash-latest": cuatroVeces(saturado),
+    "gemini-2.5-flash": [respGemini("ACTA DE RESERVA")],
+  });
+  const avisos = [];
+  const r = await ia(f).llamarIA("gemini", cfgIA, "S", "U", { alEstado: (t) => avisos.push(t) });
+  assert.strictEqual(r.texto, "ACTA DE RESERVA");
+  assert.deepStrictEqual([...new Set(f._llamadas)], ["gemini-flash-latest", "gemini-2.5-flash"]);
+  assert.ok(avisos.some((t) => /gemini-2\.5-flash/.test(t)), "avisa de que prueba otro modelo");
+});
+
+test("el modelo elegido en Opciones va primero, y si no existe (404) se pasa al siguiente", async () => {
+  const f = fetchPorModelo({
+    "gemini-mio": [{ status: 404, cuerpo: '{"error":{"message":"not found"}}' }],
+    "gemini-flash-latest": [respGemini("OK")],
+  });
+  const r = await ia(f).llamarIA("gemini", { ...cfgIA, geminiModel: "gemini-mio" }, "S", "U");
+  assert.strictEqual(r.texto, "OK");
+  assert.deepStrictEqual(f._llamadas, ["gemini-mio", "gemini-flash-latest"]);
+});
+
+test("una clave rechazada no prueba otros modelos y dice qué hacer", async () => {
+  const f = fetchPorModelo({ "gemini-flash-latest": [{ status: 403, cuerpo: '{"error":{"message":"API key not valid"}}' }] });
+  await assert.rejects(ia(f).llamarIA("gemini", cfgIA, "S", "U"), (e) => /clave/i.test(e.message) && /Opciones/.test(e.message));
+  assert.deepStrictEqual(f._llamadas, ["gemini-flash-latest"]);
+});
+
+test("si todos fallan, el error se lee: en español, sin JSON y con el código", async () => {
+  const f = fetchPorModelo({
+    "gemini-flash-latest": cuatroVeces(saturado),
+    "gemini-2.5-flash": cuatroVeces(saturado),
+    "gemini-flash-lite-latest": cuatroVeces(saturado),
+  });
+  await assert.rejects(ia(f).llamarIA("gemini", cfgIA, "S", "U"), (e) => {
+    assert.match(e.message, /saturad/i);
+    assert.match(e.message, /503/);
+    assert.doesNotMatch(e.message, /[{}]/, "nada de JSON en crudo: " + e.message);
+    return true;
+  });
+});
+
+test("GPT y Claude también dan errores legibles", async () => {
+  const f = nuevoFetch([{ status: 401, cuerpo: '{"error":{"message":"Incorrect API key"}}' }]);
+  await assert.rejects(ia(f).llamarIA("gpt", cfgIA, "S", "U"), (e) => /OpenAI/.test(e.message) && /clave/i.test(e.message) && !/[{}]/.test(e.message));
+});
+
+grupo("3.5 · atajo para grabar");
+
+test("REGRESIÓN 01/10: el atajo de grabar no es Alt+Shift+R, que Chrome se reserva y descarta sin avisar", () => {
+  const m = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "..", "manifest.json"), "utf8"));
+  const tecla = m.commands.grabar.suggested_key.default;
+  assert.notStrictEqual(tecla, "Alt+Shift+R");
+  assert.strictEqual(tecla, "Alt+Shift+G");
+});
+
+grupo("3.5 · coste estimado en euros (comun.js)");
+
+// € por millón de tokens. Gemini cobra distinto el audio (transcribir) y el texto (actas).
+const PRECIOS = { gemini: { audio: "1", entrada: "0,30", salida: "2,5" }, gpt: { entrada: "2", salida: "8" }, claude: { entrada: "", salida: "" } };
+const conUso = (extra = {}) => ({
+  id: Date.UTC(2026, 9, 1), tramos: [{ estado: "ok", uso: { entrada: 1000000, salida: 100000 } }], ...extra,
+});
+
+test("precioValido acepta coma o punto, y vacío es «sin precio», no cero", () => {
+  assert.strictEqual(comun.precioValido("0,30"), 0.3);
+  assert.strictEqual(comun.precioValido("2.5"), 2.5);
+  assert.strictEqual(comun.precioValido("0"), 0, "la capa gratuita es un precio de verdad: 0");
+  assert.strictEqual(comun.precioValido(""), null);
+  assert.strictEqual(comun.precioValido(undefined), null);
+  assert.strictEqual(comun.precioValido("abc"), null);
+  assert.strictEqual(comun.precioValido("-1"), null);
+});
+
+test("transcribir se cobra al precio del AUDIO de Gemini; la salida, al de salida", () => {
+  const c = comun.costeReunion(conUso(), PRECIOS);
+  assert.ok(Math.abs(c.euros - (1 + 0.25)) < 1e-9, String(c.euros));
+  assert.deepStrictEqual(c.faltan, []);
+  assert.strictEqual(c.tokens, 1100000);
+});
+
+test("cada acta y pregunta se cobra con su proveedor; las de versiones antiguas también", () => {
+  const h = conUso({ tramos: [], usoIA: [
+    { clave: "acta·gpt", entrada: 500000, salida: 0 },        // 1 €
+    { clave: "pregunta·gemini", entrada: 1000000, salida: 0 }, // 0,30 € (texto, no audio)
+    { clave: "gemini", entrada: 0, salida: 1000000 },          // acta de la 3.1: 2,5 €
+  ] });
+  const c = comun.costeReunion(h, PRECIOS);
+  assert.ok(Math.abs(c.euros - 3.8) < 1e-9, String(c.euros));
+});
+
+test("si falta el precio de un proveedor usado, se suma lo demás y se dice cuál falta", () => {
+  const h = conUso({ usoIA: [{ clave: "acta·claude", entrada: 1000, salida: 1000 }] });
+  const c = comun.costeReunion(h, PRECIOS);
+  assert.ok(Math.abs(c.euros - 1.25) < 1e-9);
+  assert.deepStrictEqual(c.faltan, ["claude"]);
+});
+
+test("sin ningún precio, o sin tokens apuntados, el coste es desconocido (null), nunca 0", () => {
+  assert.strictEqual(comun.costeReunion(conUso(), {}).euros, null);
+  assert.strictEqual(comun.costeReunion(conUso(), undefined).euros, null);
+  assert.strictEqual(comun.costeReunion({ id: 1, tramos: [{ estado: "ok", texto: "de la 3.1, sin uso" }] }, PRECIOS).euros, null);
+  const gratis = { gemini: { audio: "0", entrada: "0", salida: "0" } };
+  assert.strictEqual(comun.costeReunion(conUso(), gratis).euros, 0, "con precio 0 sí es 0 de verdad");
+});
+
+test("costeMes suma las reuniones del mes en curso y cuenta las que tienen coste", () => {
+  const ahora = new Date(2026, 9, 20).getTime();
+  const hist = [
+    conUso({ id: new Date(2026, 9, 1, 10).getTime() }),
+    conUso({ id: new Date(2026, 9, 15, 10).getTime() }),
+    conUso({ id: new Date(2026, 8, 30, 10).getTime() }), // septiembre: fuera
+    { id: new Date(2026, 9, 2).getTime(), tramos: [] },   // sin uso: no suma ni cuenta
+  ];
+  const m = comun.costeMes(hist, PRECIOS, ahora);
+  assert.ok(Math.abs(m.euros - 2.5) < 1e-9, String(m.euros));
+  assert.strictEqual(m.reuniones, 2);
+  assert.strictEqual(comun.costeMes(hist, {}, ahora).euros, null);
+});
+
+test("formatoEuros: céntimos legibles y nada de «0,00 €» engañoso", () => {
+  assert.strictEqual(comun.formatoEuros(1.2345), "1,23 €");
+  assert.strictEqual(comun.formatoEuros(0.042), "0,04 €");
+  assert.strictEqual(comun.formatoEuros(0.0004), "menos de 1 céntimo");
+  assert.strictEqual(comun.formatoEuros(0), "0 €");
+});
+
+grupo("3.5 · aviso al entrar en una reunión");
+
+test("plataformaReunion reconoce una sala de reunión, no la portada de cada web", () => {
+  const p = comun.plataformaReunion;
+  assert.strictEqual(p("https://meet.google.com/abc-defg-hij"), "Google Meet");
+  assert.strictEqual(p("https://meet.google.com/abc-defg-hij?authuser=1"), "Google Meet");
+  assert.strictEqual(p("https://meet.google.com/"), "");
+  assert.strictEqual(p("https://meet.google.com/landing"), "");
+  assert.strictEqual(p("https://teams.microsoft.com/l/meetup-join/19%3ameeting_x/0"), "Microsoft Teams");
+  assert.strictEqual(p("https://teams.live.com/meet/9876543210"), "Microsoft Teams");
+  assert.strictEqual(p("https://teams.microsoft.com/v2/"), "");
+  assert.strictEqual(p("https://app.zoom.us/wc/81234567890/join"), "Zoom");
+  assert.strictEqual(p("https://us02web.zoom.us/wc/81234567890/start"), "Zoom");
+  assert.strictEqual(p("https://zoom.us/pricing"), "");
+  assert.strictEqual(p("https://kmeet.infomaniak.com/sala-de-ditay"), "kMeet de Infomaniak");
+  assert.strictEqual(p("https://kmeet.infomaniak.com/"), "");
+  assert.strictEqual(p("https://meet.jit.si/ReunionSemanal"), "Jitsi Meet");
+  assert.strictEqual(p("https://www.youtube.com/watch?v=x"), "");
+  assert.strictEqual(p(undefined), "");
+});
+
+test("el manifest pide como opcionales justo las webs que se reconocen", () => {
+  const m = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "..", "manifest.json"), "utf8"));
+  global.chrome = nuevoChrome();
+  delete require.cache[require.resolve("../config.js")];
+  const cfg = require("../config.js");
+  assert.deepStrictEqual([...m.optional_host_permissions].sort(), [...cfg.ORIGENES_REUNION].sort());
+  assert.ok(!(m.host_permissions || []).some((o) => /meet|teams|zoom|jit\.si/.test(o)), "no se piden de entrada: solo al activar el aviso");
+});
+
+const enMeet = { id: 5, windowId: 7, url: "https://meet.google.com/abc-defg-hij", title: "Meet" };
+
+test("con el aviso activado, entrar en una reunión avisa una sola vez y dice cómo grabar", async () => {
+  const { chrome } = bg({ sync: { avisoReunion: true } });
+  for (const f of chrome._oyentes.pestana) f(5, { status: "complete" }, enMeet);
+  await hasta(() => chrome._registro.notificaciones.length === 1, "el aviso");
+  const n = chrome._registro.notificaciones[0];
+  assert.strictEqual(n.id, "escriba-reunion-5");
+  assert.match(n.message, /Google Meet/);
+  assert.match(n.message, /Alt\+Shift\+G/, "con el atajo de verdad, leído de Chrome");
+  for (const f of chrome._oyentes.pestana) f(5, { status: "complete" }, enMeet);
+  await espera0(); await espera0(); await espera0();
+  assert.strictEqual(chrome._registro.notificaciones.length, 1, "la misma reunión no se avisa dos veces");
+});
+
+test("sin atajo asignado, el aviso solo habla del icono", async () => {
+  const { chrome } = bg({ sync: { avisoReunion: true }, atajos: [{ name: "grabar", shortcut: "" }] });
+  for (const f of chrome._oyentes.pestana) f(5, { status: "complete" }, enMeet);
+  await hasta(() => chrome._registro.notificaciones.length === 1, "el aviso");
+  assert.match(chrome._registro.notificaciones[0].message, /icono/);
+  assert.doesNotMatch(chrome._registro.notificaciones[0].message, /Alt\+/);
+});
+
+test("apagado (por defecto), grabando ya, o fuera de una reunión, no avisa", async () => {
+  for (const op of [{}, { sync: { avisoReunion: true }, session: { grabando: true } }]) {
+    const { chrome } = bg(op);
+    for (const f of chrome._oyentes.pestana) f(5, { status: "complete" }, enMeet);
+    await espera0(); await espera0(); await espera0(); await espera0();
+    assert.strictEqual(chrome._registro.notificaciones.length, 0, JSON.stringify(op));
+  }
+  const { chrome } = bg({ sync: { avisoReunion: true } });
+  for (const f of chrome._oyentes.pestana) f(6, { status: "complete" }, { id: 6, url: "https://www.youtube.com/" });
+  await espera0(); await espera0(); await espera0();
+  assert.strictEqual(chrome._registro.notificaciones.length, 0);
+});
+
+test("pulsar el aviso pone delante la pestaña de la reunión", async () => {
+  const { chrome } = bg({ sync: { avisoReunion: true } });
+  for (const f of chrome._oyentes.clicAviso) f("escriba-reunion-5");
+  await hasta(() => chrome._registro.ventanasEnfocadas.length === 1, "que se enfocara la ventana");
+  assert.deepStrictEqual(chrome._registro.pestanasActivadas[0], { id: 5, active: true });
+  assert.deepStrictEqual(chrome._registro.ventanasEnfocadas[0], { id: 7, focused: true });
+});
+
+grupo("3.5 · interfaz en español e inglés (i18n.js)");
+
+const i18n = require("../i18n.js");
+const fsT = require("fs"), pathT = require("path");
+const RAIZ_EXT = pathT.join(__dirname, "..");
+const placeholders = (s) => (String(s).match(/\{\d\}/g) || []).sort().join("");
+
+test("t() sustituye {1}, {2}…, y una clave que no existe se ve tal cual (nunca vacía)", () => {
+  i18n._ponIdioma("es");
+  i18n.TEXTOS.es["prueba.x"] = "Hola {1}, tienes {2}";
+  i18n.TEXTOS.en["prueba.x"] = "Hi {1}, you have {2}";
+  assert.strictEqual(i18n.t("prueba.x", "Ana", 3), "Hola Ana, tienes 3");
+  i18n._ponIdioma("en");
+  assert.strictEqual(i18n.t("prueba.x", "Ana", 3), "Hi Ana, you have 3");
+  delete i18n.TEXTOS.en["prueba.x"];
+  assert.strictEqual(i18n.t("prueba.x", "Ana", 3), "Hola Ana, tienes 3", "si falta en inglés, sale en español");
+  assert.strictEqual(i18n.t("no.existe"), "no.existe");
+  delete i18n.TEXTOS.es["prueba.x"];
+  i18n._ponIdioma("es");
+});
+
+test("idioma del navegador: español también para catalán, gallego y euskera; inglés para el resto", () => {
+  const prueba = (l) => { global.chrome = { i18n: { getUILanguage: () => l } }; return i18n.idiomaNavegador(); };
+  assert.deepStrictEqual(["es-ES", "es-419", "ca", "gl", "eu", "en-US", "fr", "de", "pt-BR"].map(prueba), ["es", "es", "es", "es", "es", "en", "en", "en", "en"]);
+  delete global.chrome;
+});
+
+test("el diccionario está completo: las mismas claves en los dos idiomas y los mismos huecos {n}", () => {
+  const es = Object.keys(i18n.TEXTOS.es), en = Object.keys(i18n.TEXTOS.en);
+  assert.deepStrictEqual(es.filter((k) => !(k in i18n.TEXTOS.en)), [], "faltan en inglés");
+  assert.deepStrictEqual(en.filter((k) => !(k in i18n.TEXTOS.es)), [], "sobran en inglés");
+  const malos = es.filter((k) => placeholders(i18n.TEXTOS.es[k]) !== placeholders(i18n.TEXTOS.en[k]));
+  assert.deepStrictEqual(malos, [], "huecos {n} distintos");
+  assert.deepStrictEqual(en.filter((k) => !String(i18n.TEXTOS.en[k]).trim()), [], "textos vacíos");
+});
+
+test("toda clave que usan el HTML y el JS existe en el diccionario", () => {
+  const faltan = [];
+  for (const f of fsT.readdirSync(RAIZ_EXT).filter((n) => /\.(html|js)$/.test(n) && n !== "i18n.js")) {
+    const src = fsT.readFileSync(pathT.join(RAIZ_EXT, f), "utf8");
+    const claves = [
+      ...[...src.matchAll(/data-i18n(?:-html|-placeholder|-title|-aria-label)?="([^"]+)"/g)].map((m) => m[1]),
+      ...[...src.matchAll(/\bt\(\s*"([a-z]+\.[A-Za-z0-9_.]+)"/g)].map((m) => m[1]),
+    ];
+    for (const k of claves) if (!(k in i18n.TEXTOS.es)) faltan.push(`${f}: ${k}`);
+  }
+  assert.deepStrictEqual(faltan, []);
+});
+
+test("cada página carga i18n.js antes que ningún otro script, y el service worker también", () => {
+  for (const f of fsT.readdirSync(RAIZ_EXT).filter((n) => n.endsWith(".html"))) {
+    const scripts = [...fsT.readFileSync(pathT.join(RAIZ_EXT, f), "utf8").matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
+    if (scripts.length) assert.strictEqual(scripts[0], "i18n.js", f);
+  }
+  assert.match(fsT.readFileSync(pathT.join(RAIZ_EXT, "background.js"), "utf8"), /importScripts\("i18n\.js"/);
+});
+
+test("REGRESIÓN 01/10: sin chrome.i18n (documento offscreen) el idioma sale de navigator.language, no se cae al español", () => {
+  const antes = Object.getOwnPropertyDescriptor(global, "navigator");
+  global.chrome = { runtime: {} }; // el offscreen solo tiene chrome.runtime
+  Object.defineProperty(global, "navigator", { value: { language: "en-US" }, configurable: true });
+  assert.strictEqual(i18n.idiomaNavegador(), "en");
+  Object.defineProperty(global, "navigator", { value: { language: "ca-ES" }, configurable: true });
+  assert.strictEqual(i18n.idiomaNavegador(), "es");
+  delete global.chrome;
+  if (antes) Object.defineProperty(global, "navigator", antes); else delete global.navigator;
+});
+
+test("la fecha de una reunión: en español la guardada; en inglés se rehace, que 01/10 sería 10 de enero", () => {
+  const h = { id: new Date(2026, 9, 1, 22, 11).getTime(), fecha: "01/10/2026 22:11" };
+  i18n._ponIdioma("es");
+  assert.strictEqual(comun.fechaVisible(h), "01/10/2026 22:11");
+  i18n._ponIdioma("en");
+  assert.match(comun.fechaVisible(h), /^Oct 1, 2026/);
+  assert.strictEqual(comun.fechaVisible({ fecha: "sin id" }), "sin id", "sin marca de tiempo, la guardada");
+  i18n._ponIdioma("es");
 });
 
 // ============================================================================

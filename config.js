@@ -26,7 +26,22 @@ const CFG_SYNC = {
   autoActaProv: "gemini",
   autoActaPlantilla: "acta",
   conservarAudio: false,       // guardar el audio para escucharlo en la biblioteca
+  precios: {},                 // € por millón de tokens, los que ponga el usuario (comun.js: costeReunion)
+  avisoReunion: false,         // avisar al entrar en una reunión (pide permiso para ORIGENES_REUNION)
+  idiomaUI: "auto",            // idioma de la interfaz: "auto" (el de Chrome), "es" o "en" (i18n.js)
 };
+
+// Webs de reunión que se vigilan para el aviso. Van en optional_host_permissions
+// del manifest (un test comprueba que coinciden) y se piden solo al activarlo:
+// sin ese permiso Chrome no deja ver la dirección de esas pestañas.
+const ORIGENES_REUNION = [
+  "https://meet.google.com/*",
+  "https://teams.microsoft.com/*",
+  "https://teams.live.com/*",
+  "https://*.zoom.us/*",
+  "https://kmeet.infomaniak.com/*",
+  "https://meet.jit.si/*",
+];
 
 async function leerConfig() {
   const [local, sync] = await Promise.all([
@@ -69,5 +84,5 @@ async function migrarConfig() {
 // Cargado como script clásico tanto en páginas como en el service worker; en
 // Node (tests) se exporta.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { CFG_LOCAL, CFG_SYNC, leerConfig, guardarConfig, migrarConfig };
+  module.exports = { CFG_LOCAL, CFG_SYNC, ORIGENES_REUNION, leerConfig, guardarConfig, migrarConfig };
 }

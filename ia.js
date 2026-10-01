@@ -6,12 +6,25 @@
 // el popup abierto. Aquí no toca ni el DOM ni chrome.*: recibe la configuración
 // y devuelve texto y tokens gastados; quien llama decide dónde guardarlo.
 
+// t() la define i18n.js, que se carga antes. En Node (tests) se trae con require.
+if (typeof t !== "function" && typeof require === "function") var t = require("./i18n.js").t;
+
 const ESPERAS_IA = [3000, 8000, 20000];
+// Si el modelo de Gemini sigue saturado tras los reintentos, se prueban estos por
+// orden. Es la misma lista que usa la transcripción (offscreen.js): sin ella, un
+// 503 de «high demand» dejaba la reunión sin acta (01/10).
+const RESERVA_GEMINI_IA = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"];
+// Errores que otro modelo puede no tener. Una clave rechazada (400/401/403) no:
+// ahí se para enseguida.
+const PASA_DE_MODELO = [404, 408, 429, 500, 502, 503, 504];
 
 // --- plantillas -----------------------------------------------------------------------
+// `nombre` es lo que ve el usuario (getter: sale en el idioma vigente al leerlo).
+// `pide` va al modelo y se queda en español a propósito: el prompt pide responder
+// en el idioma de la reunión.
 const PLANTILLAS = {
   acta: {
-    nombre: "Acta completa",
+    get nombre() { return t("ia.plantillaActa"); },
     pide: `Devuelve en markdown:
 ## Resumen ejecutivo
 (5-10 líneas: de qué fue la reunión y qué se decidió)
@@ -25,25 +38,25 @@ const PLANTILLAS = {
 (cifras, fechas, referencias, nombres de sistemas mencionados)`,
   },
   resumen: {
-    nombre: "Resumen breve",
+    get nombre() { return t("ia.plantillaResumen"); },
     pide: `Devuelve un resumen en markdown de como máximo 8 viñetas, lo más importante primero. Una última línea «**En una frase:** …».`,
   },
   tareas: {
-    nombre: "Tareas y responsables",
+    get nombre() { return t("ia.plantillaTareas"); },
     pide: `Devuelve SOLO las tareas y compromisos, en una tabla markdown con columnas: Responsable | Tarea | Plazo | Contexto.
 - El responsable es quien se compromete o a quien se le encarga; si no está claro, escribe «Sin asignar».
 - El plazo, tal como se dijo; si no se dijo, «—».
 - Debajo de la tabla, una lista «Pendiente de confirmar» con lo que sonó a tarea pero no quedó claro.`,
   },
   correo: {
-    nombre: "Correo de seguimiento",
+    get nombre() { return t("ia.plantillaCorreo"); },
     pide: `Redacta el correo de seguimiento que se enviaría a los asistentes después de la reunión, listo para copiar y pegar:
 - Una primera línea «Asunto: …».
 - Saludo breve, resumen en 2-3 frases, decisiones, próximos pasos con responsable y fecha, y despedida.
 - Tono profesional y cercano, en frases cortas. Sin inventar nada que no se haya dicho.`,
   },
   personalizada: {
-    nombre: "Mi plantilla",
+    get nombre() { return t("ia.plantillaPersonalizada"); },
     pide: "", // la escribe el usuario en Opciones
   },
 };
@@ -86,6 +99,33 @@ function textoParaIA(h) {
 const NOMBRE_PROV = { gemini: "Gemini", gpt: "OpenAI", claude: "Anthropic" };
 const esperaIA = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Error que se enseña tal cual en la biblioteca y en el aviso del acta: en el
+// idioma de la interfaz, con qué hacer y el código HTTP al final, nunca el JSON
+// de la API.
+function errorIA(nombre, status, cuerpo) {
+  let detalle = "";
+  try {
+    const j = JSON.parse(cuerpo);
+    detalle = (j && j.error && (j.error.message || j.error.type)) || "";
+  } catch (_) { /* cuerpo que no es JSON: sin detalle */ }
+  detalle = String(detalle).replace(/\s+/g, " ").trim().slice(0, 140);
+  let txt;
+  if (status === 401 || status === 403 || (status === 400 && /api[_ ]?key/i.test(detalle + " " + cuerpo))) {
+    txt = t("ia.errClave", nombre);
+  } else if (status === 429) {
+    txt = t("ia.errLimite", nombre);
+  } else if (status === 404) {
+    txt = t("ia.errModelo", nombre);
+  } else if (status === 408 || status >= 500) {
+    txt = t("ia.errSaturado", nombre);
+  } else {
+    txt = detalle ? t("ia.errPeticionDetalle", nombre, detalle) : t("ia.errPeticion", nombre);
+  }
+  const e = new Error(`${txt} (HTTP ${status}).`);
+  e.status = status;
+  return e;
+}
+
 // Las tres APIs devuelven 429/503 de vez en cuando. Sin reintentos, un pico de
 // carga de un segundo se lleva por delante el acta de una reunión de una hora.
 async function fetchIA(nombre, url, opts, alEstado) {
@@ -95,15 +135,15 @@ async function fetchIA(nombre, url, opts, alEstado) {
     try {
       r = await fetch(url, opts);
     } catch (e) {
-      ultimo = new Error(`${nombre}: sin conexión (${(e && e.message) || e})`);
+      ultimo = new Error(t("ia.sinConexion", nombre, (e && e.message) || e));
+      ultimo.status = 0;
       if (intento < ESPERAS_IA.length) { await esperaIA(ESPERAS_IA[intento]); continue; }
       throw ultimo;
     }
     if (r.ok) return r;
-    const txt = (await r.text()).slice(0, 200);
-    ultimo = new Error(`${nombre} HTTP ${r.status}: ${txt}`);
+    ultimo = errorIA(nombre, r.status, (await r.text()).slice(0, 500));
     if ([408, 429, 500, 502, 503, 504].includes(r.status) && intento < ESPERAS_IA.length) {
-      if (alEstado) alEstado(`⏳ ${nombre} saturado, reintentando (${intento + 1}/${ESPERAS_IA.length})…`);
+      if (alEstado) alEstado("⏳ " + t("ia.reintentando", nombre, intento + 1, ESPERAS_IA.length));
       await esperaIA(ESPERAS_IA[intento]);
       continue;
     }
@@ -114,7 +154,7 @@ async function fetchIA(nombre, url, opts, alEstado) {
 // Añade el motivo que dé la API, si lo da: sin esto un texto vacío no se
 // distingue de un fallo de red.
 function motivo(razon, cuerpo) {
-  if (razon) return ` (motivo: ${razon})`;
+  if (razon) return ` (${t("ia.motivo", razon)})`;
   const err = cuerpo && cuerpo.error && (cuerpo.error.message || cuerpo.error.type);
   return err ? ` (${String(err).slice(0, 120)})` : "";
 }
@@ -125,31 +165,41 @@ async function llamarIA(prov, cfg, sistema, mensajes, opciones) {
   const o = opciones || {};
   const msgs = typeof mensajes === "string" ? [{ role: "user", content: mensajes }] : mensajes;
   const nombre = NOMBRE_PROV[prov];
-  if (!nombre) throw new Error("Proveedor desconocido: " + prov);
+  if (!nombre) throw new Error(t("ia.provDesconocido", prov));
 
   if (prov === "gemini") {
-    if (!cfg.geminiKey) throw new Error("Falta la clave de Gemini en Opciones.");
-    const modelo = cfg.geminiModel || "gemini-flash-latest";
+    if (!cfg.geminiKey) throw new Error(t("ia.faltaClave", "Gemini"));
+    // El elegido en Opciones primero; después, los de reserva que no sean él.
+    const elegido = cfg.geminiModel || RESERVA_GEMINI_IA[0];
+    const modelos = [elegido, ...RESERVA_GEMINI_IA.filter((m) => m !== elegido)];
     // Gemini no tiene «system» en generateContent de todos los modelos: va delante del primer turno.
     const contents = msgs.map((m, i) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: i === 0 ? sistema + "\n\n---\n" + m.content : m.content }],
     }));
-    const r = await fetchIA(nombre, `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
-      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": cfg.geminiKey },
-      // Margen amplio: en los modelos con razonamiento también gasta de aquí.
-      body: JSON.stringify({ contents, generationConfig: { temperature: 0.3, maxOutputTokens: 32768 } }),
-    }, o.alEstado);
+    let r = null;
+    for (let i = 0; i < modelos.length && !r; i++) {
+      try {
+        r = await fetchIA(nombre, `https://generativelanguage.googleapis.com/v1beta/models/${modelos[i]}:generateContent`, {
+          method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": cfg.geminiKey },
+          // Margen amplio: en los modelos con razonamiento también gasta de aquí.
+          body: JSON.stringify({ contents, generationConfig: { temperature: 0.3, maxOutputTokens: 32768 } }),
+        }, o.alEstado);
+      } catch (e) {
+        if (!PASA_DE_MODELO.includes(e.status) || i === modelos.length - 1) throw e;
+        if (o.alEstado) o.alEstado("⏳ " + t("ia.cambioModelo", modelos[i], modelos[i + 1]));
+      }
+    }
     const d = await r.json();
     const cand = (d.candidates || [])[0];
     const texto = ((cand && cand.content && cand.content.parts) || []).map((p) => p.text || "").join("").trim();
-    if (!texto) throw new Error("Gemini devolvió una respuesta vacía" + motivo(cand && cand.finishReason, d));
+    if (!texto) throw new Error(t("ia.vacia", "Gemini") + motivo(cand && cand.finishReason, d));
     const u = d.usageMetadata || {};
     return { texto, uso: { entrada: u.promptTokenCount || 0, salida: u.candidatesTokenCount || 0 } };
   }
 
   if (prov === "gpt") {
-    if (!cfg.openaiKey) throw new Error("Falta la clave de OpenAI en Opciones.");
+    if (!cfg.openaiKey) throw new Error(t("ia.faltaClave", "OpenAI"));
     const r = await fetchIA(nombre, "https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.openaiKey },
@@ -160,13 +210,13 @@ async function llamarIA(prov, cfg, sistema, mensajes, opciones) {
     const d = await r.json();
     const ch = (d.choices || [])[0];
     const texto = ((ch && ch.message && ch.message.content) || "").trim();
-    if (!texto) throw new Error("OpenAI devolvió una respuesta vacía" + motivo(ch && ch.finish_reason, d));
+    if (!texto) throw new Error(t("ia.vacia", "OpenAI") + motivo(ch && ch.finish_reason, d));
     const u = d.usage || {};
     return { texto, uso: { entrada: u.prompt_tokens || 0, salida: u.completion_tokens || 0 } };
   }
 
   // claude
-  if (!cfg.claudeKey) throw new Error("Falta la clave de Anthropic en Opciones.");
+  if (!cfg.claudeKey) throw new Error(t("ia.faltaClave", "Anthropic"));
   const r = await fetchIA(nombre, "https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -179,7 +229,7 @@ async function llamarIA(prov, cfg, sistema, mensajes, opciones) {
   }, o.alEstado);
   const d = await r.json();
   const texto = (Array.isArray(d.content) ? d.content : []).map((c) => c.text || "").join("").trim();
-  if (!texto) throw new Error("Anthropic devolvió una respuesta vacía" + motivo(d.stop_reason, d));
+  if (!texto) throw new Error(t("ia.vacia", "Anthropic") + motivo(d.stop_reason, d));
   const u = d.usage || {};
   return { texto, uso: { entrada: u.input_tokens || 0, salida: u.output_tokens || 0 } };
 }

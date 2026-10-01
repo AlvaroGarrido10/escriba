@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Escriba — Configuración</title>
+<title data-i18n="opc.tituloPagina">Escriba — Configuración</title>
 <style>
   :root { --vino: #5d2a42; --ok: #2e7d32; --err: #c0392b; }
   * { box-sizing: border-box; }
@@ -27,57 +27,71 @@
   textarea { width: 100%; height: 70px; padding: 8px; border: 1px solid #bbb; border-radius: 8px; font-size: 12.5px; resize: vertical; }
   .par { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
   small { color: #8b7c83; }
+  .precios { display: grid; grid-template-columns: 1.3fr repeat(3, 1fr); gap: 6px 8px; align-items: center; font-size: 12.5px; }
+  .precios .cab { color: #8b7c83; font-size: 11.5px; }
+  .precios input { width: 100%; padding: 7px; border: 1px solid #bbb; border-radius: 7px; font-size: 12.5px; }
 </style>
 </head>
 <body>
   <h1 style="display:flex;align-items:center;gap:10px"><img src="icon128.png" alt="" style="width:34px;height:34px">Escriba</h1>
-  <div class="sub">Dos pasos y listo. Se guarda todo solo.</div>
+  <div class="sub" data-i18n="opc.sub">Dos pasos y listo. Se guarda todo solo.</div>
 
   <div class="paso" id="p1">
-    <h2><span class="n">1</span> Pega tu clave de Google Gemini</h2>
-    <p>Es gratis: entra en <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> → «Create API key» → cópiala y pégala aquí.</p>
-    <input type="password" id="geminiKey" placeholder="Pega aquí la clave" autocomplete="off">
+    <h2><span class="n">1</span> <span data-i18n="opc.p1Titulo">Pega tu clave de Google Gemini</span></h2>
+    <p data-i18n-html="opc.p1Texto">Es gratis: entra en <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> → «Create API key» → cópiala y pégala aquí.</p>
+    <input type="password" id="geminiKey" placeholder="Pega aquí la clave" data-i18n-placeholder="opc.p1Placeholder" autocomplete="off">
     <div class="estado" id="e1"></div>
   </div>
 
   <div class="paso" id="p2">
-    <h2><span class="n">2</span> Permite el micrófono</h2>
-    <p>Necesario para grabarte a ti (en reuniones online y presenciales).</p>
-    <button id="btnMic">🎙️ Permitir micrófono</button>
+    <h2><span class="n">2</span> <span data-i18n="opc.p2Titulo">Permite el micrófono</span></h2>
+    <p data-i18n="opc.p2Texto">Necesario para grabarte a ti (en reuniones online y presenciales).</p>
+    <button id="btnMic" data-i18n="opc.btnMic">🎙️ Permitir micrófono</button>
     <div class="estado" id="e2"></div>
   </div>
 
   <div class="estado ok" id="final" style="font-size:14px;font-weight:600"></div>
 
-  <div class="paso" id="p5" style="margin-top:14px">
-    <h2>🗣️ Idioma de las reuniones</h2>
-    <p>En qué idioma se habla. «Detectar» sirve para reuniones que mezclan idiomas: cada frase se deja en el suyo, sin traducir.</p>
-    <select id="idioma" style="padding:8px;border:1px solid #bbb;border-radius:8px;font-size:13.5px">
+  <div class="paso" id="p10" style="margin-top:14px">
+    <h2 data-i18n="opc.idiomaUITitulo">🌐 Idioma de la interfaz</h2>
+    <p data-i18n="opc.idiomaUITexto">El de los menús, botones y mensajes de Escriba. No cambia el idioma de las transcripciones ni de las actas: eso depende de «Idioma de las reuniones», justo debajo.</p>
+    <select id="idiomaUI" style="padding:8px;border:1px solid #bbb;border-radius:8px;font-size:13.5px">
+      <option value="auto" data-i18n="opc.idiomaUIAuto">Automático (el de Chrome)</option>
       <option value="es">Español</option>
-      <option value="auto">Detectar automáticamente (respeta mezclas)</option>
-      <option value="en">Inglés</option>
-      <option value="ca">Catalán</option>
-      <option value="pt">Portugués</option>
-      <option value="fr">Francés</option>
-      <option value="de">Alemán</option>
-      <option value="it">Italiano</option>
+      <option value="en">English</option>
+    </select>
+    <div class="estado" id="e10"></div>
+  </div>
+
+  <div class="paso" id="p5">
+    <h2 data-i18n="opc.idiomaTitulo">🗣️ Idioma de las reuniones</h2>
+    <p data-i18n="opc.idiomaTexto">En qué idioma se habla. «Detectar» sirve para reuniones que mezclan idiomas: cada frase se deja en el suyo, sin traducir.</p>
+    <select id="idioma" style="padding:8px;border:1px solid #bbb;border-radius:8px;font-size:13.5px">
+      <option value="es" data-i18n="opc.idiomaEs">Español</option>
+      <option value="auto" data-i18n="opc.idiomaAuto">Detectar automáticamente (respeta mezclas)</option>
+      <option value="en" data-i18n="opc.idiomaEn">Inglés</option>
+      <option value="ca" data-i18n="opc.idiomaCa">Catalán</option>
+      <option value="pt" data-i18n="opc.idiomaPt">Portugués</option>
+      <option value="fr" data-i18n="opc.idiomaFr">Francés</option>
+      <option value="de" data-i18n="opc.idiomaDe">Alemán</option>
+      <option value="it" data-i18n="opc.idiomaIt">Italiano</option>
     </select>
     <div class="estado" id="e5"></div>
   </div>
 
   <div class="paso" id="p6">
-    <h2>📝 Acta automática</h2>
-    <p>Al terminar cada transcripción, Escriba genera sola el acta y la deja en la reunión. Gasta una llamada más por reunión, con tu clave.</p>
+    <h2 data-i18n="opc.actaTitulo">📝 Acta automática</h2>
+    <p data-i18n="opc.actaTexto">Al terminar cada transcripción, Escriba genera sola el acta y la deja en la reunión. Gasta una llamada más por reunión, con tu clave.</p>
     <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
-      <input type="checkbox" id="autoActa"> Generar automáticamente
+      <input type="checkbox" id="autoActa"> <span data-i18n="opc.actaGenerar">Generar automáticamente</span>
       <select id="autoActaPlantilla" style="padding:6px;border:1px solid #bbb;border-radius:7px">
-        <option value="acta">Acta completa</option>
-        <option value="resumen">Resumen breve</option>
-        <option value="tareas">Tareas y responsables</option>
-        <option value="correo">Correo de seguimiento</option>
-        <option value="personalizada">Mi plantilla</option>
+        <option value="acta" data-i18n="opc.plantillaActa">Acta completa</option>
+        <option value="resumen" data-i18n="opc.plantillaResumen">Resumen breve</option>
+        <option value="tareas" data-i18n="opc.plantillaTareas">Tareas y responsables</option>
+        <option value="correo" data-i18n="opc.plantillaCorreo">Correo de seguimiento</option>
+        <option value="personalizada" data-i18n="opc.plantillaMia">Mi plantilla</option>
       </select>
-      con
+      <span data-i18n="opc.actaCon">con</span>
       <select id="autoActaProv" style="padding:6px;border:1px solid #bbb;border-radius:7px">
         <option value="gemini">Gemini</option>
         <option value="gpt">GPT</option>
@@ -88,60 +102,90 @@
   </div>
 
   <div class="paso" id="p7">
-    <h2>🔊 Escuchar las reuniones</h2>
-    <p>Guarda el audio de cada reunión en este navegador para oírla desde la biblioteca: pulsas una frase y suena ese momento. Una hora de reunión ocupa unos 30 MB; se borra con la reunión.</p>
+    <h2 data-i18n="opc.audioTitulo">🔊 Escuchar las reuniones</h2>
+    <p data-i18n="opc.audioTexto">Guarda el audio de cada reunión en este navegador para oírla desde la biblioteca: pulsas una frase y suena ese momento. Una hora de reunión ocupa unos 30 MB; se borra con la reunión.</p>
     <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
-      <input type="checkbox" id="conservarAudio"> Conservar el audio de las próximas reuniones
+      <input type="checkbox" id="conservarAudio"> <span data-i18n="opc.audioConservar">Conservar el audio de las próximas reuniones</span>
     </label>
     <div class="estado" id="e7"></div>
   </div>
 
+  <div class="paso" id="p9">
+    <h2 data-i18n="opc.avisoTitulo">🔔 Aviso al entrar en una reunión</h2>
+    <p data-i18n="opc.avisoTexto">Te avisa cuando entras en una reunión de Google Meet, Microsoft Teams, Zoom (en el navegador), kMeet de Infomaniak o Jitsi, para que no se te olvide grabarla. Chrome te pedirá permiso para esas webs: solo se mira la dirección de la pestaña, nunca lo que hay dentro. Grabar lo decides tú, con el icono o el atajo.</p>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
+      <input type="checkbox" id="avisoReunion"> <span data-i18n="opc.avisoActivar">Avisarme al entrar en una reunión</span>
+    </label>
+    <div class="estado" id="atajo" style="color:#6d5f66"></div>
+    <div class="estado" id="e9"></div>
+  </div>
+
+  <div class="paso" id="p8">
+    <h2 data-i18n="opc.costeTitulo">💶 Coste estimado</h2>
+    <p data-i18n-html="opc.costeTexto">Escriba no cobra nada: pagas a Google, OpenAI o Anthropic lo que gastes con tu clave. Pon lo que te cobra cada uno por <b>millón de tokens</b>, en euros, y la biblioteca te dirá cuánto costó cada reunión y lo que llevas de mes. Si usas la capa gratuita de Gemini, pon 0. Vacío quiere decir «sin precio»: no se calcula.</p>
+    <div class="precios">
+      <span></span><span class="cab" data-i18n="opc.cabAudio">Entrada · audio</span><span class="cab" data-i18n="opc.cabTexto">Entrada · texto</span><span class="cab" data-i18n="opc.cabSalida">Salida</span>
+      <span>Gemini <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
+      <input data-prov="gemini" data-tipo="audio" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon" title="Transcribir: el audio que se manda a Gemini" data-i18n-title="opc.tituloAudio">
+      <input data-prov="gemini" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon" title="Actas y preguntas: el texto que se manda" data-i18n-title="opc.tituloTexto">
+      <input data-prov="gemini" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+      <span>OpenAI <a href="https://openai.com/api/pricing/" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
+      <span></span>
+      <input data-prov="gpt" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+      <input data-prov="gpt" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+      <span>Anthropic <a href="https://www.anthropic.com/pricing#api" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
+      <span></span>
+      <input data-prov="claude" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+      <input data-prov="claude" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+    </div>
+    <div class="estado" id="e8"></div>
+  </div>
+
   <div class="paso" id="p3" style="margin-top:14px">
-    <h2>🧹 Cuántas transcripciones conservar</h2>
-    <p>Al terminar cada reunión se borran las más antiguas, tanto del historial como
-       de <code>Descargas/reuniones</code>. Solo se tocan ficheros descargados por esta extensión.</p>
+    <h2 data-i18n="opc.retenTitulo">🧹 Cuántas transcripciones conservar</h2>
+    <p data-i18n-html="opc.retenTexto">Al terminar cada reunión se borran las más antiguas, tanto del historial como de <code>Descargas/reuniones</code>. Solo se tocan ficheros descargados por esta extensión.</p>
     <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:8px">
-      <input type="radio" name="reten" id="retenN" value="n"> Conservar solo las últimas
+      <input type="radio" name="reten" id="retenN" value="n"> <span data-i18n="opc.retenUltimas">Conservar solo las últimas</span>
       <input type="number" id="limite" min="1" max="200" value="10" style="width:70px;padding:6px;border:1px solid #bbb;border-radius:7px">
     </label>
     <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
-      <input type="radio" name="reten" id="retenTodo" value="todo"> Guardarlas todas (no borrar nada solo)
+      <input type="radio" name="reten" id="retenTodo" value="todo"> <span data-i18n="opc.retenTodas">Guardarlas todas (no borrar nada solo)</span>
     </label>
     <div class="estado" id="e4"></div>
   </div>
 
   <details>
-    <summary>Opciones avanzadas (glosario, mi plantilla, GPT y Claude)</summary>
+    <summary data-i18n="opc.avanzadas">Opciones avanzadas (glosario, mi plantilla, GPT y Claude)</summary>
     <div class="avz">
-      <label>Glosario — nombres propios y jerga que la IA debe escribir bien</label>
-      <textarea id="glosario" placeholder="Ej: nombres de tu empresa, clientes, productos y siglas de tu sector, separados por comas"></textarea>
-      <small>Mejora mucho la transcripción de nombres. Se usa también al generar el acta.</small>
+      <label data-i18n="opc.glosario">Glosario — nombres propios y jerga que la IA debe escribir bien</label>
+      <textarea id="glosario" placeholder="Ej: nombres de tu empresa, clientes, productos y siglas de tu sector, separados por comas" data-i18n-placeholder="opc.glosarioPlaceholder"></textarea>
+      <small data-i18n="opc.glosarioAyuda">Mejora mucho la transcripción de nombres. Se usa también al generar el acta.</small>
 
-      <label>Mi plantilla de acta — lo que quieres que saque de cada reunión</label>
-      <textarea id="plantillaPersonalizada" style="height:110px" placeholder="Ej: Devuelve una tabla con los riesgos que se mencionen, quién los detectó y qué se decidió hacer. Después, una lista de compromisos con fecha."></textarea>
-      <small>Aparece como «Mi plantilla» en la biblioteca y en el acta automática. Participantes, glosario y notas se le añaden solos.</small>
+      <label data-i18n="opc.plantilla">Mi plantilla de acta — lo que quieres que saque de cada reunión</label>
+      <textarea id="plantillaPersonalizada" style="height:110px" placeholder="Ej: Devuelve una tabla con los riesgos que se mencionen, quién los detectó y qué se decidió hacer. Después, una lista de compromisos con fecha." data-i18n-placeholder="opc.plantillaPlaceholder"></textarea>
+      <small data-i18n="opc.plantillaAyuda">Aparece como «Mi plantilla» en la biblioteca y en el acta automática. Participantes, glosario y notas se le añaden solos.</small>
 
-      <label>Modelo de Gemini</label>
+      <label data-i18n="opc.modeloGemini">Modelo de Gemini</label>
       <input type="text" id="geminiModel" readonly>
-      <small>Se elige automáticamente el que funcione con tu clave.</small>
+      <small data-i18n="opc.modeloGeminiAyuda">Se elige automáticamente el que funcione con tu clave.</small>
 
-      <label>OpenAI — GPT (opcional, solo para el botón «Analizar con GPT»)</label>
+      <label data-i18n="opc.openai">OpenAI — GPT (opcional, solo para el botón «Analizar con GPT»)</label>
       <div class="par">
         <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off">
         <input type="text" id="openaiModel" placeholder="gpt-4o" list="modelosOpenai"><datalist id="modelosOpenai"></datalist>
       </div>
 
-      <label>Anthropic — Claude (opcional, para «Analizar con Claude»)</label>
+      <label data-i18n="opc.claude">Anthropic — Claude (opcional, para «Analizar con Claude»)</label>
       <div class="par">
         <input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off">
         <input type="text" id="claudeModel" placeholder="claude-sonnet-5" list="modelosClaude"><datalist id="modelosClaude"></datalist>
       </div>
-      <small>Con la clave puesta, al pulsar el campo del modelo salen los que tu cuenta puede usar.</small>
+      <small data-i18n="opc.modelosAyuda">Con la clave puesta, al pulsar el campo del modelo salen los que tu cuenta puede usar.</small>
       <div class="estado" id="e3"></div>
     </div>
   </details>
 
-  <script src="config.js"></script>
+  <script src="i18n.js"></script><script src="config.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

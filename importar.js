@@ -24,7 +24,10 @@ $("zona").ondrop = (e) => {
   ponFicheros([...e.dataTransfer.files]);
 };
 
-const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0).replace(".", ",") + " MB";
+const mb = (n) => {
+  const dec = n < 10485760 ? 1 : 0;
+  return (n / 1048576).toLocaleString(LOCALE_UI(), { minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: false }) + " MB";
+};
 const sinExtension = (n) => n.replace(/\.[^.]+$/, "");
 
 function ponFicheros(lista) {
@@ -34,7 +37,7 @@ function ponFicheros(lista) {
   ocultaAvisos();
   if (!validos.length) return;
   const grande = validos.find((f) => f.size > TOPE_MB * 1048576);
-  if (grande) return muestraError(`«${grande.name}» pesa ${mb(grande.size)}. El máximo es ${TOPE_MB} MB por archivo: pártelo antes en trozos.`);
+  if (grande) return muestraError(t("imp.demasiadoGrande", grande.name, mb(grande.size), TOPE_MB));
   ficheros = validos;
   $("lista").innerHTML = "";
   for (const f of ficheros) {
@@ -64,13 +67,13 @@ $("btnTranscribir").onclick = async () => {
     if (!pendientes) {
       await audios.borrarReunion(id).catch(() => {});
       idActual = null;
-      return muestraError("No se oye ninguna voz en el audio (está en silencio). No se ha mandado nada a transcribir.");
+      return muestraError(t("imp.silencio"));
     }
     const f = fechaBonita(id);
     const r = await chrome.runtime.sendMessage({
       target: "bg", cmd: "histCrear", item: {
         id, fecha: f.legible, titulo: $("titulo").value.trim() || sinExtension(ficheros[0].name),
-        origen: "archivo", estado: "transcribiendo", progreso: `${tramos.length - pendientes}/${tramos.length} tramos`,
+        origen: "archivo", estado: "transcribiendo", progreso: t("com.progresoTramos", tramos.length - pendientes, tramos.length),
         participantes: $("participantes").value.trim(),
         transcript: "", analisis: {}, tramos,
         meta: {
@@ -79,8 +82,8 @@ $("btnTranscribir").onclick = async () => {
         },
       },
     });
-    if (!r || !r.ok) throw new Error((r && r.error) || "No se pudo guardar en el historial.");
-    pintaProgreso("✍️ Transcribiendo…", 0);
+    if (!r || !r.ok) throw new Error((r && r.error) || t("imp.noGuardado"));
+    pintaProgreso(t("imp.transcribiendo"), 0);
     await chrome.runtime.sendMessage({ target: "bg", cmd: "transcribir", id });
   } catch (e) {
     // Lo guardado a medias no sirve de nada sin su entrada en el historial.
@@ -100,13 +103,13 @@ async function preparar(id, alGuardar) {
   try {
     for (let k = 0; k < ficheros.length; k++) {
       const f = ficheros[k];
-      const cuantos = ficheros.length > 1 ? ` (${k + 1} de ${ficheros.length})` : "";
-      pintaProgreso(`🎧 Leyendo «${f.name}»${cuantos}…`, 0);
+      const cuantos = ficheros.length > 1 ? " " + t("imp.parteDe", k + 1, ficheros.length) : "";
+      pintaProgreso(t("imp.leyendo", f.name, cuantos), 0);
       let audio;
       try {
         audio = await ctx.decodeAudioData(await f.arrayBuffer());
       } catch (_) {
-        throw new Error(`No se puede leer «${f.name}»: Chrome no reconoce su formato. Prueba con mp3, m4a, wav o webm.`);
+        throw new Error(t("imp.formatoNoValido", f.name));
       }
       const muestras = aMono(audio);
       const inicioArchivo = segundos; // los archivos son partes seguidas de la misma reunión
@@ -114,7 +117,7 @@ async function preparar(id, alGuardar) {
       const plan = planificarTramos([{ nombre: f.name, longitud: muestras.length, sampleRate: audio.sampleRate }]);
       for (let j = 0; j < plan.length; j++) {
         const p = plan[j];
-        pintaProgreso(`✂️ Preparando «${f.name}»${cuantos}: tramo ${j + 1} de ${plan.length}…`, (j + 1) / plan.length);
+        pintaProgreso(t("imp.preparando", f.name, cuantos, j + 1, plan.length), (j + 1) / plan.length);
         const trozo = muestras.subarray(p.desde, p.hasta);
         const { pico } = medirMuestras(trozo, audio.sampleRate, UMBRAL_VOZ);
         const etiqueta = ficheros.length > 1 ? `${f.name}, ${p.etiqueta}` : p.etiqueta;
@@ -127,7 +130,7 @@ async function preparar(id, alGuardar) {
         try {
           await audios.guardar(id, tramos.length, blob);
         } catch (e) {
-          throw new Error("No hay espacio para guardar el audio en el navegador: " + ((e && e.message) || e));
+          throw new Error(t("imp.sinEspacio", (e && e.message) || e));
         }
         alGuardar(++guardados);
         tramos.push({ estado: "pendiente", pico, etiqueta, inicioS });
@@ -158,7 +161,7 @@ chrome.storage.onChanged.addListener((cambios, area) => {
   if (!h) return;
   if (h.estado === "transcribiendo") {
     const r = resumenTramos(h.tramos);
-    pintaProgreso(`✍️ Transcribiendo… ${r.total - r.pendientes} de ${r.total} tramos`, r.total ? (r.total - r.pendientes) / r.total : 0);
+    pintaProgreso(t("imp.transcribiendoTramos", r.total - r.pendientes, r.total), r.total ? (r.total - r.pendientes) / r.total : 0);
   } else if (["ok", "pendiente", "error"].includes(h.estado) && h.transcript) {
     muestraResultado(h);
   }
@@ -174,15 +177,14 @@ function muestraResultado(h) {
   const caja = $("resultadoTxt");
   if (h.estado === "ok") {
     caja.className = "aviso ok";
-    caja.textContent = "✅ Transcripción lista. Está en la biblioteca de Escriba (desde ahí puedes sacar el acta o exportarla a Word) y en Descargas/reuniones.";
+    caja.textContent = t("imp.listaOk");
   } else if (h.estado === "pendiente") {
     const r = resumenTramos(h.tramos);
     caja.className = "aviso pend";
-    const falta = r.total === 1 ? "Todavía no se ha podido transcribir" : `Faltan ${r.pendientes} de ${r.total} tramos`;
-    caja.textContent = `⏳ ${falta}. El audio está guardado y Escriba lo reintentará sola; verás el avance en el historial.`;
+    caja.textContent = r.total === 1 ? t("imp.pendienteUno") : t("imp.pendienteVarios", r.pendientes, r.total);
   } else {
     caja.className = "aviso err";
-    caja.textContent = "❌ No se pudo transcribir. El detalle está abajo.";
+    caja.textContent = t("imp.fallo");
   }
   $("texto").value = h.transcript;
 }
@@ -208,8 +210,8 @@ function ocultaAvisos() {
 
 $("btnCopiar").onclick = async () => {
   await navigator.clipboard.writeText($("texto").value);
-  $("btnCopiar").textContent = "📋 Copiado";
-  setTimeout(() => { $("btnCopiar").textContent = "📋 Copiar"; }, 1500);
+  $("btnCopiar").textContent = t("imp.copiado");
+  setTimeout(() => { $("btnCopiar").textContent = t("imp.copiar"); }, 1500);
 };
 $("btnNuevo").onclick = () => {
   ficheros = [];
@@ -221,6 +223,8 @@ $("btnNuevo").onclick = () => {
 };
 
 (async () => {
+  // Antes de nada: el idioma elegido en Opciones (traduce el HTML).
+  await cargarIdiomaUI();
   const { geminiKey } = await leerConfig();
   $("avisoClave").hidden = !!geminiKey;
 })();

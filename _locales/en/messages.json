@@ -1,0 +1,14 @@
+{
+  "descripcion": {
+    "message": "Record your meetings (Meet, Teams or in person), transcribe them with AI and generate minutes with Gemini, GPT or Claude."
+  },
+  "tituloAccion": {
+    "message": "Escriba"
+  },
+  "comandoGrabar": {
+    "message": "Start or stop recording"
+  },
+  "comandoMarcar": {
+    "message": "Mark this moment of the meeting"
+  }
+}

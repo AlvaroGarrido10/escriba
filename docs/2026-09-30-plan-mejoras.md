@@ -162,3 +162,41 @@ Cada tanda es una versión. Dentro de cada tanda: primero las pruebas en rojo, l
 | C6 Interfaz en inglés | No hecho | Necesario solo para publicar fuera de España |
 
 **Pendiente de verdad antes de dar la 3.4 por buena:** una reunión real con Gemini de verdad en el Chrome de Álvaro. Las pruebas han simulado la IA. Lo que falta medir es que el modelo respete el formato `[MM:SS] Hablante: texto` y que ponga nombres solo cuando se oyen.
+
+## 6. Tanda D — 3.5.0 (01/10/2026)
+
+Origen: Álvaro no oye la reunión mientras graba, y pide probar con Gemini de verdad y cerrar lo que falta frente a la competencia.
+
+**Prueba real hecha antes de tocar nada** (Chrome 154 de marca en un perfil aparte, clic real en el icono, la clave de Gemini de Álvaro, una entrevista de YouTube, 7 minutos, sonido medido en la salida de Windows):
+- Grabando, el vídeo se sigue oyendo por los altavoces del portátil sin huecos. Las dos tandas se transcriben con `[MM:SS] Hablante N` y tiempos de reunión; la primera, en vivo.
+- **Fallo 1:** el acta automática no se generó. Gemini dio `503` («high demand») y `ia.js` reintenta con el mismo modelo y se rinde; la transcripción, con el mismo error, pasa por modelos de reserva y aguantó. Además, el aviso enseña el JSON en crudo.
+- **Fallo 2:** el atajo para grabar no ha funcionado nunca. Chrome 154 descarta Alt+Shift+R sin avisar (instalación limpia: solo asigna Alt+Shift+M). Alt+Shift+G sí se asigna, también al actualizar desde la 3.4.0.
+- Pendiente de medir: en el monitor BenQ (audio HDMI) la reproducción en directo salió con 55–69 % de huecos; en los altavoces del portátil, 0 %. El BenQ no estaba conectado para repetirlo.
+
+| Punto | Qué |
+|---|---|
+| D1 | Acta y preguntas con Gemini: misma cascada de modelos de reserva que la transcripción, y avisos de error legibles |
+| D2 | Atajo para grabar: Alt+Shift+G |
+| D3 (C3) | Coste estimado en euros por reunión y por mes, con los precios que ponga el usuario en Opciones. Sin precios, se dice «sin precios», nunca «0 €» |
+| D4 (C5) | Aviso al entrar en una reunión de Meet, Teams, Zoom web o kMeet de Infomaniak (opcional; pide el permiso de esas webs solo si se activa) |
+| D5 (C6) | Interfaz en inglés con `chrome.i18n`, según el idioma de Chrome |
+
+### Estado al cerrar el 01/10/2026 (3.5.0, sin commit)
+
+| Punto | Estado | Cómo se ha comprobado |
+|---|---|---|
+| D1 Acta con Gemini saturado | Hecho | Suite (cascada de modelos, 404 pasa al siguiente, clave rechazada no, errores legibles); acta real generada con Gemini desde la biblioteca, en español y en inglés |
+| D2 Alt+Shift+G | Hecho | Chrome 154: lo asigna en instalación limpia y al actualizar desde la 3.4.0 (Alt+Shift+R nunca) |
+| D3 Coste en euros | Hecho | Suite (null ≠ 0, capa gratuita = 0, proveedores sin precio); precios escritos en Opciones y coste visto en la cabecera y en el resumen del mes |
+| D4 Aviso de reunión | Hecho | Chrome 154: casilla → diálogo de permiso → aceptar → sala de Jitsi → notificación. No puede grabar solo: Chrome exige invocar la extensión (probado) |
+| D5 Interfaz en inglés | Hecho | 475 claves; suite comprueba claves completas y usadas; las cinco páginas en inglés sin errores; verificación completa 14/14 en inglés y 14/14 en español |
+
+**Arreglado además durante la verificación:**
+- Con «Idioma de las reuniones: español» (el valor por defecto), una reunión en otro idioma volvía como `SIN_VOZ` y se perdía. El prompt trata ahora el idioma como esperado, no como filtro (medido: el podcast que se perdía sale transcrito).
+- El documento offscreen no tiene `chrome.i18n`: en «auto» caía siempre al español. Ahora usa `navigator.language`.
+- La fecha en inglés se rehace desde el id (01/10 se leería como 10 de enero).
+
+**Pendiente:**
+- Repetir la medida del sonido devuelto con el monitor BenQ (audio HDMI) conectado.
+- Las etiquetas «Hablante N» vienen del modelo y salen en español también en la interfaz inglesa; la numeración no se mantiene entre tramos.
+- Lo ya guardado en el historial (títulos, errores, etiquetas de tramo) queda en el idioma en que se escribió.

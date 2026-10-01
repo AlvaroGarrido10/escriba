@@ -12,8 +12,11 @@ Extensión de Chrome (Manifest V3) que graba reuniones y las transcribe con IA. 
 - **No se pierde audio**: si un tramo no se puede transcribir, su audio se guarda y se reintenta solo. Si Chrome se cierra a mitad de reunión, se recupera lo grabado.
 - **Biblioteca de reuniones** (3.2): búsqueda en todas las reuniones, lectura con marcas de tiempo y cada voz en su color, nombres reales para cada hablante («Hablante 2» → «Marcos») y exportación a Word, PDF, texto, Markdown o subtítulos SRT.
 - **Actas con plantillas** (acta completa, resumen breve, tareas y responsables, correo de seguimiento o una plantilla propia) y **preguntas a la reunión**, con **Gemini, GPT o Claude**. El acta puede generarse sola al terminar.
-- **Mientras grabas** (3.3): cada tramo se transcribe en cuanto se cierra, **pausa**, **marcadores** de momentos importantes, **notas**, **panel lateral en vivo** con niveles de audio, **aviso si en dos minutos no entra voz** y **atajo de teclado** (Alt+Shift+R).
+- **Mientras grabas** (3.3): cada tramo se transcribe en cuanto se cierra, **pausa**, **marcadores** de momentos importantes, **notas**, **panel lateral en vivo** con niveles de audio, **aviso si en dos minutos no entra voz** y **atajo de teclado** (Alt+Shift+G).
 - **Escuchar la reunión** (3.4, opcional): se pulsa una frase y suena ese momento.
+- **Coste estimado** (3.5): con los precios que pongas en Opciones, la biblioteca dice cuánto costó cada reunión y lo que llevas de mes. Sin precios no se inventa nada.
+- **Aviso al entrar en una reunión** (3.5, opcional): Meet, Teams, Zoom web, kMeet de Infomaniak o Jitsi. Te recuerda grabar; grabar sigue siendo cosa tuya (Chrome solo deja capturar una pestaña si pulsas el icono o el atajo).
+- **Interfaz en español e inglés** (3.5): según el idioma de Chrome, o el que elijas en Opciones.
 - Idioma configurable, incluida la detección automática para reuniones que mezclan idiomas.
 
 ## Cómo está construido
@@ -120,7 +123,7 @@ Pruebas en pantalla de la 3.2 – 3.4 (30/09/2026), en Chromium con la extensió
 2. **⏺ Empezar a grabar.** Puedes cerrar el popup: el badge REC indica que sigue grabando.
    Opcional: escribe los **participantes** («Marcos, Ana»); ayudan a poner nombre a cada voz y al acta.
 3. Mientras grabas: **⏸ Pausar**, **⭐ Marcar** un momento (o Alt+Shift+M) y **🪟 En vivo** para abrir el panel lateral con el texto que va llegando, los niveles y tus notas.
-4. **⏹ Parar y transcribir** (o Alt+Shift+R). Como los tramos se transcriben mientras grabas, al parar solo falta el último.
+4. **⏹ Parar y transcribir** (o Alt+Shift+G). Como los tramos se transcriben mientras grabas, al parar solo falta el último.
 5. La reunión se abre en la **biblioteca** («📚 Reuniones»): léela, pon nombre a cada voz, exporta a Word o PDF, saca el acta con la plantilla que quieras o pregúntale lo que necesites.
 
 Para un audio que ya tienes: **📂 Transcribir un archivo** en el panel, arrástralo y pulsa Transcribir. Varios archivos a la vez se tratan como partes seguidas de la misma reunión.

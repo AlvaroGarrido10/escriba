@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Escriba — En vivo</title>
+<title data-i18n="viv.tituloPagina">Escriba — En vivo</title>
 <style>
   :root { --vino: #5d2a42; --vino2: #7c3a58; --rosa: #d6336c; --borde: #e6dce1; --suave: #7b6b73; }
   * { box-sizing: border-box; }
@@ -43,42 +43,42 @@
 </style>
 </head>
 <body>
-<header><b><img src="icon32.png" alt="">Escriba · En vivo</b><span id="estadoRec">sin grabación</span></header>
+<header><b><img src="icon32.png" alt=""><span data-i18n="viv.cabecera">Escriba · En vivo</span></b><span id="estadoRec" data-i18n="viv.sinGrabacion">sin grabación</span></header>
 <main>
   <div id="sinGrabacion">
-    <p class="vacio">No hay ninguna grabación en curso. Empieza desde el icono de Escriba<span id="atajo"></span>, y aquí verás el texto según llega, los niveles de audio y tus notas.</p>
+    <p class="vacio"><span data-i18n="viv.vacio1">No hay ninguna grabación en curso. Empieza desde el icono de Escriba</span><span id="atajo"></span><span data-i18n="viv.vacio2">, y aquí verás el texto según llega, los niveles de audio y tus notas.</span></p>
     <div id="ultima"></div>
-    <button id="btnBiblio" style="width:100%">📚 Ver todas las reuniones</button>
+    <button id="btnBiblio" style="width:100%" data-i18n="viv.verTodas">📚 Ver todas las reuniones</button>
   </div>
 
   <div id="conGrabacion" hidden>
     <div id="reloj" class="reloj">00:00</div>
     <div id="sub" class="sub"></div>
     <div class="botones">
-      <button id="btnPausa">⏸ Pausar</button>
-      <button id="btnParar" class="parar">⏹ Parar y transcribir</button>
+      <button id="btnPausa" data-i18n="viv.pausar">⏸ Pausar</button>
+      <button id="btnParar" class="parar" data-i18n="viv.parar">⏹ Parar y transcribir</button>
     </div>
 
-    <h3>Niveles</h3>
+    <h3 data-i18n="viv.niveles">Niveles</h3>
     <div id="niveles"></div>
     <div id="avisoNivel" class="aviso" hidden></div>
 
-    <h3>Marcar un momento</h3>
+    <h3 data-i18n="viv.marcarMomento">Marcar un momento</h3>
     <form id="formMarca" class="marca">
-      <input id="notaMarca" placeholder="Qué pasa ahora (opcional)" maxlength="160">
-      <button>⭐ Marcar</button>
+      <input id="notaMarca" placeholder="Qué pasa ahora (opcional)" maxlength="160" data-i18n-placeholder="viv.notaMarcaPh">
+      <button data-i18n="viv.marcar">⭐ Marcar</button>
     </form>
     <ul id="marcas"></ul>
 
-    <h3>Notas</h3>
-    <textarea id="notas" placeholder="Apunta lo que quieras: sale en la transcripción y el acta lo tiene en cuenta."></textarea>
+    <h3 data-i18n="viv.notas">Notas</h3>
+    <textarea id="notas" placeholder="Apunta lo que quieras: sale en la transcripción y el acta lo tiene en cuenta." data-i18n-placeholder="viv.notasPh"></textarea>
     <div id="guardado" class="guardado"></div>
 
-    <h3>Lo que se va diciendo</h3>
-    <div id="texto"><div class="vacio">El texto aparece por tramos de 5 minutos, en cuanto se cierra cada uno.</div></div>
+    <h3 data-i18n="viv.loQueSeDice">Lo que se va diciendo</h3>
+    <div id="texto"><div class="vacio" data-i18n="viv.textoVacio">El texto aparece por tramos de 5 minutos, en cuanto se cierra cada uno.</div></div>
   </div>
 </main>
-<script src="comun.js"></script>
+<script src="i18n.js"></script><script src="comun.js"></script>
 <script src="vivo.js"></script>
 </body>
 </html>

@@ -112,6 +112,17 @@ const descargar = (url, filename) => aBg("descargar", { url, filename });
 const avisar = (ok) => { try { aBg("listo", { ok }); } catch (_) {} };
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Idioma de la interfaz para lo que este documento escribe en el historial
+// (títulos, avisos del .md, errores). Aquí no hay chrome.storage, así que
+// cargarIdiomaUI() solo puede quedarse con el idioma de Chrome: lo elegido en
+// Opciones (idiomaUI) llega con la configuración y se aplica encima. `cfg` es
+// opcional: sin él se pide una vez, sin reintentos (no puede retrasar la grabación).
+async function ponIdioma(cfg) {
+  await cargarIdiomaUI();
+  const c = cfg !== undefined ? cfg : await aBg("cfg").catch(() => null);
+  if (c && typeof c === "object" && "idiomaUI" in c) ponIdiomaUI(c.idiomaUI);
+}
+
 // La configuración llega por mensaje desde el service worker. Si ese mensaje
 // falla o vuelve vacío (el service worker se estaba reiniciando, por ejemplo),
 // la 3.0 lo tomaba por «no hay clave» y daba por perdidos todos los tramos. Aquí
@@ -126,12 +137,12 @@ async function leerConfig() {
       ultimo = new Error("respuesta sin configuración: " + String(JSON.stringify(c)).slice(0, 120));
     } catch (e) { ultimo = e; }
   }
-  throw marcar(new Error("No se pudo leer la configuración de Escriba (" + ((ultimo && ultimo.message) || ultimo) + ")"),
-    { codigo: "interno" });
+  throw marcar(new Error(t("off.sinConfig", (ultimo && ultimo.message) || ultimo)), { codigo: "interno" });
 }
 
 // --- grabación ---
 async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
+  await ponIdioma();
   tabTitle = tt || "";
   participantes = (pp || "").trim();
   // "playback": este contexto no necesita respuesta inmediata, solo alimenta la
@@ -194,7 +205,7 @@ async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
     // En modo «pestaña + micro» esto se tragaba en silencio: si ademas la
     // pestaña no sonaba, la grabacion salia muda sin que nadie lo dijera.
     errorMic = (e && (e.name ? `${e.name}: ${e.message}` : e.message)) || String(e);
-    if (modo === "mic") throw new Error("Sin permiso de micrófono: ve a Opciones → Permitir micrófono.");
+    if (modo === "mic") throw new Error(t("off.sinPermisoMicro"));
   }
 
   tramos = [];
@@ -402,24 +413,22 @@ async function medirExacto(blob) {
   return medirMuestras(audio.getChannelData(0), audio.sampleRate, UMBRAL_VOZ);
 }
 
+// El nombre de un medidor («pestaña», «micrófono») es un identificador: el panel
+// en vivo lo compara tal cual. Lo que se escribe en el informe es su traducción.
+const nombreFuente = (n) => (n === "pestaña" ? t("off.fuentePestana") : n === "micrófono" ? t("off.fuenteMicro") : n);
+
 // Resumen de niveles + aviso si una fuente no ha sonado en toda la reunión.
 function informeAudio() {
   const partes = [], mudas = [];
   for (const m of medidores) {
     const pct = m.muestras ? Math.round((100 * m.conVoz) / m.muestras) : 0;
-    partes.push(`${m.nombre} ${pct}% con voz (pico ${m.pico.toFixed(2)})`);
-    if (pct < 2) mudas.push(m.nombre);
+    partes.push(t("off.nivelFuente", nombreFuente(m.nombre), pct, m.pico.toFixed(2)));
+    if (pct < 2) mudas.push(nombreFuente(m.nombre));
   }
-  if (errorMic) partes.push("micrófono NO disponible");
+  if (errorMic) partes.push(t("off.microNoDisponible"));
   let alerta = "";
-  if (errorMic) {
-    alerta += `\n> ⚠️ **No se pudo abrir el micrófono:** ${errorMic}\n` +
-      "> Solo se ha grabado el audio de la pestaña. Abre Opciones → Permitir micrófono.\n";
-  }
-  if (mudas.length) {
-    alerta += `\n> ⚠️ **Sin señal en: ${mudas.join(" y ")}.** Revisa que se capturó la pestaña correcta ` +
-      "(tiene que estar sonando) y que el micro no está silenciado.\n";
-  }
+  if (errorMic) alerta += `\n> ⚠️ ${t("off.alertaMicro", errorMic)}\n> ${t("off.alertaMicroTxt")}\n`;
+  if (mudas.length) alerta += `\n> ⚠️ ${t("off.sinSenal", mudas.reduce((a, b) => t("off.y", a, b)))}\n`;
   return { linea: partes.join(" · "), alerta };
 }
 
@@ -465,7 +474,7 @@ function entradaNueva() {
     // Sin pestaña (Solo micro), el título sale de los participantes: «Reunión» a
     // secas no dice nada en una lista de veinte.
     id: reunionActual, fecha: f.legible, origen: "grabacion",
-    titulo: tabTitle || (participantes ? "Reunión con " + participantes : "Reunión presencial"),
+    titulo: tabTitle || (participantes ? t("off.reunionCon", participantes) : t("off.reunionPresencial")),
     estado: "grabando", progreso: "", transcript: "", analisis: {}, tramos: [], meta: { fichero: f.fichero },
     participantes,
   };
@@ -561,14 +570,12 @@ async function cierraGrabacion() {
   if (!hechos.some((t) => t && t.estado === "ok") && (!bytes || !conSonido.length)) {
     await histActualizar(id, {
       estado: "error", progreso: "", meta, tramos: [],
-      transcript: "# No se grabó audio\n\n" +
-        "**No se ha transcrito nada a propósito:** la grabación está muda y, si se le manda silencio, " +
-        "el modelo se inventa una reunión que nunca ocurrió.\n\n" +
-        (audio.linea ? `**Niveles medidos:** ${audio.linea}\n` : "") + audio.alerta +
-        "\nQué revisar:\n" +
-        "· En «Pestaña + micro» la pestaña tiene que estar SONANDO (una página abierta sin audio no vale).\n" +
-        "· Para una reunión presencial usa «Solo micro».\n" +
-        "· Comprueba el permiso de micrófono en Opciones y que no esté silenciado en Windows.\n",
+      transcript: `# ${t("off.sinAudioTitulo")}\n\n${t("off.sinAudioTxt")}\n\n` +
+        (audio.linea ? `**${t("off.nivelesMedidos")}:** ${audio.linea}\n` : "") + audio.alerta +
+        `\n${t("off.queRevisar")}\n` +
+        `· ${t("off.revisarPestana")}\n` +
+        `· ${t("off.revisarPresencial")}\n` +
+        `· ${t("off.revisarPermiso")}\n`,
     });
     for (let i = 0; i < partes.length; i++) await olvidaAudio(id, i);
     avisar(false);
@@ -582,7 +589,7 @@ async function cierraGrabacion() {
   for (let i = 0; i < lista.length; i++) if (lista[i].estado === "mudo" && !hechos[i]) await olvidaAudio(id, i);
   const r = resumenTramos(lista);
   await histActualizar(id, {
-    estado: "transcribiendo", meta, tramos: lista, progreso: `${r.total - r.pendientes}/${r.total} tramos`,
+    estado: "transcribiendo", meta, tramos: lista, progreso: t("com.progresoTramos", r.total - r.pendientes, r.total),
   });
   return id;
 }
@@ -609,6 +616,7 @@ async function ronda(id) {
   const cola = h.tramos.map((t, i) => (t.estado === "pendiente" ? i : -1)).filter((i) => i >= 0);
   if (cola.length) await histActualizar(id, { estado: "transcribiendo" });
   const cfgRonda = cola.length ? await leerConfig().catch(() => null) : null;
+  await ponIdioma(cfgRonda); // los errores de los tramos se guardan ya escritos
 
   // Una clave mala o ausente no se arregla en el tramo siguiente: en cuanto
   // aparece, el resto de la ronda ni se intenta (sería gastar llamadas).
@@ -720,6 +728,7 @@ async function actaAutomatica(id) {
 
 // --- prueba de 3 s de punta a punta (botón Diagnóstico) ---
 async function selftest({ modo, streamId }) {
+  await ponIdioma();
   const fuentes = [];
   const ctx = new AudioContext();
   const destino = ctx.createMediaStreamDestination();
@@ -744,27 +753,27 @@ async function selftest({ modo, streamId }) {
     };
 
     if (modo === "tab_mic" && streamId) {
-      const t = await navigator.mediaDevices.getUserMedia({
+      const pest = await navigator.mediaDevices.getUserMedia({
         audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } }, video: false,
       });
-      activos.push(t);
-      const s = ctx.createMediaStreamSource(t);
+      activos.push(pest);
+      const s = ctx.createMediaStreamSource(pest);
       s.connect(destino);
-      el = aLosAltavoces(t, ctx, s);
-      sonda("pestaña", s);
-      fuentes.push("pestaña");
+      el = aLosAltavoces(pest, ctx, s);
+      sonda(t("off.fuentePestana"), s);
+      fuentes.push(t("off.fuentePestana"));
     }
     try {
       const m = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       activos.push(m);
       const s = ctx.createMediaStreamSource(m);
       s.connect(destino);
-      sonda("micrófono", s);
-      fuentes.push("micrófono");
+      sonda(t("off.fuenteMicro"), s);
+      fuentes.push(t("off.fuenteMicro"));
     } catch (e) {
-      fuentes.push("micrófono NO (" + ((e && e.name) || "error") + ")");
+      fuentes.push(t("off.microNo", (e && e.name) || "error"));
     }
-    if (!activos.length) return { ok: false, error: "No se pudo abrir ninguna fuente de audio." };
+    if (!activos.length) return { ok: false, error: t("off.sinFuentes") };
 
     const trozos = [];
     const rec = new MediaRecorder(destino.stream, { mimeType: "audio/webm;codecs=opus" });
@@ -783,13 +792,13 @@ async function selftest({ modo, streamId }) {
     const picoMax = sondas.reduce((a, s) => Math.max(a, s.pico), 0);
     const res = {
       ok: true, bytes: blob.size, fuentes: fuentes.join(" + "),
-      niveles: sondas.map((s) => `${s.nombre} pico ${s.pico.toFixed(3)}`).join(" · "),
+      niveles: sondas.map((s) => t("off.nivelPico", s.nombre, s.pico.toFixed(3))).join(" · "),
       silencio: picoMax < PICO_SILENCIO,
     };
     if (blob.size && !res.silencio) {
       try {
         const r = await transcribirGemini(blob);
-        res.transcripcion = r.sinVoz ? "(el modelo no oyó voz)" : r.texto;
+        res.transcripcion = r.sinVoz ? t("off.modeloSinVoz") : r.texto;
       } catch (e) { res.errorTranscripcion = (e && e.message) || String(e); }
     }
     return res;
@@ -812,7 +821,10 @@ function construirPrompt(glosario, idx, total, opciones) {
   const idioma = o.idioma || "es";
   const cabecera = idioma === "auto"
     ? "Transcribe íntegramente este audio de una reunión de trabajo, en el idioma o idiomas en que se hable: si se mezclan, deja cada frase en su idioma original, sin traducir."
-    : `Transcribe íntegramente este audio de una reunión de trabajo en ${IDIOMAS[idioma] || "español"}.`;
+    // «en español» a secas hacía que, ante una reunión en inglés, el modelo
+    // respondiera SIN_VOZ y se perdiera el tramo entero (01/10). El idioma elegido
+    // es el esperado, no un filtro: lo que se diga en otro idioma también se transcribe.
+    : `Transcribe íntegramente este audio de una reunión de trabajo, que se espera en ${IDIOMAS[idioma] || "español"}. Si se habla en otro idioma, transcríbelo igualmente en el idioma en que se diga, sin traducir: nunca lo dejes fuera ni respondas SIN_VOZ por eso.`;
   const contexto = total === null
     ? `Este audio es el TRAMO ${idx} de una reunión que sigue en curso, cortada en trozos: puede empezar y acabar a mitad de conversación. Transcribe solo lo que suene, sin introducción ni despedida propias.\n`
     : total > 1
@@ -838,7 +850,7 @@ Devuelve SOLO la transcripción.`;
 async function transcribirGemini(blob, idx = 1, total = 1, opciones) {
   const cfg = await leerConfig();
   const key = cfg.geminiKey;
-  if (!key) throw marcar(new Error("Falta la clave de Gemini: ábrela en Opciones."), { codigo: "sin_clave" });
+  if (!key) throw marcar(new Error(t("off.faltaClave")), { codigo: "sin_clave" });
   const preferido = (cfg && cfg.geminiModel) || MODELOS_RESERVA[0];
   const modelos = [preferido, ...MODELOS_RESERVA.filter((m) => m !== preferido)];
 
@@ -863,7 +875,7 @@ async function transcribirGemini(blob, idx = 1, total = 1, opciones) {
         }
       }
     }
-    throw ultimo || new Error("No se pudo transcribir el tramo.");
+    throw ultimo || new Error(t("off.noTranscrito"));
   } finally {
     // Lo subido por Files API caduca a las 48 h, pero mientras tanto ocupa
     // cuota de la clave del usuario. Se borra en cuanto deja de hacer falta.
@@ -890,7 +902,7 @@ async function generar(key, modelo, prompt, parteAudio) {
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, parteAudio] }], generationConfig }),
     });
   } catch (e) {
-    throw marcar(new Error("Sin conexión con Gemini: " + ((e && e.message) || e)), { reintentable: true, codigo: "red" });
+    throw marcar(new Error(t("off.sinConexion", (e && e.message) || e)), { reintentable: true, codigo: "red" });
   }
 
   if (!res.ok) {
@@ -910,7 +922,7 @@ async function generar(key, modelo, prompt, parteAudio) {
   const razon = cand && cand.finishReason;
   const texto = ((cand && cand.content && cand.content.parts) || []).map((p) => p.text || "").join("").trim();
   if (!texto) {
-    throw marcar(new Error("Gemini devolvió texto vacío" + (razon ? ` (finishReason: ${razon})` : "") + " — ¿tramo en silencio?"),
+    throw marcar(new Error(razon ? t("off.textoVacioRazon", razon) : t("off.textoVacio")),
       { reintentable: true, codigo: "otro" });
   }
   // El modelo confirma que no hay voz: se respeta, no se reintenta.
@@ -937,10 +949,10 @@ async function prepararAudio(blob, key) {
       body: blob,
     });
   } catch (e) {
-    throw marcar(new Error("Sin conexión con Gemini al subir el audio: " + ((e && e.message) || e)), { codigo: "red" });
+    throw marcar(new Error(t("off.sinConexionSubida", (e && e.message) || e)), { codigo: "red" });
   }
   if (!up.ok) {
-    const e = new Error("Subida del audio a Gemini falló: HTTP " + up.status);
+    const e = new Error(t("off.subidaFallo", up.status));
     if (up.status === 401 || up.status === 403) throw marcar(e, { codigo: "clave_invalida" });
     throw marcar(e, { codigo: up.status >= 500 || up.status === 429 ? "saturado" : "otro" });
   }
@@ -950,7 +962,7 @@ async function prepararAudio(blob, key) {
     await espera(2000);
     file = await (await fetch(`${BASE}/v1beta/${file.name}`, { headers: auth })).json();
   }
-  if (file.state !== "ACTIVE") throw marcar(new Error("Gemini no procesó el audio (estado " + file.state + ")."), { codigo: "otro" });
+  if (file.state !== "ACTIVE") throw marcar(new Error(t("off.noProcesado", file.state)), { codigo: "otro" });
   return { parte: { file_data: { mime_type: mime, file_uri: file.uri } }, fileName: file.name };
 }
 

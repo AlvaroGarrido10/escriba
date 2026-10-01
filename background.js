@@ -2,7 +2,10 @@
 // El popup manda órdenes; la grabación/transcripción vive en un documento
 // offscreen (sobrevive aunque el popup se cierre). Estado en storage.session.
 
-importScripts("config.js", "comun.js");
+importScripts("i18n.js", "config.js", "comun.js");
+// Idioma de la interfaz para avisos, errores y el .md. Se vuelve a leer cuando
+// cambia en Opciones (chrome.storage.onChanged, más abajo).
+cargarIdiomaUI();
 
 const OFFSCREEN_URL = "offscreen.html";
 const TOPE_HISTORIAL = 100;
@@ -37,6 +40,47 @@ if (chrome.commands) {
   });
 }
 
+// Aviso al entrar en una reunión (3.5, opcional en Opciones). Con el permiso de
+// esas webs Chrome deja ver la dirección de sus pestañas, pero NO capturarlas:
+// eso solo se puede si el usuario invoca la extensión (icono, atajo o menú).
+// Probado el 01/10 en Chrome 154: ni el permiso de la web ni un popup abierto
+// por código bastan. Por eso el aviso dice cómo grabar y, al pulsarlo, pone
+// delante la pestaña para que el icono o el atajo la capturen a ella.
+if (chrome.tabs && chrome.tabs.onUpdated) {
+  chrome.tabs.onUpdated.addListener((tabId, cambio, tab) => {
+    if (cambio.status === "complete" || cambio.url) avisoReunion(tabId, tab).catch(() => {});
+  });
+}
+if (chrome.notifications && chrome.notifications.onClicked) {
+  chrome.notifications.onClicked.addListener((id) => {
+    const m = /^escriba-reunion-(\d+)$/.exec(id);
+    if (!m) return;
+    chrome.tabs.update(Number(m[1]), { active: true })
+      .then((t) => t && chrome.windows.update(t.windowId, { focused: true }))
+      .catch(() => {});
+    chrome.notifications.clear(id);
+  });
+}
+
+async function avisoReunion(tabId, tab) {
+  const plataforma = plataformaReunion(tab && tab.url);
+  if (!plataforma) return;
+  const { avisoReunion: activo } = await chrome.storage.sync.get({ avisoReunion: false });
+  if (!activo) return;
+  // En storage.session: si el service worker se duerme, no se repite el aviso.
+  const s = await chrome.storage.session.get({ grabando: false, avisosReunion: {} });
+  if (s.grabando || s.avisosReunion[tabId] === tab.url) return;
+  await chrome.storage.session.set({ avisosReunion: { ...s.avisosReunion, [tabId]: tab.url } });
+  // El atajo de verdad: el usuario puede haberlo cambiado, o Chrome no haberlo asignado.
+  let atajo = "";
+  try { atajo = ((await chrome.commands.getAll()).find((c) => c.name === "grabar") || {}).shortcut || ""; } catch (_) {}
+  await chrome.notifications.create("escriba-reunion-" + tabId, {
+    type: "basic", iconUrl: "icon128.png", priority: 1,
+    title: t("bg.avisoTitulo"),
+    message: atajo ? t("bg.avisoTextoAtajo", plataforma, atajo) : t("bg.avisoTexto", plataforma),
+  });
+}
+
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name.startsWith("reintento:")) lanzar(Number(a.name.slice("reintento:".length)));
 });
@@ -44,6 +88,7 @@ chrome.alarms.onAlarm.addListener((a) => {
 // En cuanto el usuario guarda una clave nueva, lo que esperaba por ella se
 // reintenta sin que tenga que hacer nada más.
 chrome.storage.onChanged.addListener((cambios, area) => {
+  if (area === "sync" && cambios.idiomaUI) cargarIdiomaUI();
   const c = area === "local" && cambios.geminiKey;
   if (c && c.newValue && c.newValue !== c.oldValue) conClaveNueva().catch(() => {});
 });
@@ -70,7 +115,7 @@ async function guardarHistorial(historial) {
   } catch (e) {
     const msg = (e && e.message) || String(e);
     console.error("Escriba: no se pudo guardar el historial:", msg);
-    return { ok: false, error: "No se pudo guardar en el almacenamiento local: " + msg };
+    return { ok: false, error: t("bg.errGuardar", msg) };
   }
 }
 
@@ -95,7 +140,7 @@ async function lanzar(id) {
   try {
     await ensureOffscreen();
     return (await chrome.runtime.sendMessage({ target: "offscreen", cmd: "transcribir", id })) ||
-      { ok: false, error: "El transcriptor no respondió." };
+      { ok: false, error: t("bg.sinTranscriptor") };
   } catch (e) {
     return { ok: false, error: (e && e.message) || String(e) };
   }
@@ -119,7 +164,7 @@ const leerHistorial = async () => (await chrome.storage.local.get({ historial: [
 async function finRonda(id) {
   const historial = await leerHistorial();
   const h = historial.find((x) => x.id === id);
-  if (!h) return { ok: false, error: "La entrada ya no está en el historial." };
+  if (!h) return { ok: false, error: t("bg.entradaNoEsta") };
   const estado = estadoFinal(h.tramos);
   const md = construirMarkdown(h);
   // El .md anterior se sustituye: si no, cada reintento dejaría otra copia.
@@ -142,12 +187,12 @@ async function empezar({ modo, participantes }) {
   let streamId = "", tabTitle = "";
   if (modo === "tab_mic") {
     const tab = await pestanaObjetivo();
-    if (!tab) return { ok: false, error: "No encuentro ninguna pestaña con la reunión. Ábrela (Meet, Teams, YouTube…) o usa «Solo micro»." };
+    if (!tab) return { ok: false, error: t("bg.sinPestana") };
     try {
       streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
       tabTitle = tab.title || "";
     } catch (e) {
-      return { ok: false, error: "No se pudo capturar «" + (tab.title || "la pestaña") + "»: " + ((e && e.message) || e) };
+      return { ok: false, error: t("bg.errCaptura", tab.title || t("bg.laPestana"), (e && e.message) || e) };
     }
   }
   await ensureOffscreen();
@@ -160,7 +205,7 @@ async function empezar({ modo, participantes }) {
     chrome.action.setBadgeText({ text: "REC" });
     chrome.action.setBadgeBackgroundColor({ color: "#c0392b" });
   }
-  return r || { ok: false, error: "El grabador no respondió." };
+  return r || { ok: false, error: t("bg.sinGrabador") };
 }
 
 async function parar() {
@@ -178,7 +223,7 @@ async function alternarGrabacion() {
 
 async function pausa(pausar) {
   const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: pausar ? "pausar" : "reanudar" });
-  if (!r || !r.ok) return { ok: false, error: pausar ? "No hay nada grabándose que pausar." : "La grabación no estaba en pausa." };
+  if (!r || !r.ok) return { ok: false, error: pausar ? t("bg.nadaQuePausar") : t("bg.noEnPausa") };
   const s = await chrome.storage.session.get({ pausadoDesde: 0, pausaMs: 0 });
   const ahora = Date.now();
   await chrome.storage.session.set(pausar
@@ -191,16 +236,16 @@ async function pausa(pausar) {
 
 // Marca el minuto GRABADO en curso: lo sabe el documento que graba.
 async function marcar(nota) {
-  let t = null;
+  let tiempo = null; // no `t`: es la función de los textos (i18n.js)
   if (await chrome.offscreen.hasDocument()) {
-    try { t = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "tiempo" }); } catch (_) {}
+    try { tiempo = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "tiempo" }); } catch (_) {}
   }
-  if (!t || !t.ok || !t.id) return { ok: false, error: "No hay ninguna grabación en curso." };
-  const marca = { t: t.t, nota: String(nota || "").trim() };
+  if (!tiempo || !tiempo.ok || !tiempo.id) return { ok: false, error: t("bg.sinGrabacion") };
+  const marca = { t: tiempo.t, nota: String(nota || "").trim() };
   return enCola(async () => {
     const historial = await leerHistorial();
-    const h = historial.find((x) => x.id === t.id);
-    if (!h) return { ok: false, error: "La reunión en curso no está en el historial." };
+    const h = historial.find((x) => x.id === tiempo.id);
+    if (!h) return { ok: false, error: t("bg.reunionEnCursoNoEsta") };
     h.marcas = [...(h.marcas || []), marca];
     const g = await guardarHistorial(historial);
     return g.ok ? { ok: true, marca } : g;
@@ -241,9 +286,9 @@ async function reintentar(id) {
   const r = await enCola(async () => {
     const historial = await leerHistorial();
     const h = historial.find((x) => x.id === id);
-    if (!h) return { ok: false, error: "Esa reunión ya no está en el historial." };
-    if (!Array.isArray(h.tramos) || !h.tramos.some((t) => t.estado === "pendiente")) {
-      return { ok: false, error: "No le queda nada pendiente." };
+    if (!h) return { ok: false, error: t("bg.reunionNoEsta") };
+    if (!Array.isArray(h.tramos) || !h.tramos.some((tr) => tr.estado === "pendiente")) {
+      return { ok: false, error: t("bg.nadaPendiente") };
     }
     h.reintento = { n: 0 };
     return guardarHistorial(historial);
@@ -299,8 +344,7 @@ async function recuperar() {
         cambios = true;
         if (!idxs.length && !previos.some(hecho)) {
           h.estado = "error";
-          h.transcript = "# La grabación se interrumpió\n\nSe cerró Chrome o se reinició la extensión antes de " +
-            "completar el primer tramo, así que no llegó a guardarse audio.\n";
+          h.transcript = `# ${t("bg.grabacionInterrumpida")}\n\n${t("bg.grabacionInterrumpidaTxt")}\n`;
           continue;
         }
         const n = Math.max(idxs.length ? Math.max(...idxs) + 1 : 0, previos.length);
@@ -319,8 +363,7 @@ async function recuperar() {
           // solo vivía en memoria, no hay nada que reintentar.
           h.estado = "error";
           h.progreso = "";
-          h.transcript = "# La transcripción se interrumpió\n\nEscriba se cerró o se actualizó mientras " +
-            "transcribía esta reunión, y la versión que la grabó no guardaba el audio para reintentar.\n";
+          h.transcript = `# ${t("bg.transcripcionInterrumpida")}\n\n${t("bg.transcripcionInterrumpidaTxt")}\n`;
           cambios = true;
         }
       }
@@ -459,8 +502,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (chrome.notifications) {
             chrome.notifications.create("escriba-silencio", {
               type: "basic", iconUrl: "icon128.png", priority: 2,
-              title: "Escriba no oye nada",
-              message: "Llevas dos minutos sin voz en la grabación. ¿Suena la pestaña de la reunión? ¿Está el micrófono silenciado?",
+              title: t("bg.silencioTitulo"),
+              message: t("bg.silencioTexto"),
             });
           }
         } else {
@@ -473,27 +516,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.cmd === "selftest") {
         const { grabando } = await chrome.storage.session.get({ grabando: false });
         if (grabando) {
-          sendResponse({ ok: false, error: "Hay una grabación en curso. Párala antes de diagnosticar." });
+          sendResponse({ ok: false, error: t("bg.diagGrabando") });
           return;
         }
         let streamId = "", tabTitle = "";
         if (msg.modo === "tab_mic") {
           const tab = await pestanaObjetivo();
           if (!tab) {
-            sendResponse({ ok: false, error: "No hay ninguna pestaña capturable. Abre la reunión (o un vídeo) y reintenta." });
+            sendResponse({ ok: false, error: t("bg.diagSinPestana") });
             return;
           }
           try {
             streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
             tabTitle = tab.title || "";
           } catch (e) {
-            sendResponse({ ok: false, error: "tabCapture falló en «" + (tab.title || "") + "»: " + ((e && e.message) || e) });
+            sendResponse({ ok: false, error: t("bg.diagErrCaptura", tab.title || "", (e && e.message) || e) });
             return;
           }
         }
         await ensureOffscreen();
         const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "selftest", modo: msg.modo, streamId, tabTitle });
-        sendResponse(r || { ok: false, error: "el grabador no respondió" });
+        sendResponse(r || { ok: false, error: t("bg.diagSinGrabador") });
 
       } else if (msg.cmd === "estado") {
         const s = await chrome.storage.session.get({ grabando: false, t0: 0, tabTitle: "", pausado: false, pausadoDesde: 0, pausaMs: 0, reunionId: null });
@@ -542,14 +585,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(await enCola(async () => {
           const historial = await leerHistorial();
           const h = historial.find((x) => x.id === msg.id);
-          if (!h) return { ok: false, borrada: true, error: "La entrada ya no está en el historial." };
+          if (!h) return { ok: false, borrada: true, error: t("bg.entradaNoEsta") };
           if (!Array.isArray(h.tramos)) h.tramos = [];
-          const t = { ...(h.tramos[msg.i] || {}), ...msg.datos };
-          if (t.estado !== "pendiente") { delete t.codigo; delete t.error; delete t.detalle; }
-          h.tramos[msg.i] = t;
+          const tr = { ...(h.tramos[msg.i] || {}), ...msg.datos }; // no `t`: es la función de los textos
+          if (tr.estado !== "pendiente") { delete tr.codigo; delete tr.error; delete tr.detalle; }
+          h.tramos[msg.i] = tr;
           if (typeof msg.datos.dlAudio === "number") h.filesAudio = [...(h.filesAudio || []), msg.datos.dlAudio];
           const r = resumenTramos(h.tramos);
-          h.progreso = `${r.total - r.pendientes}/${r.total} tramos`;
+          h.progreso = t("com.progresoTramos", r.total - r.pendientes, r.total);
           return guardarHistorial(historial);
         }));
 
@@ -574,7 +617,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(await enCola(async () => {
           const { historial } = await chrome.storage.local.get({ historial: [] });
           const i = historial.findIndex((h) => h.id === msg.id);
-          if (i < 0) return { ok: false, error: "La entrada ya no está en el historial." };
+          if (i < 0) return { ok: false, error: t("bg.entradaNoEsta") };
           Object.assign(historial[i], msg.cambios);
           return guardarHistorial(historial);
         }));
@@ -587,7 +630,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const i = historial.findIndex((h) => h.id === msg.id);
           // La entrada pudo podarse mientras corría el análisis. Se dice, en vez
           // de reventar con un TypeError y perder un análisis ya pagado.
-          if (i < 0) return { ok: false, error: "Esa transcripción ya no está en el historial; el análisis no se ha podido guardar." };
+          if (i < 0) return { ok: false, error: t("bg.analisisSinEntrada") };
           // Desde la 3.2 la clave es «plantilla·proveedor»; las actas de antes,
           // guardadas solo por proveedor, se conservan tal cual.
           const clave = msg.clave || msg.prov;
@@ -603,7 +646,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(await enCola(async () => {
           const historial = await leerHistorial();
           const h = historial.find((x) => x.id === msg.id);
-          if (!h) return { ok: false, error: "Esa reunión ya no está en el historial." };
+          if (!h) return { ok: false, error: t("bg.reunionNoEsta") };
           for (const k of CAMPOS_EDITABLES) if (msg.cambios && k in msg.cambios) h[k] = msg.cambios[k];
           await rehacerMd(h);
           const g = await guardarHistorial(historial);
@@ -614,7 +657,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(await enCola(async () => {
           const historial = await leerHistorial();
           const h = historial.find((x) => x.id === msg.id);
-          if (!h) return { ok: false, error: "Esa reunión ya no está en el historial; la respuesta no se ha podido guardar." };
+          if (!h) return { ok: false, error: t("bg.chatSinEntrada") };
           h.chat = [...(h.chat || []), { ...msg.mensaje, fecha: Date.now() }];
           if (msg.mensaje && msg.mensaje.uso) {
             h.usoIA = [...(h.usoIA || []), { clave: "pregunta·" + msg.mensaje.prov, ...msg.mensaje.uso, fecha: Date.now() }];

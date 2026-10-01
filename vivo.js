@@ -11,14 +11,15 @@ let sesion = {}, reunion = null, relojInt = null, nivelesInt = null, notasTimer 
 
 $("btnBiblio").onclick = () => chrome.tabs.create({ url: "reuniones.html" });
 
-if (chrome.commands && chrome.commands.getAll) {
-  chrome.commands.getAll().then((cs) => {
-    const g = cs.find((c) => c.name === "grabar");
-    if (g && g.shortcut) $("atajo").textContent = ` o con ${g.shortcut}`;
-  }).catch(() => {});
-}
-
 (async function init() {
+  // Antes de pintar nada: el idioma elegido en Opciones (traduce el HTML).
+  await cargarIdiomaUI();
+  if (chrome.commands && chrome.commands.getAll) {
+    chrome.commands.getAll().then((cs) => {
+      const g = cs.find((c) => c.name === "grabar");
+      if (g && g.shortcut) $("atajo").textContent = " " + t("viv.oCon", g.shortcut);
+    }).catch(() => {});
+  }
   await refresca();
   chrome.storage.onChanged.addListener((cambios, area) => {
     if (area === "session") refresca();
@@ -33,10 +34,10 @@ async function refresca() {
   $("conGrabacion").hidden = !sesion.grabando;
   const est = $("estadoRec");
   est.className = sesion.grabando ? (sesion.pausado ? "pausa" : "rec") : "";
-  est.textContent = sesion.grabando ? (sesion.pausado ? "II en pausa" : "● grabando") : "sin grabación";
-  $("btnPausa").textContent = sesion.pausado ? "▶ Reanudar" : "⏸ Pausar";
+  est.textContent = sesion.grabando ? (sesion.pausado ? t("viv.enPausaBadge") : t("viv.grabandoBadge")) : t("viv.sinGrabacion");
+  $("btnPausa").textContent = sesion.pausado ? t("viv.reanudar") : t("viv.pausar");
   $("reloj").classList.toggle("pausa", !!sesion.pausado);
-  $("sub").textContent = sesion.pausado ? "En pausa: no se graba nada hasta que reanudes." : "";
+  $("sub").textContent = sesion.pausado ? t("viv.enPausa") : "";
   clearInterval(relojInt);
   clearInterval(nivelesInt);
   if (sesion.grabando) {
@@ -54,7 +55,7 @@ function pintaReloj() {
   $("reloj").textContent = formatoTiempo(s);
   if (!sesion.pausado) {
     const enTramo = s % DURACION_TRAMO_S;
-    $("sub").textContent = `El siguiente trozo de texto llega en ${formatoTiempo(DURACION_TRAMO_S - enTramo)}.`;
+    $("sub").textContent = t("viv.siguienteTrozo", formatoTiempo(DURACION_TRAMO_S - enTramo));
   }
 }
 
@@ -65,10 +66,10 @@ async function pintaNiveles() {
     // En decibelios, como un vúmetro: -60 dB (silencio) = 0 %, -10 dB = lleno.
     const db = 20 * Math.log10(Math.max(f.rms, 1e-6));
     const pct = Math.max(0, Math.min(100, Math.round(((db + 60) / 50) * 100)));
-    return `<div class="nivel"><span>${f.nombre === "pestaña" ? "🖥️ Pestaña" : "🎙️ Micro"}</span><div class="barra"><div style="width:${pct}%"></div></div></div>`;
+    return `<div class="nivel"><span>${escV(f.nombre === "pestaña" ? t("viv.fuentePestana") : t("viv.fuenteMicro"))}</span><div class="barra"><div style="width:${pct}%"></div></div></div>`;
   }).join("");
   const aviso = $("avisoNivel");
-  if (r.sinMicro) { aviso.hidden = false; aviso.textContent = "⚠️ El micrófono no está disponible: tu voz no se está grabando. Autorízalo en Opciones."; }
+  if (r.sinMicro) { aviso.hidden = false; aviso.textContent = t("viv.sinMicro"); }
   else aviso.hidden = true;
 }
 
@@ -80,10 +81,10 @@ function pintaReunion(historial) {
     const h = reunion || historial[0];
     const u = $("ultima");
     if (h && ["transcribiendo", "ok", "pendiente"].includes(h.estado)) {
-      u.innerHTML = `<p class="vacio">${h.estado === "transcribiendo" ? "✍️ Transcribiendo el final de" : "✅ Lista:"} <b>${escV(h.titulo)}</b></p>`;
+      u.innerHTML = `<p class="vacio">${t(h.estado === "transcribiendo" ? "viv.transcribiendoFinal" : "viv.lista", escV(h.titulo))}</p>`;
       if (h.estado !== "transcribiendo") {
         const b = document.createElement("button");
-        b.textContent = "📖 Abrir en la biblioteca";
+        b.textContent = t("viv.abrirBiblio");
         b.style.cssText = "width:100%;margin-bottom:6px";
         b.onclick = () => chrome.tabs.create({ url: "reuniones.html#" + h.id });
         u.appendChild(b);
@@ -126,7 +127,7 @@ $("formMarca").onsubmit = async (e) => {
   e.preventDefault();
   const r = await aBgMsg("marcar", { nota: $("notaMarca").value });
   if (r && r.ok) $("notaMarca").value = "";
-  else $("sub").textContent = "❌ " + ((r && r.error) || "No se pudo marcar.");
+  else $("sub").textContent = "❌ " + ((r && r.error) || t("viv.noSePudoMarcar"));
 };
 
 $("notas").addEventListener("input", () => {
@@ -140,5 +141,5 @@ async function guardaNotas() {
   const notas = $("notas").value;
   if (notas === (reunion.notas || "")) return;
   const r = await aBgMsg("histEditar", { id: reunion.id, cambios: { notas } });
-  $("guardado").textContent = r && r.ok ? "Guardado ✓" : "❌ No se pudieron guardar las notas";
+  $("guardado").textContent = r && r.ok ? t("viv.guardado") : t("viv.noGuardadas");
 }

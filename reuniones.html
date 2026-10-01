@@ -2,72 +2,72 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Escriba — Reuniones</title>
+<title data-i18n="bib.titulo_pagina">Escriba — Reuniones</title>
 <link rel="icon" href="icon32.png">
 <link rel="stylesheet" href="reuniones.css">
 </head>
 <body>
 <header class="barra">
-  <div class="marca"><img src="icon32.png" alt=""><b>Escriba</b><span>Reuniones</span></div>
+  <div class="marca"><img src="icon32.png" alt=""><b>Escriba</b><span data-i18n="bib.marca">Reuniones</span></div>
   <div class="busca">
-    <input id="buscar" type="search" placeholder="Buscar en todas las reuniones: título, nombres, lo que se dijo…" autocomplete="off">
+    <input id="buscar" type="search" placeholder="Buscar en todas las reuniones: título, nombres, lo que se dijo…" data-i18n-placeholder="bib.buscar_ph" autocomplete="off">
   </div>
   <div class="enlaces">
-    <button id="btnImportar" class="fantasma" title="Transcribir una grabación que ya tienes">📂 Transcribir archivo</button>
-    <button id="btnOpciones" class="fantasma">⚙️ Opciones</button>
+    <button id="btnImportar" class="fantasma" title="Transcribir una grabación que ya tienes" data-i18n-title="bib.importar_title" data-i18n="bib.importar">📂 Transcribir archivo</button>
+    <button id="btnOpciones" class="fantasma" data-i18n="bib.opciones">⚙️ Opciones</button>
   </div>
 </header>
 
 <div class="cuerpo">
-  <aside id="lista" aria-label="Reuniones"></aside>
+  <aside id="lista" aria-label="Reuniones" data-i18n-aria-label="bib.lista_aria"></aside>
 
   <main id="vista">
     <div id="vacio" class="vacio">
       <img src="icon128.png" alt="">
-      <h2>Tus reuniones, listas para aprovechar</h2>
-      <p>Elige una a la izquierda para leerla, poner nombre a cada voz, sacar el acta o preguntarle cualquier cosa.</p>
+      <h2 data-i18n="bib.vacio_titulo">Tus reuniones, listas para aprovechar</h2>
+      <p data-i18n="bib.vacio_texto">Elige una a la izquierda para leerla, poner nombre a cada voz, sacar el acta o preguntarle cualquier cosa.</p>
     </div>
 
     <article id="reunion" hidden>
       <div class="cab">
-        <input id="titulo" class="titulo" maxlength="160" aria-label="Título de la reunión" title="Pulsa para cambiar el título">
+        <input id="titulo" class="titulo" maxlength="160" aria-label="Título de la reunión" data-i18n-aria-label="bib.titulo_aria" title="Pulsa para cambiar el título" data-i18n-title="bib.titulo_title">
         <div id="meta" class="meta"></div>
         <label class="participantes">👥
-          <input id="participantes" maxlength="400" placeholder="Participantes (opcional): ayuda al acta y a poner nombre a cada voz">
+          <input id="participantes" maxlength="400" placeholder="Participantes (opcional): ayuda al acta y a poner nombre a cada voz" data-i18n-placeholder="bib.participantes_ph">
         </label>
         <div id="aviso" class="aviso" hidden></div>
         <div class="acciones">
-          <button id="btnCopiar">📋 Copiar</button>
+          <button id="btnCopiar" data-i18n="bib.copiar">📋 Copiar</button>
           <div class="menu">
-            <button id="btnExportar">⬇️ Exportar ▾</button>
+            <button id="btnExportar" data-i18n="bib.exportar">⬇️ Exportar ▾</button>
             <div id="menuExportar" class="desplegable" hidden>
               <button data-fmt="docx">📄 Word (.docx)</button>
-              <button data-fmt="pdf">🖨️ PDF (imprimir)</button>
+              <button data-fmt="pdf" data-i18n="bib.exp_pdf">🖨️ PDF (imprimir)</button>
               <button data-fmt="md">📝 Markdown (.md)</button>
-              <button data-fmt="txt">🗒️ Texto (.txt)</button>
-              <button data-fmt="srt">🎬 Subtítulos (.srt)</button>
+              <button data-fmt="txt" data-i18n="bib.exp_txt">🗒️ Texto (.txt)</button>
+              <button data-fmt="srt" data-i18n="bib.exp_srt">🎬 Subtítulos (.srt)</button>
             </div>
           </div>
-          <button id="btnReintentar" hidden>🔄 Reintentar ahora</button>
-          <button id="btnBorrar" class="peligro">🗑 Borrar</button>
+          <button id="btnReintentar" data-i18n="bib.reintentar" hidden>🔄 Reintentar ahora</button>
+          <button id="btnBorrar" class="peligro" data-i18n="bib.borrar">🗑 Borrar</button>
         </div>
         <div id="confirmaBorrar" class="aviso err" hidden></div>
       </div>
 
       <nav class="pestanas" role="tablist">
-        <button role="tab" data-p="texto" class="activa">Transcripción</button>
-        <button role="tab" data-p="acta">Acta y resúmenes</button>
-        <button role="tab" data-p="preguntar">Preguntar</button>
+        <button role="tab" data-p="texto" class="activa" data-i18n="bib.pest_texto">Transcripción</button>
+        <button role="tab" data-p="acta" data-i18n="bib.pest_acta">Acta y resúmenes</button>
+        <button role="tab" data-p="preguntar" data-i18n="bib.pest_preguntar">Preguntar</button>
       </nav>
 
       <section id="p-texto" class="panel">
         <div class="herramientas">
-          <input id="buscarEn" type="search" placeholder="🔍 Buscar en esta reunión" autocomplete="off">
+          <input id="buscarEn" type="search" placeholder="🔍 Buscar en esta reunión" data-i18n-placeholder="bib.buscar_en_ph" autocomplete="off">
           <span id="nCoinc" class="suave"></span>
         </div>
         <details id="notasBox" class="notas">
-          <summary>📝 Notas y momentos marcados <span id="notasResumen" class="suave"></span></summary>
-          <textarea id="notas" placeholder="Tus notas de esta reunión: salen en el .md y el acta las tiene en cuenta."></textarea>
+          <summary><span data-i18n="bib.notas_titulo">📝 Notas y momentos marcados</span> <span id="notasResumen" class="suave"></span></summary>
+          <textarea id="notas" placeholder="Tus notas de esta reunión: salen en el .md y el acta las tiene en cuenta." data-i18n-placeholder="bib.notas_ph"></textarea>
           <div id="marcasLista" class="chips"></div>
         </details>
         <div id="hablantes" class="hablantes"></div>
@@ -75,26 +75,26 @@
         <div id="reproductor" class="reproductor" hidden>
           <span id="repInfo" class="suave"></span>
           <audio id="audio" controls preload="auto"></audio>
-          <select id="velocidad" aria-label="Velocidad" title="Velocidad">
+          <select id="velocidad" aria-label="Velocidad" data-i18n-aria-label="bib.velocidad" title="Velocidad" data-i18n-title="bib.velocidad">
             <option value="0.75">0,75×</option><option value="1" selected>1×</option>
             <option value="1.25">1,25×</option><option value="1.5">1,5×</option><option value="2">2×</option>
           </select>
-          <button id="quitarAudio" class="peligro" title="Borra el audio guardado de esta reunión (el texto se queda)">🗑 Audio</button>
+          <button id="quitarAudio" class="peligro" title="Borra el audio guardado de esta reunión (el texto se queda)" data-i18n-title="bib.quitar_audio_title">🗑 Audio</button>
         </div>
       </section>
 
       <section id="p-acta" class="panel" hidden>
         <div class="herramientas">
-          <select id="plantilla" aria-label="Plantilla"></select>
-          <select id="provActa" aria-label="Proveedor"></select>
-          <button id="btnGenerar" class="principal">✨ Generar</button>
+          <select id="plantilla" aria-label="Plantilla" data-i18n-aria-label="bib.plantilla_aria"></select>
+          <select id="provActa" aria-label="Proveedor" data-i18n-aria-label="bib.proveedor_aria"></select>
+          <button id="btnGenerar" class="principal" data-i18n="bib.generar">✨ Generar</button>
           <span id="estadoActa" class="suave"></span>
         </div>
         <div id="actas" class="chips"></div>
         <div id="actaVista" class="md"></div>
         <div id="accionesActa" class="acciones" hidden>
-          <button id="actaCopiar">📋 Copiar</button>
-          <button id="actaCorreo" title="Copia con formato para pegar en Outlook, Gmail o Teams">✉️ Copiar para correo</button>
+          <button id="actaCopiar" data-i18n="bib.copiar">📋 Copiar</button>
+          <button id="actaCorreo" title="Copia con formato para pegar en Outlook, Gmail o Teams" data-i18n-title="bib.acta_correo_title" data-i18n="bib.acta_correo">✉️ Copiar para correo</button>
           <button id="actaWord">📄 Word</button>
           <button id="actaMd">📝 .md</button>
           <button id="actaImprimir">🖨️ PDF</button>
@@ -104,15 +104,15 @@
       <section id="p-preguntar" class="panel" hidden>
         <div id="chat" class="chat"></div>
         <div class="sugerencias" id="sugerencias">
-          <button>¿Qué se decidió?</button>
-          <button>¿Quién tiene tareas pendientes y para cuándo?</button>
-          <button>¿Qué dudas quedaron abiertas?</button>
-          <button>¿Se habló de plazos o de dinero?</button>
+          <button data-i18n="bib.sug_decidio">¿Qué se decidió?</button>
+          <button data-i18n="bib.sug_tareas">¿Quién tiene tareas pendientes y para cuándo?</button>
+          <button data-i18n="bib.sug_dudas">¿Qué dudas quedaron abiertas?</button>
+          <button data-i18n="bib.sug_plazos">¿Se habló de plazos o de dinero?</button>
         </div>
         <form id="formPregunta" class="pregunta">
-          <input id="pregunta" placeholder="Pregunta lo que quieras sobre esta reunión…" autocomplete="off">
-          <select id="provChat" aria-label="Proveedor"></select>
-          <button class="principal">Preguntar</button>
+          <input id="pregunta" placeholder="Pregunta lo que quieras sobre esta reunión…" data-i18n-placeholder="bib.pregunta_ph" autocomplete="off">
+          <select id="provChat" aria-label="Proveedor" data-i18n-aria-label="bib.proveedor_aria"></select>
+          <button class="principal" data-i18n="bib.preguntar">Preguntar</button>
         </form>
         <div id="estadoChat" class="suave"></div>
       </section>
@@ -120,7 +120,7 @@
   </main>
 </div>
 
-<script src="config.js"></script>
+<script src="i18n.js"></script><script src="config.js"></script>
 <script src="comun.js"></script>
 <script src="ia.js"></script>
 <script src="exportar.js"></script>

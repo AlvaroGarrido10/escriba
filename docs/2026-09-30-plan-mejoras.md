@@ -209,3 +209,7 @@ Pedido por Álvaro: «debería ser irrelevante que lo escuches con monitor o no�
 - Verificado en Chrome 154 con clic real y sonido medido: automático, cambio en vivo al motor, cambio de dispositivo y vuelta al reproductor se oyen sin huecos (19/19). 140 tests.
 
 **Microcortes que Álvaro oye al grabar (02/10, de oído, «se entiende todo»): sin reproducir con medida.** La pista de la pestaña llega sin procesar (sin cancelación de eco, supresión de ruido ni control de volumen; 48 kHz estéreo). Con un tono de 1234 Hz y detector de cortes de 1 ms, ni el reproductor, ni el motor, ni abrir el micro (con o sin cancelación de eco), ni grabar sin micro empeoran el sonido frente a la reproducción normal (~70 dB de pureza en todas). Durante su escucha la prueba cambió tres veces de forma y simuló un cambio de dispositivo, y cada cambio deja un corte breve. Pendiente: comparar de oído las dos formas con el botón, y medir con voz y música, no solo con un tono.
+
+## 8. 3.5.2 (02/10/2026): la transcripción en el panel
+
+Pedido por Álvaro: ver y copiar la transcripción sin ir a otra ventana, como hasta la 3.1, sin perder la biblioteca. En el popup, la reunión más reciente con texto sale abierta (también mientras se transcribe, con lo que ya ha llegado) con «📋 Copiar»; las demás, con «📄 Ver aquí»; «📖 Abrir» sigue llevando a la biblioteca. El texto lleva los nombres de hablante puestos. Verificado en Chrome 154 (7/7: abierta, desplegar, nombres, portapapeles, confirmación, «Abrir», no se cierra al repintar).

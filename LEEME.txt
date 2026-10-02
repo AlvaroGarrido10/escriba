@@ -49,7 +49,11 @@ YA ESTÁ. Para grabar una reunión, elige modo:
      web, kMeet...) para que no se te olvide grabar, y "Coste estimado" con lo que
      te cobra tu proveedor: la biblioteca te dirá cuánto costó cada reunión.
 
-BIBLIOTECA ("📚 Reuniones" arriba en el panel)
+EN EL PROPIO PANEL
+   - La última transcripción sale ya abierta, con "📋 Copiar": la copias sin ir a
+     ningún sitio. Las anteriores, con "📄 Ver aquí".
+
+BIBLIOTECA ("📚 Reuniones" arriba en el panel, o "📖 Abrir" en cada reunión)
    - Todas tus reuniones, con buscador. Cada una con marcas de tiempo.
    - Pulsa "Hablante 1" y ponle el nombre: cambia en toda la reunión.
    - Exportar: Word, PDF, texto o subtítulos.

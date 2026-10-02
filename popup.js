@@ -269,11 +269,29 @@ $("btnDiag").onclick = async () => {
 };
 
 // ---------- Historial ----------
+// La transcripción, a la vista en el propio panel (3.5.2): la reunión más reciente
+// sale abierta y las demás con «📄 Ver aquí», con su botón de copiar. La
+// biblioteca sigue a un clic («Abrir»). Lo abierto se mantiene al repintar.
+const abiertas = new Set();
+let ultimaAbierta = null;
+
+// Lo que se ve y se copia: el .md de la reunión con los nombres puestos o, si aún
+// se está transcribiendo, lo que ya ha llegado de cada tramo.
+function textoDelPanel(h) {
+  const txt = (h.transcript && h.transcript.trim())
+    ? h.transcript
+    : (h.tramos || []).filter((tr) => tr && tr.estado === "ok").map((tr) => tr.texto || "").join("\n");
+  return aplicarHablantes(txt, mapaVisible(txt, h.hablantes));
+}
+
 async function pintaHistorial() {
   const { historial } = await chrome.storage.local.get({ historial: [] });
   const cont = $("historial");
   cont.innerHTML = "";
   if (!historial.length) { cont.innerHTML = `<div style="font-size:11px;color:#999">${esc(t("pop.sinGrabaciones"))}</div>`; return; }
+  // La más reciente con texto se abre sola, una vez: si el usuario la cierra, se queda cerrada.
+  const primera = historial.find((h) => textoDelPanel(h).trim());
+  if (primera && primera.id !== ultimaAbierta) { abiertas.add(primera.id); ultimaAbierta = primera.id; }
   for (const h of historial) {
     const div = document.createElement("div");
     div.className = "item";
@@ -292,6 +310,29 @@ async function pintaHistorial() {
       const actas = nActas ? " · " + t(nActas > 1 ? "pop.actasVarias" : "pop.actasUna", nActas) : "";
       boton(acc, h.estado === "error" ? t("pop.verError") : t("pop.abrir") + actas, () => abrirBiblioteca(h.id));
       boton(acc, "🗑", () => pideBorrar(acc, h));
+    }
+    const texto = textoDelPanel(h);
+    if (texto.trim()) {
+      const abierta = abiertas.has(h.id);
+      boton(acc, abierta ? t("pop.ocultarTexto") : t("pop.verTexto"), () => {
+        if (abierta) abiertas.delete(h.id); else abiertas.add(h.id);
+        pintaHistorial();
+      });
+      if (abierta) {
+        const caja = document.createElement("div");
+        caja.className = "texto";
+        const ta = document.createElement("textarea");
+        ta.readOnly = true;
+        ta.value = texto;
+        const fila = document.createElement("div");
+        fila.className = "acc";
+        boton(fila, t("pop.copiar"), async (ev) => {
+          await navigator.clipboard.writeText(ta.value);
+          ev.target.textContent = t("pop.copiado");
+        });
+        caja.append(ta, fila);
+        div.appendChild(caja);
+      }
     }
     cont.appendChild(div);
   }

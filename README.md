@@ -18,6 +18,7 @@ Extensión de Chrome (Manifest V3) que graba reuniones y las transcribe con IA. 
 - **Aviso al entrar en una reunión** (3.5, opcional): Meet, Teams, Zoom web, kMeet de Infomaniak o Jitsi. Te recuerda grabar; grabar sigue siendo cosa tuya (Chrome solo deja capturar una pestaña si pulsas el icono o el atajo).
 - **Interfaz en español e inglés** (3.5): según el idioma de Chrome, o el que elijas en Opciones.
 - **Se oye la reunión por cualquier salida** (3.5.1): si cambia el dispositivo (monitor, cascos) el sonido se rehace, y mientras grabas, «🔊 ¿No oyes la reunión?» cambia en vivo la forma de devolverlo.
+- **La transcripción, en el propio panel** (3.5.2): la última sale abierta con «📋 Copiar»; las anteriores, con «📄 Ver aquí». La biblioteca sigue a un clic.
 - Idioma configurable, incluida la detección automática para reuniones que mezclan idiomas.
 
 ## Cómo está construido

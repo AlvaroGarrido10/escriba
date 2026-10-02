@@ -3,6 +3,10 @@
 [![CI](https://github.com/AlvaroGarrido10/escriba/actions/workflows/ci.yml/badge.svg)](https://github.com/AlvaroGarrido10/escriba/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**[Instalar desde la Chrome Web Store](https://chromewebstore.google.com/detail/giaeeknnkmmjkkbgdoabjibehnjohgbc)** · **[Web](https://alvarogarrido10.github.io/escriba/es.html)** · [English website](https://alvarogarrido10.github.io/escriba/) · [Descargar el zip](https://github.com/AlvaroGarrido10/escriba/releases/latest)
+
+![Escriba grabando una reunión](https://alvarogarrido10.github.io/escriba/img/es_1_grabar.png)
+
 Extensión de Chrome (Manifest V3) que graba reuniones y las transcribe con IA. Sin servidor, sin cuenta y sin suscripción: cada usuario pone su propia clave de API (BYOK) y el audio va de su navegador al modelo, sin intermediarios.
 
 - **Reuniones online** (Meet, Teams web…): graba el audio de la pestaña **y** el micrófono a la vez.

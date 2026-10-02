@@ -41,7 +41,7 @@ YA ESTÁ. Para grabar una reunión, elige modo:
    - Si en 2 minutos no entra voz, Escriba te avisa (pestaña equivocada, micro
      silenciado...).
    - ¿No oyes bien la reunión mientras grabas? Al capturar la pestaña, Chrome la
-     silencia y Escriba te devuelve su sonido. Abre el panel y pulsa "🔊 ¿No oyes la
+     silencia y Escriba te devuelve su sonido. Abre el panel y pulsa "¿No oyes la
      reunión? Prueba la otra forma": cambia al momento y se recuerda. Si aun así no,
      mira el volumen de Windows y la salida de sonido (icono del altavoz, abajo a la
      derecha).
@@ -50,10 +50,12 @@ YA ESTÁ. Para grabar una reunión, elige modo:
      te cobra tu proveedor: la biblioteca te dirá cuánto costó cada reunión.
 
 EN EL PROPIO PANEL
-   - La última transcripción sale ya abierta, con "📋 Copiar": la copias sin ir a
-     ningún sitio. Las anteriores, con "📄 Ver aquí".
+   - La última transcripción sale ya abierta, con "Copiar": la copias sin ir a
+     ningún sitio. Las anteriores se abren pulsando en ellas.
+   - Mientras grabas ves el reloj y una barra por cada fuente (pestaña y micro):
+     si una no se mueve, no está entrando sonido por ahí.
 
-BIBLIOTECA ("📚 Reuniones" arriba en el panel, o "📖 Abrir" en cada reunión)
+BIBLIOTECA ("Reuniones" arriba en el panel, o "Abrir" en cada reunión)
    - Todas tus reuniones, con buscador. Cada una con marcas de tiempo.
    - Pulsa "Hablante 1" y ponle el nombre: cambia en toda la reunión.
    - Exportar: Word, PDF, texto o subtítulos.
@@ -74,10 +76,13 @@ LIMPIEZA
      últimas). Al terminar cada reunión, las más viejas se borran solas, tanto del
      historial como de Descargas/reuniones. También puedes decir "guardarlas todas".
      Una reunión incompleta nunca se borra sola: espera a que se complete.
-   - En el historial: 🗑 en cada una para borrarla, o "🗑 Borrar todo" arriba.
+   - En el panel: "⋯" > "Borrar" en cada reunión, o la papelera de abajo para
+     borrarlas todas.
      Siempre pregunta antes, y si esa reunión tenía audio de respaldo guardado te
      deja decidir aparte si lo borras también.
    - Solo se borran ficheros descargados por esta extensión. No puede tocar nada
      más de tu carpeta de Descargas.
 
 ¿Algo no va? Botón "Diagnóstico" en el panel: dice exactamente qué falla.
+
+¿Prefieres la interfaz en oscuro? Opciones > Apariencia > Tema.

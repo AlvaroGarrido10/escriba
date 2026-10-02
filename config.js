@@ -30,6 +30,7 @@ const CFG_SYNC = {
   avisoReunion: false,         // avisar al entrar en una reunión (pide permiso para ORIGENES_REUNION)
   idiomaUI: "auto",            // idioma de la interfaz: "auto" (el de Chrome), "es" o "en" (i18n.js)
   modoAltavoz: "auto",         // cómo vuelve la pestaña a los altavoces: "auto", "audio" o "contexto" (offscreen.js)
+  tema: "auto",                // apariencia: "auto" (la del sistema), "claro" u "oscuro" (ui.js)
 };
 
 // Webs de reunión que se vigilan para el aviso. Van en optional_host_permissions

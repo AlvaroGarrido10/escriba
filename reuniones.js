@@ -7,17 +7,25 @@
 // que esté terminando a la vez.
 
 const $ = (id) => document.getElementById(id);
-const COLORES_VOZ = ["#5d2a42", "#1f6f8b", "#2e7d32", "#b8570a", "#6b3fa0", "#a3261b", "#0f766e", "#8a6d00"];
 const PROVEEDORES = [["gemini", "Gemini", "geminiKey"], ["gpt", "GPT", "openaiKey"], ["claude", "Claude", "claudeKey"]];
 const nombreProv = (p) => (PROVEEDORES.find((x) => x[0] === p) || [p, p])[1];
+// Icono de cada plantilla de acta (las plantillas viven en ia.js).
+const ICONO_PLANTILLA = { acta: "documento", resumen: "lineas", tareas: "tareas", correo: "correo", personalizada: "varita" };
+// Qué saca cada plantilla, para las tarjetas de «Acta y resúmenes» cuando aún no hay ninguna.
+const DESC_PLANTILLA = {
+  acta: () => t("bib.plant_desc_acta"), resumen: () => t("bib.plant_desc_resumen"), tareas: () => t("bib.plant_desc_tareas"),
+  correo: () => t("bib.plant_desc_correo"), personalizada: () => t("bib.plant_desc_personalizada"),
+};
 
-let historial = [], actual = null, cfg = {}, filtro = "", actaSel = null, marcaActual = -1;
+let historial = [], actual = null, cfg = {}, filtro = "", actaSel = null, marcaActual = -1, generando = false, preguntando = null;
 let conAudio = new Set();   // tramos de la reunión abierta con audio conservado
 let sonando = null;         // { tramo, inicioS } del audio cargado en el reproductor
 
 const aBgMsg = (cmd, extra = {}) => chrome.runtime.sendMessage({ target: "bg", cmd, ...extra });
-const escT = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const escT = escapa;
 const normaliza = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+// Los mensajes de progreso de ia.js llegan con un emoji delante; aquí el icono lo pone ponEstado.
+const sinEmoji = (s) => String(s || "").replace(/^(?:[\p{Extended_Pictographic}\u{FE0F}]\s*)+/u, "");
 
 // Expresión que encuentra el texto buscado sin distinguir mayúsculas ni tildes.
 function reBusqueda(q) {
@@ -71,27 +79,54 @@ $("btnImportar").onclick = () => chrome.tabs.create({ url: "importar.html" });
 $("btnOpciones").onclick = () => chrome.runtime.openOptionsPage();
 $("buscar").addEventListener("input", () => { filtro = $("buscar").value; pintaLista(); });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $("buscar").focus(); }
-  if (e.key === "Escape") $("menuExportar").hidden = true;
+  if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+    e.preventDefault();
+    if (estrecho.matches) muestraLista(true);
+    $("buscar").focus();
+  }
+  if (e.key === "Escape") muestraLista(false);
 });
-document.addEventListener("click", (e) => { if (!e.target.closest(".menu")) $("menuExportar").hidden = true; });
+
+// En pantallas estrechas la lista es un cajón que se abre con el botón de la barra.
+const estrecho = window.matchMedia("(max-width: 980px)");
+function muestraLista(si) {
+  document.body.classList.toggle("con-lista", !!si && estrecho.matches);
+  $("velo").hidden = !(si && estrecho.matches);
+}
+$("btnLista").onclick = () => muestraLista(!document.body.classList.contains("con-lista"));
+$("velo").onclick = () => muestraLista(false);
+estrecho.addEventListener("change", () => muestraLista(false));
 
 // ---------------------------------------------------------------------------------
 // lista de reuniones
 function textoDe(h) {
   if (Array.isArray(h.tramos) && h.tramos.length) {
-    const crudo = h.tramos.filter((t) => t.estado === "ok").map((t) => t.texto || "").join("\n");
+    const crudo = h.tramos.filter((tr) => tr.estado === "ok").map((tr) => tr.texto || "").join("\n");
     return aplicarHablantes(crudo, mapaVisible(crudo, h.hablantes));
   }
   return h.transcript || "";
 }
 
-function badge(h) {
+// Solo lo que pide atención lleva etiqueta: si todas dijeran «lista», no destacaría nada.
+function pildora(h, siempre) {
   const b = {
     ok: ["ok", t("bib.estado_ok")], error: ["err", t("bib.estado_error")],
     pendiente: ["pend", t("bib.estado_pendiente")], grabando: ["rec", t("bib.estado_grabando")],
   }[h.estado] || ["proc", t("bib.estado_transcribiendo", h.progreso || "")];
-  return `<span class="badge ${b[0]}">${escT(b[1])}</span>`;
+  if (h.estado === "ok" && !siempre) return "";
+  const punto = b[0] === "rec" || b[0] === "proc" ? '<span class="punto"></span>' : "";
+  return `<span class="pildora ${b[0]}">${punto}${escT(b[1])}</span>`;
+}
+
+// La hora dentro de su grupo: hoy y ayer basta la hora; esta semana, el día de
+// la semana; más atrás, el día y el mes.
+function cuandoEnLista(h, grupo) {
+  if (typeof h.id !== "number" || h.id < 1e12) return h.fecha || "";
+  const d = new Date(h.id);
+  const hora = d.toLocaleTimeString(LOCALE_UI(), { hour: "2-digit", minute: "2-digit" });
+  if (grupo === "hoy" || grupo === "ayer") return hora;
+  if (grupo === "semana") return d.toLocaleDateString(LOCALE_UI(), { weekday: "long" }) + ", " + hora;
+  return d.toLocaleDateString(LOCALE_UI(), { day: "numeric", month: "short" }) + ", " + hora;
 }
 
 function pintaLista() {
@@ -99,12 +134,17 @@ function pintaLista() {
   const re = reBusqueda(filtro.trim());
   const q = normaliza(filtro.trim());
   const visibles = historial.filter((h) => !q || normaliza([h.titulo, h.participantes, h.fecha, textoDe(h)].join("\n")).includes(q));
+  pintaPieLista();
   if (!historial.length) {
     cont.innerHTML = `<div class="sinResultados">${escT(t("bib.lista_vacia"))}</div>`;
     return;
   }
   if (!visibles.length) { cont.innerHTML = `<div class="sinResultados">${escT(t("bib.nada_coincide", filtro))}</div>`; return; }
-  cont.innerHTML = resumenMes() + visibles.map((h) => {
+  let grupoPrevio = null;
+  cont.innerHTML = visibles.map((h) => {
+    const g = grupoDeFecha(h);
+    const cab = g.clave !== grupoPrevio ? `<div class="grupo">${escT(g.nombre)}</div>` : "";
+    grupoPrevio = g.clave;
     let extracto = "";
     if (q) {
       const texto = textoDe(h), pos = normaliza(texto).indexOf(q);
@@ -113,29 +153,35 @@ function pintaLista() {
         extracto = `<div class="extracto">…${resalta(escT(texto.slice(desde, pos + q.length + 60)), re)}…</div>`;
       }
     }
-    const min = h.meta && h.meta.minutos ? ` · ${h.meta.minutos} min` : "";
-    return `<div class="item${actual && actual.id === h.id ? " activa" : ""}" data-id="${h.id}">
-      <div class="tit">${h.origen === "archivo" ? "📂 " : ""}${escT(h.titulo || t("com.reunion"))}</div>
-      <div class="sub">${escT(fechaVisible(h))}${min} ${badge(h)}</div>${extracto}</div>`;
+    const sub = [escT(cuandoEnLista(h, g.clave))];
+    if (h.meta && h.meta.minutos) sub.push(escT(t("ui.minutos", h.meta.minutos)));
+    const nActas = Object.keys(h.analisis || {}).length;
+    if (nActas) sub.push(escT(t(nActas > 1 ? "pop.actasVarias" : "pop.actasUna", nActas)));
+    return `${cab}<button class="item${actual && actual.id === h.id ? " activa" : ""}" data-id="${h.id}">
+      <span class="item-icono">${icono(h.origen === "archivo" ? "archivo-audio" : "micro")}</span>
+      <span class="item-info"><span class="tit">${q ? resalta(escT(h.titulo || t("com.reunion")), re) : escT(h.titulo || t("com.reunion"))}</span>
+      <span class="sub">${sub.join(" · ")} ${pildora(h)}</span>${extracto}</span></button>`;
   }).join("");
-  cont.querySelectorAll(".item").forEach((el) => { el.onclick = () => abrir(Number(el.dataset.id), true); });
-  const enlace = cont.querySelector(".mes a");
-  if (enlace) enlace.onclick = (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); };
+  cont.querySelectorAll(".item").forEach((el) => {
+    el.onclick = () => { abrir(Number(el.dataset.id), true); muestraLista(false); };
+  });
 }
 
 // Lo que llevas gastado este mes con tus claves. Sin precios no se adivina: se
 // ofrece ponerlos, y solo si hay alguna reunión con tokens apuntados.
-function resumenMes() {
+function pintaPieLista() {
+  const pie = $("pieLista");
   const m = costeMes(historial, cfg.precios);
   const mes = new Date().toLocaleDateString(LOCALE_UI(), { month: "long" });
   if (m.euros !== null) {
     const falta = m.faltan.length ? ` <span title="${escT(t("bib.sin_precio_title", m.faltan.map(nombreProv).join(", ")))}">${escT(t("bib.sin_precio_corto"))}</span>` : "";
     const n = m.reuniones === 1 ? t("bib.n_reunion", m.reuniones) : t("bib.n_reuniones", m.reuniones);
-    return `<div class="mes" title="${escT(t("bib.estimacion_title"))}">💶 ${escT(mes)}: ≈ ${escT(formatoEuros(m.euros))}${falta} · ${escT(n)}</div>`;
-  }
-  return historial.some((h) => costeReunion(h, {}).tokens)
-    ? `<div class="mes">💶 ${t("bib.pon_precios_html")}</div>`
-    : "";
+    pie.innerHTML = `${icono("euro")}<span title="${escT(t("bib.estimacion_title"))}">${escT(mes.charAt(0).toUpperCase() + mes.slice(1))}: ≈ ${escT(formatoEuros(m.euros))}${falta} · ${escT(n)}</span>`;
+  } else if (historial.some((h) => costeReunion(h, {}).tokens)) {
+    pie.innerHTML = `${icono("euro")}<span>${t("bib.pon_precios_html")}</span>`;
+  } else pie.innerHTML = "";
+  const enlace = pie.querySelector("a");
+  if (enlace) enlace.onclick = (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); };
 }
 
 function abrir(id, empujar) {
@@ -146,10 +192,14 @@ function abrir(id, empujar) {
     if (empujar) history.pushState(null, "", "#" + id); else history.replaceState(null, "", "#" + id);
   }
   $("buscarEn").value = "";
+  $("estadoActa").innerHTML = "";
+  $("estadoChat").innerHTML = "";
+  $("confirmaBorrar").hidden = true;
   paraAudio();
   pintaLista();
   pintaVista(true);
   miraAudio();
+  $("vista").scrollTop = 0;
 }
 
 // --- escuchar (3.4) ---
@@ -187,7 +237,7 @@ function paraAudio() {
 async function suena(tramo, desdeS) {
   const tr = (actual.tramos || [])[tramo];
   const blob = await audios.leerEscucha(actual.id, tramo).catch(() => null);
-  if (!blob) { toast(t("bib.audio_no_guardado")); return; }
+  if (!blob) { toast(t("bib.audio_no_guardado"), "atencion"); return; }
   paraAudio();
   const a = $("audio");
   sonando = { tramo, inicioS: inicioTramo(tr, tramo) };
@@ -224,7 +274,7 @@ $("quitarAudio").onclick = async () => {
   if (!actual) return;
   paraAudio();
   await audios.borrarEscucha(actual.id).catch(() => {});
-  toast(t("bib.audio_borrado"));
+  toast(t("bib.audio_borrado"), "ok");
   miraAudio();
 };
 
@@ -233,7 +283,7 @@ $("quitarAudio").onclick = async () => {
 function pintaVista(nueva) {
   $("vacio").hidden = !!actual;
   $("reunion").hidden = !actual;
-  if (!actual) return;
+  if (!actual) { document.title = t("bib.titulo_pagina"); return; }
   const h = actual;
   // Un campo que el usuario está escribiendo no se repinta: se le borraría lo tecleado.
   if (nueva || document.activeElement !== $("titulo")) $("titulo").value = h.titulo || t("com.reunion");
@@ -244,16 +294,19 @@ function pintaVista(nueva) {
   const coste = costeReunion(h, cfg.precios);
   const sinPrecio = coste.faltan.length ? ` (${t("bib.sin_precio_min", coste.faltan.map(nombreProv).join(", "))})` : "";
   $("meta").innerHTML = [
-    escT(fechaVisible(h)),
-    h.meta && h.meta.minutos ? `${h.meta.minutos} min` : "",
-    escT(h.origen === "archivo" ? t("bib.origen_archivo") : t("bib.origen_grabacion")),
-    badge(h),
-    tokens ? `<span title="${escT(t("bib.tokens_title"))}">≈ ${tokens.toLocaleString(LOCALE_UI())} tokens</span>` : "",
-    coste.euros !== null ? `<span title="${escT(t("bib.estimacion_title") + sinPrecio)}">💶 ≈ ${escT(formatoEuros(coste.euros))}${coste.faltan.length ? " +" : ""}</span>` : "",
-  ].filter(Boolean).join(" · ");
+    `<span>${icono("calendario")}${escT(fechaVisible(h))}</span>`,
+    h.meta && h.meta.minutos ? `<span>${icono("reloj")}${escT(t("ui.minutos", h.meta.minutos))}</span>` : "",
+    `<span>${icono(h.origen === "archivo" ? "archivo-audio" : "micro")}${escT(h.origen === "archivo" ? t("bib.origen_archivo") : t("bib.origen_grabacion"))}</span>`,
+    tokens ? `<span title="${escT(t("bib.tokens_title"))}">${icono("chispas")}≈ ${tokens.toLocaleString(LOCALE_UI())} tokens</span>` : "",
+    coste.euros !== null ? `<span title="${escT(t("bib.estimacion_title") + sinPrecio)}">${icono("euro")}≈ ${escT(formatoEuros(coste.euros))}${coste.faltan.length ? " +" : ""}</span>` : "",
+    pildora(h, false),
+  ].filter(Boolean).join("");
 
   pintaAviso();
   $("btnReintentar").hidden = h.estado !== "pendiente";
+  const nActas = Object.keys(h.analisis || {}).length, nChat = (h.chat || []).length;
+  $("nActas").hidden = !nActas; $("nActas").textContent = nActas;
+  $("nChat").hidden = !nChat; $("nChat").textContent = nChat;
   pintaNotas(nueva);
   pintaHablantes();
   pintaTexto();
@@ -263,7 +316,7 @@ function pintaVista(nueva) {
 
 function sumaTokens(h) {
   let n = 0;
-  for (const t of h.tramos || []) if (t.uso) n += (t.uso.entrada || 0) + (t.uso.salida || 0);
+  for (const tr of h.tramos || []) if (tr.uso) n += (tr.uso.entrada || 0) + (tr.uso.salida || 0);
   for (const u of h.usoIA || []) n += (u.entrada || 0) + (u.salida || 0);
   return n;
 }
@@ -271,51 +324,52 @@ function sumaTokens(h) {
 function pintaAviso() {
   const h = actual, a = $("aviso");
   a.hidden = true;
-  a.className = "aviso";
   if (h.estado === "pendiente") {
     const r = resumenTramos(h.tramos);
-    a.className = "aviso pend";
-    a.textContent = t("bib.aviso_pendiente", r.pendientes, r.total);
-    a.hidden = false;
-  } else if (h.estado === "transcribiendo" || h.estado === "grabando") {
-    a.textContent = h.estado === "grabando" ? t("bib.aviso_grabando") : t("bib.aviso_transcribiendo", h.progreso || "");
-    a.hidden = false;
+    ponAviso(a, "atencion", escT(t("bib.aviso_pendiente", r.pendientes, r.total)), "reloj");
+  } else if (h.estado === "grabando") {
+    ponAviso(a, "error", escT(t("bib.aviso_grabando")), "grabar");
+  } else if (h.estado === "transcribiendo") {
+    ponAviso(a, "", escT(t("bib.aviso_transcribiendo", h.progreso || "")), "reloj");
   } else if (h.errorActa) {
-    a.className = "aviso pend";
-    a.textContent = t("bib.aviso_error_acta", h.errorActa);
-    a.hidden = false;
+    ponAviso(a, "atencion", escT(t("bib.aviso_error_acta", h.errorActa)));
   }
 }
 
 // --- hablantes ---
 function textoCrudo(h) {
-  return (h.tramos || []).filter((t) => t.estado === "ok").map((t) => t.texto || "").join("\n");
+  return (h.tramos || []).filter((tr) => tr.estado === "ok").map((tr) => tr.texto || "").join("\n");
 }
 function etiquetasOriginales(h) {
   return Array.isArray(h.tramos) && h.tramos.length ? hablantesDe(textoCrudo(h)) : hablantesDe(h.transcript || "");
 }
-const colorVoz = (orig, lista) => COLORES_VOZ[Math.max(0, lista.indexOf(orig)) % COLORES_VOZ.length];
+// El color de cada voz es un token del tema (--voz-0…7): se ve bien en claro y en oscuro.
+const colorVoz = (orig, lista) => `var(--voz-${Math.max(0, lista.indexOf(orig)) % 8})`;
 
 function pintaHablantes() {
   const h = actual, cont = $("hablantes");
   if (cont.querySelector("input")) return; // renombrando: no se toca
   const etiquetas = Array.isArray(h.tramos) && h.tramos.length ? etiquetasOriginales(h) : [];
-  if (!etiquetas.length) { cont.innerHTML = ""; return; }
+  if (!etiquetas.length) { cont.innerHTML = `<p class="ayudaH">${escT(t("bib.sin_hablantes"))}</p>`; return; }
   const mapa = h.hablantes || {}, auto = mapaVisible(textoCrudo(h), {});
   cont.innerHTML = etiquetas.map((o) => {
-    const nuevo = (mapa[o] || "").trim(), visible = auto[o] || o;
-    return `<span class="chipH" data-h="${escT(o)}" title="${escT(t("bib.renombrar_title"))}"><span class="punto" style="background:${colorVoz(o, etiquetas)}"></span><b>${escT(nuevo || visible)}</b>${nuevo ? `<span class="orig">(${escT(visible)})</span>` : ""} ✎</span>`;
-  }).join("") + `<span class="ayudaH">${escT(t("bib.renombrar_ayuda"))}</span>`;
+    const nuevo = (mapa[o] || "").trim(), visible = auto[o] || o, nombre = nuevo || visible;
+    return `<button class="chipH" data-h="${escT(o)}" title="${escT(t("bib.renombrar_title"))}">` +
+      `<span class="avatar" style="--c:${colorVoz(o, etiquetas)}">${escT(inicialDe(nombre))}</span>` +
+      `<span class="nom">${escT(nombre)}${nuevo ? `<span class="orig">${escT(visible)}</span>` : ""}</span>${icono("lapiz")}</button>`;
+  }).join("") + `<p class="ayudaH">${escT(t("bib.renombrar_ayuda"))}</p>`;
   cont.querySelectorAll(".chipH").forEach((chip) => { chip.onclick = () => renombrar(chip); });
 }
 
 function renombrar(chip) {
   const orig = chip.dataset.h, mapa = { ...(actual.hablantes || {}) };
   const sugeridos = (actual.participantes || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
-  chip.innerHTML = `<input value="${escT(mapa[orig] || "")}" placeholder="${escT(mapaVisible(textoCrudo(actual), {})[orig] || orig)}" list="listaNombres">` +
+  const avatar = chip.querySelector(".avatar").outerHTML;
+  chip.innerHTML = avatar + `<input class="campo" value="${escT(mapa[orig] || "")}" placeholder="${escT(mapaVisible(textoCrudo(actual), {})[orig] || orig)}" list="listaNombres">` +
     `<datalist id="listaNombres">${sugeridos.map((s) => `<option value="${escT(s)}">`).join("")}</datalist>`;
   chip.onclick = null;
   const input = chip.querySelector("input");
+  input.onclick = (e) => e.stopPropagation();
   input.focus();
   let hecho = false;
   const guardar = async (confirmar) => {
@@ -332,13 +386,16 @@ function renombrar(chip) {
     pintaHablantes();
     pintaTexto();
   };
-  input.onkeydown = (e) => { if (e.key === "Enter") guardar(true); if (e.key === "Escape") guardar(false); };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); guardar(true); }
+    if (e.key === "Escape") { e.stopPropagation(); guardar(false); }
+  };
   input.onblur = () => guardar(true);
 }
 
 async function editar(cambios) {
   const r = await aBgMsg("histEditar", { id: actual.id, cambios });
-  if (!r || !r.ok) toast("❌ " + ((r && r.error) || t("bib.no_se_pudo_guardar_punto")));
+  if (!r || !r.ok) toast((r && r.error) || t("bib.no_se_pudo_guardar_punto"), "error");
   return r;
 }
 
@@ -367,84 +424,114 @@ function lineasDeVista(h) {
       }
       if (tr.truncado) out.push({ tipo: "aviso", texto: t("bib.tramo_truncado", cab) });
     } else if (tr.estado === "mudo") out.push({ tipo: "mudo", texto: t("bib.tramo_mudo", cab) });
-    else if (tr.estado === "perdido") out.push({ tipo: "aviso", texto: `⚠️ ${cab}: ${textoError("perdido")}` });
+    else if (tr.estado === "perdido") out.push({ tipo: "aviso", texto: `${cab}: ${textoError("perdido")}` });
     else out.push({ tipo: "aviso", texto: t("bib.tramo_pendiente", cab, tr.error || "") });
   });
   return out;
 }
 
+// Las intervenciones seguidas de la misma voz van juntas, bajo un solo
+// encabezado (círculo de color, nombre y hora): así se ve dónde cambia quien habla.
 function pintaTexto() {
   const h = actual, cont = $("texto");
   if (h.estado === "error" || (!Array.isArray(h.tramos) && !h.transcript)) {
     cont.innerHTML = `<div class="md">${mdAHtml(h.transcript || t("bib.sin_texto"))}</div>`;
     $("nCoinc").textContent = "";
+    $("coincAnt").hidden = $("coincSig").hidden = true;
     return;
   }
   const re = reBusqueda($("buscarEn").value.trim());
   const etiquetas = etiquetasOriginales(h);
-  let n = 0;
-  const html = lineasDeVista(h).map((l) => {
-    if (l.tipo === "aviso") return `<div class="l aviso-l">${escT(l.texto)}</div>`;
-    if (l.tipo === "mudo") return `<div class="l mudo-l">${escT(l.texto)}</div>`;
-    let cuerpo = escT(l.texto);
-    if (re) cuerpo = cuerpo.replace(re, (m) => { n++; return `<mark>${m}</mark>`; });
-    let quien = "";
-    if (l.hablante) {
-      let nom = escT(l.hablante);
-      if (re) nom = nom.replace(re, (m) => { n++; return `<mark>${m}</mark>`; });
-      quien = `<span class="h" style="color:${colorVoz(l.orig, etiquetas)}">${nom}</span>`;
+  let n = 0, html = "", turno = null;
+  const marca = (s) => (re ? s.replace(re, (m) => { n++; return `<mark>${m}</mark>`; }) : s);
+  const cierra = () => { if (turno) { html += turno + "</div></div>"; turno = null; } };
+  let quienPrevio = undefined;
+  for (const l of lineasDeVista(h)) {
+    if (l.tipo === "aviso" || l.tipo === "mudo") {
+      cierra(); quienPrevio = undefined;
+      html += `<div class="l ${l.tipo === "aviso" ? "aviso-l" : "mudo-l"}">${icono(l.tipo === "aviso" ? "alerta" : "micro-no")}<span>${escT(l.texto)}</span></div>`;
+      continue;
     }
     const escuchable = l.t !== null && typeof l.tramo === "number" && conAudio.has(l.tramo);
-    return `<div class="l"${l.t !== null ? ` data-t="${l.t}"` : ""}${typeof l.tramo === "number" ? ` data-tramo="${l.tramo}"` : ""}>` +
-      `<span class="t${escuchable ? " play" : ""}"${escuchable ? ` title="${escT(t("bib.escuchar_title"))}"` : ""}>${l.t !== null ? formatoTiempo(l.t) : ""}</span><div>${quien}${cuerpo}</div></div>`;
-  }).join("");
-  cont.innerHTML = html || `<div class="l mudo-l">${escT(t("bib.sin_texto_aun"))}</div>`;
+    const hora = l.t !== null ? `<span class="t${escuchable ? " play" : ""}"${escuchable ? ` title="${escT(t("bib.escuchar_title"))}"` : ""}>${formatoTiempo(l.t)}</span>` : "";
+    const quien = l.hablante || "";
+    if (quien !== quienPrevio || !turno) {
+      cierra();
+      quienPrevio = quien;
+      const color = quien ? colorVoz(l.orig, etiquetas) : "var(--texto-3)";
+      turno = `<div class="turno" style="--c:${color}">` +
+        (quien ? `<span class="avatar">${escT(inicialDe(quien))}</span>` : "<span></span>") +
+        `<div class="frases">` + (quien ? `<div class="turno-cab"><span class="h">${marca(escT(quien))}</span></div>` : "");
+    }
+    turno += `<p class="l"${l.t !== null ? ` data-t="${l.t}"` : ""}${typeof l.tramo === "number" ? ` data-tramo="${l.tramo}"` : ""}>${hora}${marca(escT(l.texto))}</p>`;
+  }
+  cierra();
+  cont.innerHTML = html || `<div class="l mudo-l">${icono("reloj")}<span>${escT(t("bib.sin_texto_aun"))}</span></div>`;
   cont.querySelectorAll(".t.play").forEach((el) => {
     el.onclick = () => { const l = el.closest(".l"); suena(Number(l.dataset.tramo), Number(l.dataset.t)); };
   });
   $("nCoinc").textContent = re ? (n === 1 ? t("bib.n_coincidencia", n) : n ? t("bib.n_coincidencias", n) : t("bib.sin_coincidencias")) : "";
+  $("coincAnt").hidden = $("coincSig").hidden = !(re && n);
 }
 
+// Salta a la coincidencia siguiente (o anterior) y la marca como la actual.
+function irACoincidencia(paso) {
+  const marcas = [...$("texto").querySelectorAll("mark")];
+  if (!marcas.length) return;
+  marcas.forEach((m) => m.classList.remove("actual"));
+  marcaActual = (marcaActual + paso + marcas.length) % marcas.length;
+  marcas[marcaActual].classList.add("actual");
+  marcas[marcaActual].scrollIntoView({ block: "center", behavior: "smooth" });
+  $("nCoinc").textContent = t("bib.coinc_de", marcaActual + 1, marcas.length);
+}
 $("buscarEn").addEventListener("input", () => { marcaActual = -1; pintaTexto(); });
 $("buscarEn").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   e.preventDefault();
-  const marcas = [...$("texto").querySelectorAll("mark")];
-  if (!marcas.length) return;
-  marcas.forEach((m) => m.classList.remove("actual"));
-  marcaActual = (marcaActual + (e.shiftKey ? -1 : 1) + marcas.length) % marcas.length;
-  marcas[marcaActual].classList.add("actual");
-  marcas[marcaActual].scrollIntoView({ block: "center", behavior: "smooth" });
+  irACoincidencia(e.shiftKey ? -1 : 1);
 });
+$("coincSig").onclick = () => irACoincidencia(1);
+$("coincAnt").onclick = () => irACoincidencia(-1);
 
 // --- notas y momentos marcados ---
 function pintaNotas(nueva) {
   const h = actual, marcas = h.marcas || [];
   if (nueva || document.activeElement !== $("notas")) $("notas").value = h.notas || "";
   const partes = [];
-  if ((h.notas || "").trim()) partes.push(t("bib.con_notas"));
+  const etiquetas = Array.isArray(h.tramos) && h.tramos.length ? etiquetasOriginales(h).length : 0;
+  if (etiquetas) partes.push(t(etiquetas > 1 ? "bib.n_voces" : "bib.n_voz", etiquetas));
   if (marcas.length) partes.push(marcas.length > 1 ? t("bib.n_momentos", marcas.length) : t("bib.n_momento", marcas.length));
-  $("notasResumen").textContent = partes.length ? "· " + partes.join(" · ") : "";
-  if (nueva) $("notasBox").open = !!partes.length;
-  $("marcasLista").innerHTML = marcas.map((m, i) =>
-    `<span class="chip marca" data-i="${i}" title="${escT(t("bib.ir_momento_title"))}">⭐ ${formatoTiempo(m.t)}${m.nota ? " · " + escT(m.nota) : ""}<span class="x" data-borra="${i}" title="${escT(t("bib.quitar_title"))}">✕</span></span>`).join("");
-  $("marcasLista").querySelectorAll(".chip.marca").forEach((c) => {
-    c.onclick = (e) => {
+  if ((h.notas || "").trim()) partes.push(t("bib.con_notas"));
+  $("lateralResumen").textContent = partes.length ? "· " + partes.join(" · ") : "";
+  $("notasResumen").textContent = "";
+  $("marcasLista").innerHTML = marcas.length ? marcas.map((m, i) =>
+    `<div class="marca" role="button" tabindex="0" data-i="${i}" title="${escT(t("bib.ir_momento_title"))}">${icono("estrella")}` +
+    `<span class="tm">${formatoTiempo(m.t)}</span><span class="txt">${m.nota ? escT(m.nota) : ""}</span>` +
+    `<span class="x" data-borra="${i}" title="${escT(t("bib.quitar_title"))}" role="button" aria-label="${escT(t("bib.quitar_title"))}">${icono("cerrar")}</span></div>`).join("")
+    : `<p class="vacio-l">${escT(t("bib.sin_momentos"))}</p>`;
+  $("marcasLista").querySelectorAll(".marca").forEach((c) => {
+    const ir = (e) => {
       const i = Number(c.dataset.i);
-      if (e.target.dataset.borra !== undefined) {
+      if (e.target.closest("[data-borra]")) {
         const quedan = (actual.marcas || []).filter((_, k) => k !== i);
         editar({ marcas: quedan });
         return;
       }
       irA((actual.marcas || [])[i].t);
     };
+    c.onclick = ir;
+    c.onkeydown = (e) => { if (e.key === "Enter") ir(e); };
   });
 }
+$("btnLateral").onclick = () => {
+  const abierta = $("lateral").classList.toggle("abierta");
+  $("btnLateral").setAttribute("aria-expanded", String(abierta));
+};
 
 // Lleva a la primera intervención que empieza en ese minuto o después.
-function irA(t) {
+function irA(seg) {
   const lineas = [...$("texto").querySelectorAll(".l[data-t]")];
-  const destino = lineas.find((l) => Number(l.dataset.t) >= t) || lineas[lineas.length - 1];
+  const destino = lineas.find((l) => Number(l.dataset.t) >= seg) || lineas[lineas.length - 1];
   if (!destino) return;
   destino.scrollIntoView({ block: "center", behavior: "smooth" });
   destino.classList.add("destacada");
@@ -460,7 +547,10 @@ $("notas").addEventListener("change", () => {
 // --- pestañas ---
 document.querySelectorAll(".pestanas button").forEach((b) => {
   b.onclick = () => {
-    document.querySelectorAll(".pestanas button").forEach((x) => x.classList.toggle("activa", x === b));
+    document.querySelectorAll(".pestanas button").forEach((x) => {
+      x.classList.toggle("activa", x === b);
+      x.setAttribute("aria-selected", String(x === b));
+    });
     for (const p of ["texto", "acta", "preguntar"]) $("p-" + p).hidden = p !== b.dataset.p;
     if (b.dataset.p === "preguntar") $("pregunta").focus();
   };
@@ -481,17 +571,17 @@ function descargar(datos, tipo, nombre) {
   const url = URL.createObjectURL(new Blob([datos], { type: tipo }));
   const fin = () => setTimeout(() => URL.revokeObjectURL(url), 60000);
   if (chrome.downloads) {
-    chrome.downloads.download({ url, filename: "reuniones/" + nombre, saveAs: false }, () => { fin(); toast(t("bib.guardado_en", nombre)); });
+    chrome.downloads.download({ url, filename: "reuniones/" + nombre, saveAs: false }, () => { fin(); toast(t("bib.guardado_en", nombre), "ok"); });
   } else {
     const a = document.createElement("a");
     a.href = url; a.download = nombre; a.click(); fin();
   }
 }
 
-$("btnExportar").onclick = (e) => { e.stopPropagation(); $("menuExportar").hidden = !$("menuExportar").hidden; };
+conMenu($("btnExportar"), $("menuExportar"));
+conMenu($("btnMas"), $("menuMas"));
 $("menuExportar").querySelectorAll("button").forEach((b) => {
-  b.onclick = () => {
-    $("menuExportar").hidden = true;
+  b.addEventListener("click", () => {
     const h = actual, md = mdTranscripcion(h), base = "reunion_" + baseFichero(h);
     const cuerpo = md.replace(/^# .*\n+/, "");
     if (b.dataset.fmt === "docx") descargar(docx(h.titulo || t("com.reunion"), cuerpo), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", base + ".docx");
@@ -499,10 +589,10 @@ $("menuExportar").querySelectorAll("button").forEach((b) => {
     else if (b.dataset.fmt === "txt") descargar(textoPlano(md), "text/plain;charset=utf-8", base + ".txt");
     else if (b.dataset.fmt === "srt") {
       const s = srt(aplicarHablantes(textoCrudo(h), mapaVisible(textoCrudo(h), h.hablantes)));
-      if (!s) { toast(t("bib.srt_sin_tiempos")); return; }
+      if (!s) { toast(t("bib.srt_sin_tiempos"), "atencion"); return; }
       descargar(s, "application/x-subrip;charset=utf-8", base + ".srt");
     } else if (b.dataset.fmt === "pdf") imprimir("imprimeTexto");
-  };
+  });
 });
 
 function imprimir(clase) {
@@ -513,30 +603,24 @@ function imprimir(clase) {
 
 $("btnCopiar").onclick = async () => {
   await navigator.clipboard.writeText(textoPlano(mdTranscripcion(actual)));
-  toast(t("bib.transcripcion_copiada"));
+  toast(t("bib.transcripcion_copiada"), "ok");
 };
 
 $("btnReintentar").onclick = async () => {
-  $("btnReintentar").disabled = true;
   const r = await aBgMsg("reintentar", { id: actual.id });
-  $("btnReintentar").disabled = false;
-  toast(r && r.ok ? t("bib.reintentando") : "❌ " + ((r && r.error) || t("bib.no_se_pudo_reintentar")));
+  if (r && r.ok) toast(t("bib.reintentando"));
+  else toast((r && r.error) || t("bib.no_se_pudo_reintentar"), "error");
 };
 
 // Borrar es irreversible: se pregunta siempre, y el audio de respaldo aparte.
-$("btnBorrar").onclick = () => {
-  const caja = $("confirmaBorrar"), h = actual, nAudio = (h.filesAudio || []).length;
-  caja.hidden = false;
-  const cbTexto = nAudio > 1 ? t("bib.borrar_audio_n", nAudio) : t("bib.borrar_audio_1", nAudio);
-  caja.innerHTML = t("bib.borrar_pregunta_html") +
-    (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" id="cbAudio" checked> ${escT(cbTexto)}</label>` : "") +
-    `<div class="acciones"><button id="siBorrar" class="principal">${escT(t("bib.si_borrar"))}</button><button id="noBorrar">${escT(t("bib.cancelar"))}</button></div>`;
-  $("noBorrar").onclick = () => { caja.hidden = true; };
-  $("siBorrar").onclick = async () => {
-    const cb = $("cbAudio");
-    await aBgMsg("borrar", { ids: [h.id], conAudio: !!(cb && cb.checked) });
-    caja.hidden = true;
-  };
+$("btnBorrar").onclick = async () => {
+  const h = actual, nAudio = (h.filesAudio || []).length;
+  const r = await confirmar($("confirmaBorrar"), {
+    html: t("bib.borrar_pregunta_html"),
+    casilla: nAudio ? (nAudio > 1 ? t("bib.borrar_audio_n", nAudio) : t("bib.borrar_audio_1", nAudio)) : "",
+    si: t("bib.si_borrar"), no: t("bib.cancelar"),
+  });
+  if (r.si) await aBgMsg("borrar", { ids: [h.id], conAudio: r.casilla });
 };
 
 // ---------------------------------------------------------------------------------
@@ -555,6 +639,7 @@ function pintaSelectores() {
     const conClave = PROVEEDORES.filter(([, , c]) => cfg[c]).map(([k]) => k);
     sel.value = conClave.includes(prev) ? prev : (conClave.includes(cfg.autoActaProv) ? cfg.autoActaProv : conClave[0] || "gemini");
   }
+  if (actual) pintaActas();
 }
 
 // El nombre de cada plantilla en el idioma de la interfaz: lo da ia.js
@@ -573,41 +658,62 @@ function pintaActas() {
   const h = actual, claves = Object.keys(h.analisis || {});
   if (actaSel && !claves.includes(actaSel)) actaSel = null;
   if (!actaSel && claves.length) actaSel = claves[claves.length - 1];
-  $("actas").innerHTML = claves.map((k) => `<button class="chip${k === actaSel ? " activa" : ""}" data-k="${escT(k)}">${escT(etiquetaAnalisis(k))}</button>`).join("");
-  $("actas").querySelectorAll(".chip").forEach((c) => { c.onclick = () => { actaSel = c.dataset.k; pintaActas(); }; });
-  $("actaVista").innerHTML = actaSel ? mdAHtml(h.analisis[actaSel]) : "";
-  $("accionesActa").hidden = !actaSel;
   const hayTexto = ["ok", "pendiente"].includes(h.estado) && textoDe(h).trim();
-  $("btnGenerar").disabled = !hayTexto;
-  if (!hayTexto && !$("estadoActa").textContent) $("estadoActa").textContent = h.estado === "error" ? t("bib.acta_sin_transcripcion") : "";
+  $("btnGenerar").disabled = !hayTexto || generando;
+  if (!hayTexto && !$("estadoActa").textContent && h.estado === "error") ponEstado($("estadoActa"), t("bib.acta_sin_transcripcion"), "atencion");
+
+  // Sin actas todavía: las plantillas como tarjetas, que dicen qué saca cada una.
+  const vacio = $("plantillasVacio");
+  vacio.hidden = claves.length > 0 || generando;
+  if (!vacio.hidden) {
+    vacio.innerHTML = Object.keys(PLANTILLAS).map((k) => {
+      const sinTexto = k === "personalizada" && !(cfg.plantillaPersonalizada || "").trim();
+      return `<button class="plantilla" data-k="${k}"${!hayTexto || sinTexto ? " disabled" : ""}>` +
+        `<span class="ic">${icono(ICONO_PLANTILLA[k] || "documento")}</span><b>${escT(nombrePlantilla(k))}</b>` +
+        `<span>${escT(sinTexto ? t("bib.creala_en_opciones") : (DESC_PLANTILLA[k] || DESC_PLANTILLA.acta)())}</span></button>`;
+    }).join("");
+    vacio.querySelectorAll(".plantilla").forEach((b) => {
+      b.onclick = () => { $("plantilla").value = b.dataset.k; generar(); };
+    });
+  }
+
+  $("actas").innerHTML = claves.length > 1 || generando ? claves.map((k) => `<button class="chip${k === actaSel ? " activa" : ""}" data-k="${escT(k)}">${icono(ICONO_PLANTILLA[k.split("·")[0]] || "documento")}${escT(etiquetaAnalisis(k))}</button>`).join("") : "";
+  $("actas").querySelectorAll(".chip").forEach((c) => { c.onclick = () => { actaSel = c.dataset.k; pintaActas(); }; });
+  $("documentoActa").hidden = !actaSel && !generando;
+  $("accionesActa").hidden = !actaSel || generando;
+  if (generando) $("actaVista").innerHTML = '<div class="esqueleto"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>';
+  else $("actaVista").innerHTML = actaSel ? mdAHtml(h.analisis[actaSel]) : "";
 }
 
-$("btnGenerar").onclick = async () => {
+$("btnGenerar").onclick = () => generar();
+async function generar() {
   const h = actual, plantilla = $("plantilla").value, prov = $("provActa").value;
-  $("btnGenerar").disabled = true;
-  $("estadoActa").textContent = t("bib.generando", nombrePlantilla(plantilla), nombreProv(prov));
+  if (generando) return;
+  generando = true;
+  ponEstado($("estadoActa"), t("bib.generando", nombrePlantilla(plantilla), nombreProv(prov)));
+  pintaActas();
   try {
-    const r = await analizarReunion(h, plantilla, prov, cfg, { alEstado: (t) => { $("estadoActa").textContent = t; } });
+    const r = await analizarReunion(h, plantilla, prov, cfg, { alEstado: (txt) => ponEstado($("estadoActa"), sinEmoji(txt)) });
     const g = await aBgMsg("histAnalisis", { id: h.id, clave: r.clave, texto: r.texto, uso: r.uso });
     actaSel = r.clave;
     if (g && g.ok) {
-      $("estadoActa").textContent = t("bib.acta_guardada");
+      ponEstado($("estadoActa"), t("bib.acta_guardada"), "ok");
     } else {
       // Ya está hecho y pagado: se enseña aunque no se haya podido guardar.
       actual = { ...h, analisis: { ...(h.analisis || {}), [r.clave]: r.texto } };
-      $("estadoActa").textContent = t("bib.acta_no_guardada", (g && g.error) || t("bib.no_se_pudo_guardar"));
+      ponEstado($("estadoActa"), t("bib.acta_no_guardada", (g && g.error) || t("bib.no_se_pudo_guardar")), "atencion");
     }
-    pintaActas();
   } catch (e) {
-    $("estadoActa").textContent = "❌ " + ((e && e.message) || e);
+    ponEstado($("estadoActa"), sinEmoji((e && e.message) || e), "err");
   } finally {
-    $("btnGenerar").disabled = false;
+    generando = false;
+    if (actual) pintaActas();
   }
-};
+}
 
 const textoActa = () => actual.analisis[actaSel] || "";
 const nombreActa = () => `${actaSel.replace("·", "_")}_${baseFichero(actual)}`;
-$("actaCopiar").onclick = async () => { await navigator.clipboard.writeText(textoPlano(textoActa())); toast(t("bib.copiado")); };
+$("actaCopiar").onclick = async () => { await navigator.clipboard.writeText(textoPlano(textoActa())); toast(t("bib.copiado"), "ok"); };
 $("actaMd").onclick = () => descargar(textoActa(), "text/markdown;charset=utf-8", nombreActa() + ".md");
 $("actaWord").onclick = () => descargar(docx(`${etiquetaAnalisis(actaSel)} — ${actual.titulo || t("com.reunion")}`, textoActa()),
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", nombreActa() + ".docx");
@@ -621,10 +727,10 @@ $("actaCorreo").onclick = async () => {
       "text/html": new Blob([html], { type: "text/html" }),
       "text/plain": new Blob([textoPlano(textoActa())], { type: "text/plain" }),
     })]);
-    toast(t("bib.copiado_formato"));
+    toast(t("bib.copiado_formato"), "ok");
   } catch (_) {
     await navigator.clipboard.writeText(textoPlano(textoActa()));
-    toast(t("bib.copiado_texto"));
+    toast(t("bib.copiado_texto"), "ok");
   }
 };
 
@@ -632,11 +738,17 @@ $("actaCorreo").onclick = async () => {
 // preguntar a la reunión
 function pintaChat() {
   const chat = actual.chat || [];
-  $("chat").innerHTML = chat.map((m) => {
+  let html = chat.map((m) => {
     const hora = m.fecha ? new Date(m.fecha).toLocaleTimeString(LOCALE_UI(), { hour: "2-digit", minute: "2-digit" }) : "";
-    return `<div class="burbuja p">${escT(m.p)}</div><div class="burbuja r">${mdAHtml(m.r)}<div class="quien">${escT(nombreProv(m.prov))}${hora ? " · " + hora : ""}</div></div>`;
+    return `<div class="burbuja p">${escT(m.p)}</div><div class="burbuja r"><div class="md">${mdAHtml(m.r)}</div><div class="quien">${icono("chispas")}${escT(nombreProv(m.prov))}${hora ? " · " + hora : ""}</div></div>`;
   }).join("");
-  $("sugerencias").hidden = chat.length > 0;
+  // La pregunta en curso, con los puntos de «pensando», mientras llega la respuesta.
+  if (preguntando && preguntando.id === actual.id) {
+    html += `<div class="burbuja p">${escT(preguntando.q)}</div><div class="burbuja r pensando" aria-label="${escT(t("bib.pensando"))}"><i></i><i></i><i></i></div>`;
+  }
+  $("chat").innerHTML = html;
+  $("chatVacio").hidden = !!html;
+  if (html) $("chat").lastElementChild.scrollIntoView({ block: "nearest" });
 }
 
 $("sugerencias").querySelectorAll("button").forEach((b) => {
@@ -646,41 +758,32 @@ $("sugerencias").querySelectorAll("button").forEach((b) => {
 $("formPregunta").onsubmit = async (e) => {
   e.preventDefault();
   const q = $("pregunta").value.trim();
-  if (!q || !actual) return;
-  const h = actual, prov = $("provChat").value, boton = $("formPregunta").querySelector("button");
+  if (!q || !actual || preguntando) return;
+  const h = actual, prov = $("provChat").value, boton = $("btnPreguntar");
   boton.disabled = true;
-  $("estadoChat").textContent = t("bib.chat_leyendo", nombreProv(prov));
+  preguntando = { id: h.id, q };
+  $("pregunta").value = "";
+  ponEstado($("estadoChat"), t("bib.chat_leyendo", nombreProv(prov)));
+  pintaChat();
   try {
-    const r = await preguntarReunion(h, q, prov, cfg, { alEstado: (t) => { $("estadoChat").textContent = t; } });
+    const r = await preguntarReunion(h, q, prov, cfg, { alEstado: (txt) => ponEstado($("estadoChat"), sinEmoji(txt)) });
+    preguntando = null;
     const g = await aBgMsg("histChat", { id: h.id, mensaje: { p: q, r: r.texto, prov, uso: r.uso } });
     if (!g || !g.ok) {
       actual = { ...h, chat: [...(h.chat || []), { p: q, r: r.texto, prov, fecha: Date.now() }] };
       pintaChat();
-      $("estadoChat").textContent = "⚠️ " + ((g && g.error) || t("bib.chat_no_guardada"));
+      ponEstado($("estadoChat"), (g && g.error) || t("bib.chat_no_guardada"), "atencion");
     } else {
-      $("estadoChat").textContent = "";
+      $("estadoChat").innerHTML = "";
     }
-    $("pregunta").value = "";
   } catch (err) {
-    $("estadoChat").textContent = "❌ " + ((err && err.message) || err);
+    preguntando = null;
+    $("pregunta").value = q; // que no se pierda lo escrito
+    if (actual) pintaChat();
+    ponEstado($("estadoChat"), sinEmoji((err && err.message) || err), "err");
   } finally {
+    preguntando = null;
     boton.disabled = false;
     $("pregunta").focus();
   }
 };
-
-// ---------------------------------------------------------------------------------
-let toastTimer = null;
-function toast(texto) {
-  let t = document.querySelector(".toast");
-  if (!t) {
-    t = document.createElement("div");
-    t.className = "toast";
-    t.style.cssText = "position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#2b2229;color:#fff;padding:10px 16px;border-radius:10px;font-size:13.5px;box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:20;max-width:80vw";
-    document.body.appendChild(t);
-  }
-  t.textContent = texto;
-  t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 3500);
-}

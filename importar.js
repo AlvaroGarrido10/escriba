@@ -42,9 +42,9 @@ function ponFicheros(lista) {
   $("lista").innerHTML = "";
   for (const f of ficheros) {
     const li = document.createElement("li");
-    li.innerHTML = "<span></span><span></span>";
-    li.children[0].textContent = "🎧 " + f.name;
-    li.children[1].textContent = mb(f.size);
+    li.innerHTML = icono("archivo-audio") + '<span class="nom"></span><span class="tam"></span>';
+    li.querySelector(".nom").textContent = f.name;
+    li.querySelector(".tam").textContent = mb(f.size);
     $("lista").appendChild(li);
   }
   $("titulo").value = sinExtension(ficheros[0].name);
@@ -176,29 +176,25 @@ function muestraResultado(h) {
   $("formulario").hidden = true;
   const caja = $("resultadoTxt");
   if (h.estado === "ok") {
-    caja.className = "aviso ok";
-    caja.textContent = t("imp.listaOk");
+    ponAviso(caja, "ok", escapa(t("imp.listaOk")));
   } else if (h.estado === "pendiente") {
     const r = resumenTramos(h.tramos);
-    caja.className = "aviso pend";
-    caja.textContent = r.total === 1 ? t("imp.pendienteUno") : t("imp.pendienteVarios", r.pendientes, r.total);
+    ponAviso(caja, "atencion", escapa(r.total === 1 ? t("imp.pendienteUno") : t("imp.pendienteVarios", r.pendientes, r.total)), "reloj");
   } else {
-    caja.className = "aviso err";
-    caja.textContent = t("imp.fallo");
+    ponAviso(caja, "error", escapa(t("imp.fallo")));
   }
   $("texto").value = h.transcript;
 }
 
 function pintaProgreso(txt, fraccion) {
   $("progreso").hidden = false;
-  $("progresoTxt").textContent = txt;
+  $("progresoTxt").innerHTML = icono("ondas") + `<span>${escapa(txt)}</span>`;
   $("progresoBarra").style.width = Math.round(Math.max(0.03, Math.min(1, fraccion)) * 100) + "%";
 }
 function muestraError(txt) {
   $("progreso").hidden = true;
   $("resultado").hidden = false;
-  $("resultadoTxt").className = "aviso err";
-  $("resultadoTxt").textContent = "❌ " + txt;
+  ponAviso($("resultadoTxt"), "error", escapa(txt));
   $("texto").hidden = true;
   $("btnCopiar").hidden = true;
 }
@@ -210,8 +206,8 @@ function ocultaAvisos() {
 
 $("btnCopiar").onclick = async () => {
   await navigator.clipboard.writeText($("texto").value);
-  $("btnCopiar").textContent = t("imp.copiado");
-  setTimeout(() => { $("btnCopiar").textContent = t("imp.copiar"); }, 1500);
+  $("btnCopiar").innerHTML = icono("check") + `<span>${escapa(t("imp.copiado"))}</span>`;
+  setTimeout(() => { $("btnCopiar").innerHTML = icono("copiar") + `<span>${escapa(t("imp.copiar"))}</span>`; }, 1500);
 };
 $("btnNuevo").onclick = () => {
   ficheros = [];

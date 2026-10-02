@@ -2,100 +2,107 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<style>
-  :root { --vino: #5d2a42; --vino2: #7c3a58; }
-  body { font-family: "Segoe UI", Arial, sans-serif; width: 360px; margin: 0; background: #faf7f9; color: #222; }
-  header { background: var(--vino); color: #fff; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
-  header b { font-size: 14px; }
-  header a { color: #f0d9e4; font-size: 11px; text-decoration: none; cursor: pointer; }
-  main { padding: 12px; }
-  .modo { display: flex; gap: 6px; margin-bottom: 10px; }
-  .modo label { flex: 1; border: 2px solid #ddd; border-radius: 8px; padding: 7px 4px; text-align: center; cursor: pointer; font-size: 11px; background: #fff; }
-  .modo input { display: none; }
-  .modo label.sel { border-color: var(--vino); background: #f7edf2; font-weight: 600; }
-  #btnRec { width: 100%; padding: 13px; font-size: 15px; border: none; border-radius: 10px; cursor: pointer; color: #fff; background: var(--vino); }
-  #btnRec.grabando { background: #c0392b; animation: pulso 1.6s infinite; }
-  @keyframes pulso { 50% { opacity: .75; } }
-  #timer { text-align: center; font-size: 22px; font-variant-numeric: tabular-nums; margin: 6px 0 2px; color: var(--vino); }
-  #estado { text-align: center; min-height: 18px; font-size: 12px; color: #555; margin-bottom: 6px; }
-  h3 { font-size: 12px; color: var(--vino); margin: 12px 0 6px; border-bottom: 1px solid #e5d5dd; padding-bottom: 3px; }
-  .item { background: #fff; border: 1px solid #e2d5db; border-radius: 8px; padding: 8px; margin-bottom: 6px; font-size: 12px; }
-  .item .tit { font-weight: 600; margin-bottom: 2px; }
-  .item .fec { color: #888; font-size: 11px; }
-  .item .acc { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-  .item .acc button { font-size: 10.5px; padding: 4px 7px; border: 1px solid var(--vino); background: #fff; color: var(--vino); border-radius: 6px; cursor: pointer; }
-  .item .acc button:hover { background: #f7edf2; }
-  .item .texto textarea { width: 100%; height: 160px; margin-top: 6px; padding: 6px; font-size: 11px; line-height: 1.4; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; resize: vertical; font-family: inherit; }
-  .item .acc button.ia { border-color: #2e5f7d; color: #2e5f7d; }
-  #detalle .acc button { font-size: 10.5px; padding: 5px 8px; border: 1px solid var(--vino); background: #fff; color: var(--vino); border-radius: 6px; cursor: pointer; }
-  #detalle .acc button:hover { background: #f7edf2; }
-  #detalle .acc button.ia { border-color: #2e5f7d; color: #2e5f7d; }
-  #detalle .acc button.ia:hover { background: #eef4f8; }
-  #detalle { display: none; }
-  #detalle textarea { width: 100%; height: 150px; font-size: 11px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
-  #detalle .volver { margin: 6px 0; font-size: 11px; color: var(--vino); cursor: pointer; }
-  .badge-estado { font-size: 10px; padding: 1px 6px; border-radius: 6px; }
-  .ok { background: #cdeacc; } .err { background: #f5c6cb; } .proc { background: #fff3b8; }
-  .pend { background: #ffe0b8; color: #7a4a00; } .rec { background: #fbd3d0; color: #a3261b; }
-  .item .nota { font-size: 10.5px; color: #7a4a00; margin-top: 3px; line-height: 1.35; }
-  .item .acc button:disabled { opacity: .6; cursor: default; }
-  .herr { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
-  .ctl { flex: 1; font-size: 11.5px; padding: 6px 4px; border: 1px solid var(--vino); background: #fff; color: var(--vino); border-radius: 7px; cursor: pointer; }
-  .ctl:hover { background: #f7edf2; }
-  #timer.pausa { color: #7b6b73; }
-  .herr button { font-size: 11px; padding: 5px 10px; border: 1px solid #bbb; background: #fff; color: #555; border-radius: 6px; cursor: pointer; }
-  .herr button:hover { background: #f4f0f2; }
-</style>
+<script src="i18n.js"></script><script src="ui.js"></script>
+<link rel="stylesheet" href="estilo.css">
+<link rel="stylesheet" href="popup.css">
 </head>
 <body>
-<header>
-  <b style="display:flex;align-items:center;gap:7px"><img src="icon32.png" alt="" style="width:20px;height:20px">Escriba</b>
-  <span style="display:flex;gap:10px"><a id="lnkBiblio" title="Leer, exportar y sacar actas" data-i18n="pop.reuniones" data-i18n-title="pop.reunionesTitle">📚 Reuniones</a><a id="lnkOpc" data-i18n="pop.opciones">⚙️ Opciones</a></span>
+<header class="cab">
+  <span class="logo"><img src="icon32.png" alt="">Escriba</span>
+  <nav class="cab-acciones">
+    <button id="lnkBiblio" class="btn btn-fantasma btn-peq" title="Leer, exportar y sacar actas" data-i18n-title="pop.reunionesTitle"><svg class="i" aria-hidden="true"><use href="iconos.svg#libro"></use></svg><span data-i18n="pop.reuniones">Reuniones</span></button>
+    <button id="lnkOpc" class="btn btn-fantasma btn-peq btn-icono" title="Opciones" aria-label="Opciones" data-i18n-title="pop.opciones" data-i18n-aria-label="pop.opciones"><svg class="i" aria-hidden="true"><use href="iconos.svg#ajustes"></use></svg></button>
+  </nav>
 </header>
+
 <main>
-  <div id="panelGrabar">
-    <div id="avisoMic" style="display:none;font-size:11px;line-height:1.4;background:#fff4e5;border:1px solid #f0c48a;color:#7a4a00;border-radius:6px;padding:7px 9px;margin-bottom:8px">
-      ⚠️ <b data-i18n="pop.micNoAutorizado">El micrófono no está autorizado.</b> <span id="avisoMicTxt" data-i18n="pop.micSoloPestana">Solo se grabará la pestaña: tu voz no saldrá en la transcripción.</span>
-      <div style="text-align:center;margin-top:6px"><button id="btnArreglaMic" style="font-size:11px;padding:4px 9px;border:1px solid #d09a4a;background:#fff;color:#7a4a00;border-radius:5px;cursor:pointer" data-i18n="pop.autorizarMic">Autorizar micrófono</button></div>
-    </div>
-    <div class="modo">
-      <label id="lblTab"><input type="radio" name="modo" value="tab_mic" checked><span data-i18n="pop.modoTabMic">🖥️+🎙️ Pestaña + micro</span></label>
-      <label><input type="radio" name="modo" value="mic"><span data-i18n="pop.modoMic">🎙️ Solo micro</span></label>
-    </div>
-    <input id="participantes" maxlength="400" placeholder="👥 Participantes (opcional): Marcos, Ana…" title="Ayuda a poner nombre a cada voz y a sacar el acta" data-i18n-placeholder="pop.participantesPh" data-i18n-title="pop.participantesTitle" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #ddd;border-radius:8px;font-size:11.5px;margin-bottom:8px">
-    <button id="btnRec" data-i18n="pop.empezar">⏺ Empezar a grabar</button>
-    <div id="controles" style="display:none;gap:6px;margin-top:6px">
-      <button id="btnPausa" class="ctl" data-i18n="pop.pausar">⏸ Pausar</button>
-      <button id="btnMarca" class="ctl" title="Marca este momento (Alt+Shift+M): saldrá en la transcripción y el acta lo tendrá en cuenta" data-i18n="pop.marcar" data-i18n-title="pop.marcarTitle">⭐ Marcar</button>
-      <button id="btnVivo" class="ctl" title="Panel lateral con el texto que va llegando, niveles y notas" data-i18n="pop.vivo" data-i18n-title="pop.vivoTitle">🪟 En vivo</button>
-    </div>
-    <div id="altavoz" style="display:none;font-size:11px;text-align:center;margin-top:6px">
-      <a id="btnAltavoz" style="color:#8c3b57;cursor:pointer" data-i18n="pop.altavozBoton">🔊 ¿No oyes la reunión? Prueba la otra forma</a>
-      <div id="estadoAltavoz" style="color:#6d5f66;margin-top:2px"></div>
-    </div>
-    <div id="timer">00:00</div>
-    <div id="estado"></div>
-    <div style="font-size:10.5px;color:#999;text-align:center"><span data-i18n="pop.puedesCerrar">Puedes cerrar este panel: la grabación sigue (verás 🔴 REC en el icono).</span><span id="atajo"></span></div>
-    <div id="avisoRgpd" style="display:none;font-size:10.5px;line-height:1.35;color:#6d5f66;background:#f4f0f2;border-radius:6px;padding:5px 8px;margin-top:6px">
-      <span data-i18n="pop.avisaAsistentes">🔔 Avisa a los asistentes de que grabas la reunión.</span> <a id="ocultaRgpd" style="color:#8c3b57;cursor:pointer" data-i18n="pop.noVolverMostrar">No volver a mostrar</a>
-    </div>
-    <div class="herr">
-      <button id="btnImportar" title="Transcribir una grabación que ya tienes en el ordenador" data-i18n="pop.importar" data-i18n-title="pop.importarTitle">📂 Transcribir un archivo</button>
-      <button id="btnDiag" data-i18n="pop.diagnostico">🩺 Diagnóstico</button>
-    </div>
-    <pre id="diag" style="display:none;background:#2b2229;color:#e8dfe4;font-size:10.5px;padding:8px;border-radius:6px;white-space:pre-wrap;margin-top:6px;max-height:220px;overflow:auto"></pre>
+  <!-- Sin clave: lo primero es configurar. -->
+  <section id="panelConfig" class="bienvenida" hidden>
+    <div class="ilus"><svg class="i" aria-hidden="true"><use href="iconos.svg#llave"></use></svg></div>
+    <h2 data-i18n="pop.bienvenidaTitulo">Configura Escriba en un minuto</h2>
+    <p data-i18n="pop.bienvenidaTexto">Pega tu clave gratuita de Google Gemini y permite el micrófono. Después, un clic y a grabar.</p>
+    <button id="btnConfigurar" class="btn btn-primario btn-grande btn-bloque"><svg class="i" aria-hidden="true"><use href="iconos.svg#ajustes"></use></svg><span data-i18n="pop.configurarAhora">Configurar ahora</span></button>
+  </section>
 
-    <h3 style="display:flex;align-items:center;justify-content:space-between">
-      <span data-i18n="pop.historial">Historial</span>
-      <button id="btnBorrarTodo" style="font-size:10.5px;font-weight:400;padding:3px 8px;border:1px solid #d3b3bf;background:#fff;color:#8c3b57;border-radius:5px;cursor:pointer" data-i18n="pop.borrarTodo">🗑 Borrar todo</button>
-    </h3>
-    <div id="confirmaTodo" style="display:none;font-size:11px;line-height:1.45;background:#fdecef;border:1px solid #e6a9ba;color:#7d2d43;border-radius:6px;padding:8px 9px;margin-bottom:8px"></div>
-    <div id="listo" style="display:none;font-size:11.5px;line-height:1.4;background:#eef8ee;border:1px solid #b9dfb8;color:#1f5b22;border-radius:6px;padding:7px 9px;margin-bottom:8px"></div>
+  <section id="panelGrabar">
+    <div id="avisoMic" class="aviso atencion" hidden>
+      <svg class="i" aria-hidden="true"><use href="iconos.svg#micro-no"></use></svg>
+      <div class="cuerpo"><b data-i18n="pop.micNoAutorizado">El micrófono no está autorizado.</b> <span id="avisoMicTxt" data-i18n="pop.micSoloPestana">Solo se grabará la pestaña: tu voz no saldrá en la transcripción.</span>
+        <div><button id="btnArreglaMic" class="enlace" data-i18n="pop.autorizarMic">Autorizar micrófono</button></div>
+      </div>
+    </div>
+
+    <!-- Antes de grabar: qué se graba y con quién. -->
+    <div id="preparar" class="bloque">
+      <div class="segmentado modo" role="radiogroup">
+        <label id="lblTab"><input type="radio" name="modo" value="tab_mic" checked><svg class="i" aria-hidden="true"><use href="iconos.svg#pestana"></use></svg><span data-i18n="pop.modoTabMic">Pestaña + micro</span></label>
+        <label><input type="radio" name="modo" value="mic"><svg class="i" aria-hidden="true"><use href="iconos.svg#micro"></use></svg><span data-i18n="pop.modoMic">Solo micro</span></label>
+      </div>
+      <div id="objetivo" class="objetivo"></div>
+      <label class="campo-icono">
+        <svg class="i" aria-hidden="true"><use href="iconos.svg#personas"></use></svg>
+        <input id="participantes" class="campo" maxlength="400" placeholder="Participantes (opcional): Marcos, Ana…" title="Ayuda a poner nombre a cada voz y a sacar el acta" data-i18n-placeholder="pop.participantesPh" data-i18n-title="pop.participantesTitle">
+      </label>
+    </div>
+
+    <!-- Grabando: el reloj, los niveles y los controles. -->
+    <div id="enVivo" class="bloque en-vivo" hidden>
+      <div class="reloj-caja">
+        <div class="estado-rec"><span class="punto"></span><span id="estadoRec" data-i18n="pop.grabando">Grabando</span></div>
+        <div id="timer" class="reloj mono">00:00</div>
+        <div id="queGraba" class="que-graba"></div>
+      </div>
+      <div id="niveles" class="niveles"></div>
+      <div id="controles" class="controles">
+        <button id="btnPausa" class="btn"><svg class="i" aria-hidden="true"><use href="iconos.svg#pausa"></use></svg><span data-i18n="pop.pausar">Pausar</span></button>
+        <button id="btnMarca" class="btn" title="Marca este momento (Alt+Shift+M): saldrá en la transcripción y el acta lo tendrá en cuenta" data-i18n-title="pop.marcarTitle"><svg class="i" aria-hidden="true"><use href="iconos.svg#estrella"></use></svg><span data-i18n="pop.marcar">Marcar</span></button>
+        <button id="btnVivo" class="btn" title="Panel lateral con el texto que va llegando, niveles y notas" data-i18n-title="pop.vivoTitle"><svg class="i" aria-hidden="true"><use href="iconos.svg#panel"></use></svg><span data-i18n="pop.vivo">En vivo</span></button>
+      </div>
+    </div>
+
+    <button id="btnRec" class="btn btn-primario btn-grande btn-bloque"><svg class="i" aria-hidden="true"><use href="iconos.svg#grabar"></use></svg><span data-i18n="pop.empezar">Empezar a grabar</span></button>
+    <div id="estado" class="linea-estado" role="status"></div>
+    <div id="altavoz" class="altavoz" hidden>
+      <button id="btnAltavoz" class="enlace discreto"><svg class="i" aria-hidden="true"><use href="iconos.svg#altavoz"></use></svg><span data-i18n="pop.altavozBoton">¿No oyes la reunión? Prueba la otra forma</span></button>
+      <div id="estadoAltavoz" class="suave"></div>
+    </div>
+    <p class="pista"><span data-i18n="pop.puedesCerrar">Puedes cerrar este panel: la grabación sigue y el icono muestra REC.</span><span id="atajo"></span></p>
+    <div id="avisoRgpd" class="rgpd" hidden>
+      <svg class="i" aria-hidden="true"><use href="iconos.svg#campana"></use></svg>
+      <span data-i18n="pop.avisaAsistentes">Avisa a los asistentes de que grabas la reunión.</span>
+      <button id="ocultaRgpd" class="btn btn-fantasma btn-icono btn-peq" title="No volver a mostrar" aria-label="No volver a mostrar" data-i18n-title="pop.noVolverMostrar" data-i18n-aria-label="pop.noVolverMostrar"><svg class="i" aria-hidden="true"><use href="iconos.svg#cerrar"></use></svg></button>
+    </div>
+  </section>
+
+  <section id="diagCaja" class="diag" hidden>
+    <div class="diag-cab">
+      <span class="diag-tit"><svg class="i" aria-hidden="true"><use href="iconos.svg#pulso"></use></svg><span data-i18n="pop.diagnostico">Diagnóstico</span></span>
+      <span>
+        <button id="diagCopiar" class="btn btn-fantasma btn-peq"><svg class="i" aria-hidden="true"><use href="iconos.svg#copiar"></use></svg><span data-i18n="pop.copiar">Copiar</span></button>
+        <button id="diagCerrar" class="btn btn-fantasma btn-peq btn-icono" title="Cerrar" aria-label="Cerrar" data-i18n-title="ui.cerrar" data-i18n-aria-label="ui.cerrar"><svg class="i" aria-hidden="true"><use href="iconos.svg#cerrar"></use></svg></button>
+      </span>
+    </div>
+    <pre id="diag"></pre>
+  </section>
+
+  <section class="recientes">
+    <div class="titulo-seccion">
+      <h2 data-i18n="pop.historial">Recientes</h2>
+      <button id="btnVerTodas" class="enlace"><span data-i18n="pop.verTodas">Ver todas</span><svg class="i" aria-hidden="true"><use href="iconos.svg#derecha"></use></svg></button>
+    </div>
+    <div id="confirmaTodo" hidden></div>
+    <div id="listo" hidden></div>
     <div id="historial"></div>
-  </div>
-
+  </section>
 </main>
-<script src="i18n.js"></script><script src="config.js"></script>
+
+<footer class="pie">
+  <button id="btnImportar" class="btn btn-fantasma btn-peq" title="Transcribir una grabación que ya tienes en el ordenador" data-i18n-title="pop.importarTitle"><svg class="i" aria-hidden="true"><use href="iconos.svg#subir"></use></svg><span data-i18n="pop.importar">Transcribir un archivo</span></button>
+  <button id="btnDiag" class="btn btn-fantasma btn-peq"><svg class="i" aria-hidden="true"><use href="iconos.svg#pulso"></use></svg><span data-i18n="pop.diagnostico">Diagnóstico</span></button>
+  <button id="btnBorrarTodo" class="btn btn-fantasma btn-peq btn-icono peligro" title="Borrar todo" aria-label="Borrar todo" data-i18n-title="pop.borrarTodo" data-i18n-aria-label="pop.borrarTodo"><svg class="i" aria-hidden="true"><use href="iconos.svg#borrar"></use></svg></button>
+</footer>
+
+<script src="config.js"></script>
 <script src="comun.js"></script>
 <script src="popup.js"></script>
 </body>

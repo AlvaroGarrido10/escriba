@@ -1,13 +1,31 @@
-// Escriba — popup: control de grabación + historial + análisis IA.
+// Escriba — popup: grabar, y las últimas reuniones a mano.
+//
+// Tres estados, uno cada vez (3.6): sin configurar (falta la clave), listo para
+// grabar y grabando. Lo de leer a fondo, exportar y sacar actas vive en la
+// biblioteca; aquí la transcripción se ve y se copia sin salir del panel.
 
 const $ = (id) => document.getElementById(id);
-let timerInt = null, ultimoIdVisto = null;
+let timerInt = null, nivelesInt = null, ultimoIdVisto = null, sesion = null;
 
 $("lnkOpc").onclick = () => chrome.runtime.openOptionsPage();
-// Leer, exportar, sacar actas y preguntar: todo eso vive en la biblioteca, que
-// tiene sitio. El popup se queda para grabar.
+$("btnConfigurar").onclick = () => chrome.runtime.openOptionsPage();
 const abrirBiblioteca = (id) => chrome.tabs.create({ url: "reuniones.html" + (id ? "#" + id : "") });
 $("lnkBiblio").onclick = () => abrirBiblioteca();
+$("btnVerTodas").onclick = () => abrirBiblioteca();
+$("btnImportar").onclick = () => chrome.tabs.create({ url: "importar.html" });
+$("btnArreglaMic").onclick = () => chrome.runtime.openOptionsPage();
+const modoElegido = () => document.querySelector(".modo input:checked").value;
+
+// La línea de estado de debajo del botón: icono según el tipo y el texto.
+// `html` solo para textos nuestros de i18n (llevan <b>); el resto, escapado.
+function estado(texto, tipo, { html = false, ic } = {}) {
+  const el = $("estado");
+  el.className = "linea-estado" + (tipo ? " " + tipo : "");
+  const nombre = ic || (tipo ? iconoDeTipo(tipo) : null);
+  el.dataset.ic = texto ? nombre || "" : "";
+  if (!texto) { el.innerHTML = ""; return; }
+  el.innerHTML = (nombre ? icono(nombre) : "") + `<span>${html ? texto : escapa(texto)}</span>`;
+}
 
 // Los participantes se guardan mientras se escriben: cerrar el popup para ir a
 // la reunión no puede borrarlos.
@@ -25,19 +43,20 @@ $("btnVivo").onclick = () => {
 $("btnPausa").onclick = async () => {
   const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
   const r = await chrome.runtime.sendMessage({ target: "bg", cmd: s && s.pausado ? "reanudar" : "pausar" });
-  if (!r || !r.ok) { $("estado").textContent = "❌ " + ((r && r.error) || t("pop.noSePudo")); return; }
+  if (!r || !r.ok) { estado((r && r.error) || t("pop.noSePudo"), "error"); return; }
   refrescaGrabacion();
 };
 $("btnMarca").onclick = async () => {
   const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "marcar", nota: "" });
-  $("estado").textContent = r && r.ok ? t("pop.momentoMarcado", formatoTiempo(r.marca.t)) : "❌ " + ((r && r.error) || t("pop.noSePudoMarcar"));
+  if (r && r.ok) estado(t("pop.momentoMarcado", formatoTiempo(r.marca.t)), null, { ic: "estrella" });
+  else estado((r && r.error) || t("pop.noSePudoMarcar"), "error");
 };
 
 // Recordatorio legal: grabar a otros sin avisarles no es buena idea (RGPD).
 chrome.storage.sync.get({ avisoRgpdOculto: false }).then(({ avisoRgpdOculto }) => {
-  $("avisoRgpd").style.display = avisoRgpdOculto ? "none" : "block";
+  $("avisoRgpd").hidden = !!avisoRgpdOculto;
 });
-$("ocultaRgpd").onclick = () => { chrome.storage.sync.set({ avisoRgpdOculto: true }); $("avisoRgpd").style.display = "none"; };
+$("ocultaRgpd").onclick = () => { chrome.storage.sync.set({ avisoRgpdOculto: true }); $("avisoRgpd").hidden = true; };
 
 // El atajo puede haberlo cambiado el usuario en chrome://extensions/shortcuts.
 // Se pinta desde init(), cuando ya se sabe el idioma.
@@ -45,10 +64,9 @@ function pintaAtajo() {
   if (!chrome.commands || !chrome.commands.getAll) return;
   chrome.commands.getAll().then((cs) => {
     const g = cs.find((c) => c.name === "grabar");
-    if (g && g.shortcut) $("atajo").textContent = " " + t("pop.atajo", g.shortcut);
+    if (g && g.shortcut) $("atajo").textContent = t("pop.atajo", g.shortcut);
   }).catch(() => {});
 }
-$("btnArreglaMic").onclick = () => chrome.runtime.openOptionsPage();
 
 // El permiso de micrófono se concede al ORIGEN de la extensión, y solo lo puede
 // pedir la página de Opciones: el documento offscreen que graba no puede enseñar
@@ -66,33 +84,26 @@ async function revisaMicro() {
   pintaAvisoMic();
 }
 function pintaAvisoMic() {
-  const modo = document.querySelector(".modo input:checked").value;
-  $("avisoMicTxt").textContent = modo === "mic" ? t("pop.micModoMicNada") : t("pop.micSoloPestana");
-  $("avisoMic").style.display = micOk ? "none" : "block";
+  $("avisoMicTxt").textContent = modoElegido() === "mic" ? t("pop.micModoMicNada") : t("pop.micSoloPestana");
+  $("avisoMic").hidden = micOk || !!(sesion && sesion.grabando);
 }
-document.querySelectorAll(".modo input").forEach(r => r.addEventListener("change", pintaModo));
-function pintaModo() {
-  document.querySelectorAll(".modo label").forEach(l => l.classList.remove("sel"));
-  document.querySelector(".modo input:checked").closest("label").classList.add("sel");
-}
-pintaModo();
 
 // Repintar en cuanto la transcripción termine (aunque el popup esté abierto).
 // Se engancha desde init(), cuando ya se sabe el idioma.
-function alCambiarHistorial(cambios, area) {
-  if (area === "local" && cambios.historial) {
-    const nuevos = cambios.historial.newValue || [];
-    pintaHistorial();
-    const ultimo = nuevos[0];
-    // Mientras trocea y transcribe, ir cantando por dónde va.
-    if (ultimo && ultimo.estado === "transcribiendo" && ultimo.progreso) {
-      $("estado").textContent = t("pop.transcribiendoProg", ultimo.progreso);
-    }
-    // Si la última grabación acaba de terminar, se avisa con un botón para abrirla.
-    if (ultimo && ESTADOS_FINALES.includes(ultimo.estado) && ultimo.id !== ultimoIdVisto) {
-      ultimoIdVisto = ultimo.id;
-      avisaLista(ultimo);
-    }
+function alCambiar(cambios, area) {
+  if (area === "session" && (cambios.grabando || cambios.pausado)) { refrescaGrabacion(); return; }
+  if (area !== "local" || !cambios.historial) return;
+  const nuevos = cambios.historial.newValue || [];
+  pintaHistorial();
+  const ultimo = nuevos[0];
+  // Mientras trocea y transcribe, ir cantando por dónde va.
+  if (ultimo && ultimo.estado === "transcribiendo" && ultimo.progreso && !(sesion && sesion.grabando)) {
+    estado(t("pop.transcribiendoProg", ultimo.progreso), null, { ic: "reloj" });
+  }
+  // Si la última grabación acaba de terminar, se avisa con un botón para abrirla.
+  if (ultimo && ESTADOS_FINALES.includes(ultimo.estado) && ultimo.id !== ultimoIdVisto) {
+    ultimoIdVisto = ultimo.id;
+    avisaLista(ultimo);
   }
 }
 
@@ -100,85 +111,86 @@ const ESTADOS_FINALES = ["ok", "pendiente", "error"];
 
 function avisaLista(h) {
   const caja = $("listo");
-  const txt = h.estado === "ok" ? t("pop.listaOk")
-    : h.estado === "pendiente" ? t("pop.listaPendiente")
-      : t("pop.listaError");
-  caja.innerHTML = `${txt}: <b>${esc(h.titulo)}</b>. `;
-  const b = document.createElement("button");
-  b.textContent = t("pop.abrir");
-  b.style.cssText = "font-size:11px;padding:3px 8px;border:1px solid #2e7d32;background:#fff;color:#1f5b22;border-radius:5px;cursor:pointer;margin-left:4px";
-  b.onclick = () => abrirBiblioteca(h.id);
-  caja.appendChild(b);
-  caja.style.display = "block";
-  $("estado").textContent = "";
+  const tipo = h.estado === "ok" ? "ok" : h.estado === "pendiente" ? "atencion" : "error";
+  const txt = h.estado === "ok" ? t("pop.listaOk") : h.estado === "pendiente" ? t("pop.listaPendiente") : t("pop.listaError");
+  ponAviso(caja, tipo, `${escapa(txt)}: <b>${escapa(h.titulo)}</b>`);
+  const b = botonUI({ texto: t("pop.abrirBiblio"), icono: "libro", clase: "btn-peq", alPulsar: () => abrirBiblioteca(h.id) });
+  caja.querySelector(".cuerpo").appendChild(document.createElement("div")).appendChild(b);
+  estado("");
 }
-
-$("btnImportar").onclick = () => chrome.tabs.create({ url: "importar.html" });
 
 init();
 async function init() {
   // Antes de pintar nada: el idioma elegido en Opciones (traduce el HTML).
   await cargarIdiomaUI();
   pintaAtajo();
-  chrome.storage.onChanged.addListener(alCambiarHistorial);
+  chrome.storage.onChanged.addListener(alCambiar);
   // Lo que quedó pendiente se reintenta al abrir el popup, sin esperar a la
   // alarma (el service worker decide si ya toca). No se espera la respuesta.
   chrome.runtime.sendMessage({ target: "bg", cmd: "revisarPendientes" }).catch(() => {});
+  const { historial } = await chrome.storage.local.get({ historial: [] });
+  if (historial[0]) ultimoIdVisto = ESTADOS_FINALES.includes(historial[0].estado) ? historial[0].id : null;
   // Primer uso: sin clave no se puede transcribir → llevar a la configuración.
+  // El historial se ve igual: puede haber reuniones esperando la clave.
   const { geminiKey } = await leerConfig();
   if (!geminiKey) {
-    $("estado").innerHTML = t("pop.faltaClave");
-    $("btnRec").textContent = t("pop.configurarAhora");
-    $("btnRec").onclick = () => chrome.runtime.openOptionsPage();
-    pintaHistorial(); // el historial se ve igual: puede haber reuniones esperando la clave
+    $("panelConfig").hidden = false;
+    $("panelGrabar").hidden = true;
+    pintaHistorial();
     return;
   }
   await revisaMicro();
   const { participantesBorrador } = await chrome.storage.session.get({ participantesBorrador: "" });
   $("participantes").value = participantesBorrador;
-  const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
-  if (s && s.grabando) modoGrabando(s);
-  else pintaObjetivo(s && s.objetivo);
-  const { historial } = await chrome.storage.local.get({ historial: [] });
-  if (historial[0]) ultimoIdVisto = ESTADOS_FINALES.includes(historial[0].estado) ? historial[0].id : null;
+  await refrescaGrabacion();
   pintaHistorial();
 }
 
-// Muestra qué pestaña se va a grabar y avisa si no está sonando.
+// Qué pestaña se va a grabar y si está sonando.
 function pintaObjetivo(obj) {
-  const modo = document.querySelector(".modo input:checked").value;
-  if (modo === "mic") { $("estado").textContent = t("pop.soloTuMicro"); return; }
-  if (!obj) { $("estado").innerHTML = t("pop.sinPestanaAudio"); return; }
-  const tit = obj.titulo.length > 34 ? obj.titulo.slice(0, 34) + "…" : obj.titulo;
-  $("estado").innerHTML = obj.suena ? t("pop.seGrabara", esc(tit)) : t("pop.noSuena", esc(tit));
+  const el = $("objetivo");
+  el.className = "objetivo";
+  if (modoElegido() === "mic") {
+    el.innerHTML = icono("micro") + `<span class="txt">${escapa(t("pop.soloTuMicro"))}</span>`;
+    return;
+  }
+  if (!obj) {
+    el.classList.add("mudo");
+    el.innerHTML = icono("alerta") + `<span class="txt">${t("pop.sinPestanaAudio")}</span>`;
+    return;
+  }
+  const tit = escapa(obj.titulo.length > 60 ? obj.titulo.slice(0, 60) + "…" : obj.titulo);
+  el.classList.add(obj.suena ? "suena" : "mudo");
+  el.innerHTML = obj.suena
+    ? icono("pestana") + `<span class="txt">${t("pop.seGrabara", tit)}</span><span class="ondas-vivas" aria-hidden="true"><i></i><i></i><i></i></span>`
+    : icono("alerta") + `<span class="txt">${t("pop.noSuena", tit)}</span>`;
 }
-document.querySelectorAll(".modo input").forEach(r => r.addEventListener("change", async () => {
+document.querySelectorAll(".modo input").forEach((r) => r.addEventListener("change", async () => {
   pintaAvisoMic();
   const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
   if (!s.grabando) pintaObjetivo(s.objetivo);
 }));
 
 $("btnRec").onclick = async () => {
-  const grabando = $("btnRec").classList.contains("grabando");
-  if (!grabando) {
-    const modo = document.querySelector(".modo input:checked").value;
-    $("estado").textContent = t("pop.arrancando");
-    const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "start", modo, participantes: $("participantes").value.trim() });
-    if (r && r.ok) refrescaGrabacion();
-    else $("estado").textContent = "❌ " + ((r && r.error) || t("pop.noSePudoIniciar"));
-  } else {
-    await chrome.runtime.sendMessage({ target: "bg", cmd: "stop" });
-    clearInterval(timerInt);
-    $("btnRec").textContent = t("pop.empezar");
-    $("btnRec").classList.remove("grabando");
-    $("controles").style.display = "none";
-    $("altavoz").style.display = "none";
-    $("timer").classList.remove("pausa");
-    $("estado").textContent = t("pop.transcribiendoEspera");
-    $("participantes").value = "";
-    $("participantes").disabled = false;
-    chrome.storage.session.set({ participantesBorrador: "" });
-    pintaHistorial();
+  const b = $("btnRec");
+  if (b.disabled) return;
+  b.disabled = true;
+  try {
+    if (!(sesion && sesion.grabando)) {
+      estado(t("pop.arrancando"), null, { ic: "reloj" });
+      const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "start", modo: modoElegido(), participantes: $("participantes").value.trim() });
+      if (r && r.ok) { estado(""); await refrescaGrabacion(); }
+      else estado((r && r.error) || t("pop.noSePudoIniciar"), "error");
+    } else {
+      await chrome.runtime.sendMessage({ target: "bg", cmd: "stop" });
+      $("participantes").value = "";
+      chrome.storage.session.set({ participantesBorrador: "" });
+      await refrescaGrabacion();
+      estado(t("pop.transcribiendoEspera"), null, { ic: "reloj" });
+      pintaHistorial();
+    }
+  } finally {
+    b.disabled = false;
   }
 };
 
@@ -192,35 +204,65 @@ $("btnAltavoz").onclick = async () => {
     : t("pop.altavozNoGrabando");
 };
 
-// s: el estado de la sesión (t0, pausado, pausadoDesde, pausaMs). El reloj
+function pintaBotonRec(grabando) {
+  const b = $("btnRec");
+  b.className = "btn btn-grande btn-bloque " + (grabando ? "btn-grabar" : "btn-primario");
+  b.innerHTML = icono(grabando ? "parar" : "grabar") + `<span>${escapa(t(grabando ? "pop.parar" : "pop.empezar"))}</span>`;
+}
+
+// Pinta el estado de la sesión (t0, pausado, pausadoDesde, pausaMs). El reloj
 // cuenta tiempo GRABADO: en pausa se para.
-function modoGrabando(s) {
-  $("btnRec").textContent = t("pop.parar");
-  $("btnRec").classList.add("grabando");
-  $("estado").textContent = s.pausado ? t("pop.enPausa") : t("pop.grabando");
-  $("participantes").disabled = true;
-  $("controles").style.display = "flex";
+async function refrescaGrabacion() {
+  const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" }).catch(() => null);
+  sesion = s || { grabando: false };
+  const grabando = !!sesion.grabando;
+  $("preparar").hidden = grabando;
+  $("enVivo").hidden = !grabando;
+  $("enVivo").classList.toggle("pausa", grabando && !!sesion.pausado);
   // Solo con pestaña: en «Solo micro» no se devuelve nada a los altavoces.
-  $("altavoz").style.display = s.ultimoModo === "tab_mic" ? "block" : "none";
-  $("btnPausa").textContent = s.pausado ? t("pop.reanudar") : t("pop.pausar");
-  $("timer").classList.toggle("pausa", !!s.pausado);
+  $("altavoz").hidden = !(grabando && sesion.ultimoModo === "tab_mic");
+  pintaBotonRec(grabando);
+  pintaAvisoMic();
   clearInterval(timerInt);
+  clearInterval(nivelesInt);
+  if (!grabando) {
+    $("niveles").innerHTML = "";
+    pintaObjetivo(sesion.objetivo);
+    return;
+  }
+  $("estadoRec").textContent = sesion.pausado ? t("pop.enPausaCorto") : t("pop.grabando");
+  $("queGraba").textContent = sesion.ultimoModo === "mic" ? t("pop.queGrabaMic")
+    : sesion.tabTitle ? t("pop.queGraba", sesion.tabTitle) : t("pop.modoTabMic");
+  $("btnPausa").innerHTML = icono(sesion.pausado ? "play" : "pausa") + `<span>${escapa(t(sesion.pausado ? "pop.reanudar" : "pop.pausar"))}</span>`;
+  if (sesion.pausado) estado(t("pop.enPausa"), null, { ic: "pausa" });
+  else if ($("estado").dataset.ic === "pausa") estado("");
   const pinta = () => {
-    const ms = (s.pausado ? s.pausadoDesde : Date.now()) - s.t0 - (s.pausaMs || 0);
+    const ms = (sesion.pausado ? sesion.pausadoDesde : Date.now()) - sesion.t0 - (sesion.pausaMs || 0);
     $("timer").textContent = formatoTiempo(Math.max(0, ms) / 1000);
   };
   pinta();
   timerInt = setInterval(pinta, 500);
-}
-async function refrescaGrabacion() {
-  const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
-  if (s && s.grabando) modoGrabando(s);
+  pintaNiveles();
+  nivelesInt = setInterval(pintaNiveles, 700);
 }
 
+// Lo que oye el grabador, fuente a fuente, como un vúmetro.
+async function pintaNiveles() {
+  const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "niveles" }).catch(() => null);
+  if (!r || !r.ok || !r.id) return;
+  $("niveles").innerHTML = (r.fuentes || []).map(htmlNivel).join("") +
+    (r.sinMicro ? avisoHtml("atencion", escapa(t("viv.sinMicro")), "micro-no") : "");
+}
 // ---------- Diagnóstico ----------
+$("diagCerrar").onclick = () => { $("diagCaja").hidden = true; };
+$("diagCopiar").onclick = async () => {
+  await navigator.clipboard.writeText($("diag").textContent);
+  toast(t("pop.copiado"), "ok");
+};
 $("btnDiag").onclick = async () => {
   const out = $("diag");
-  out.style.display = "block";
+  $("diagCaja").hidden = false;
+  $("diagCaja").scrollIntoView({ block: "nearest" });
   const log = [];
   const escribe = (l) => { log.push(l); out.textContent = log.join("\n"); };
   escribe(t("pop.diagTitulo") + "\n");
@@ -246,8 +288,7 @@ $("btnDiag").onclick = async () => {
 
   // 4. Motor de grabación (offscreen) + captura real de 3 s
   escribe(t("pop.diagGrabador"));
-  const modo = document.querySelector(".modo input:checked").value;
-  const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "selftest", modo });
+  const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "selftest", modo: modoElegido() });
   if (!r || !r.ok) {
     escribe("   " + t("pop.diagFalla", (r && r.error) || t("pop.diagSinRespuesta")));
   } else {
@@ -268,10 +309,11 @@ $("btnDiag").onclick = async () => {
   escribe("\n" + t("pop.diagCopia"));
 };
 
-// ---------- Historial ----------
-// La transcripción, a la vista en el propio panel (3.5.2): la reunión más reciente
-// sale abierta y las demás con «📄 Ver aquí», con su botón de copiar. La
-// biblioteca sigue a un clic («Abrir»). Lo abierto se mantiene al repintar.
+// ---------- Recientes ----------
+// La transcripción, a la vista en el propio panel (3.5.2): la reunión más
+// reciente sale abierta, las demás se abren con un clic, y cada una tiene su
+// botón de copiar. La biblioteca sigue a un clic. Lo abierto se mantiene al
+// repintar.
 const abiertas = new Set();
 let ultimaAbierta = null;
 
@@ -284,66 +326,140 @@ function textoDelPanel(h) {
   return aplicarHablantes(txt, mapaVisible(txt, h.hablantes));
 }
 
+// Lo que se LEE en el panel: solo lo hablado, sin la cabecera del .md (título,
+// origen, participantes…), que sí va en lo que se copia.
+function textoHablado(h) {
+  const tramos = (h.tramos || []).filter((tr) => tr && tr.estado === "ok");
+  if (tramos.length) {
+    const txt = tramos.map((tr) => tr.texto || "").join("\n");
+    return aplicarHablantes(txt, mapaVisible(txt, h.hablantes));
+  }
+  const md = textoDelPanel(h);
+  const corte = md.indexOf("\n---\n");
+  return corte >= 0 ? md.slice(corte + 5) : md;
+}
+
+// El texto con formato: hora atenuada y cada voz de su color.
+function htmlTexto(texto) {
+  const voces = [];
+  return lineasTranscripcion(texto).filter((l) => l.texto || l.hablante).map((l) => {
+    let quien = "";
+    if (l.hablante) {
+      if (!voces.includes(l.hablante)) voces.push(l.hablante);
+      quien = `<span class="h" style="color:var(--voz-${voces.indexOf(l.hablante) % 8})">${escapa(l.hablante)}:</span>`;
+    }
+    const hora = l.t !== null ? `<span class="t">${formatoTiempo(l.t)}</span>` : "";
+    return `<p class="ln">${hora}${quien}${escapa(l.texto)}</p>`;
+  }).join("");
+}
+
+function pildora(h) {
+  if (h.estado === "error") return `<span class="pildora err">${escapa(t("pop.badgeError"))}</span>`;
+  if (h.estado === "pendiente") return `<span class="pildora pend">${escapa(t("pop.badgeIncompleta"))}</span>`;
+  if (h.estado === "grabando") return `<span class="pildora rec"><span class="punto"></span>${escapa(t("pop.badgeGrabando"))}</span>`;
+  if (h.estado === "transcribiendo") return `<span class="pildora proc"><span class="punto"></span>${escapa(t("pop.badgeTranscribiendo", h.progreso || ""))}</span>`;
+  return "";
+}
+
 async function pintaHistorial() {
   const { historial } = await chrome.storage.local.get({ historial: [] });
   const cont = $("historial");
   cont.innerHTML = "";
-  if (!historial.length) { cont.innerHTML = `<div style="font-size:11px;color:#999">${esc(t("pop.sinGrabaciones"))}</div>`; return; }
+  if (!historial.length) {
+    cont.innerHTML = `<div class="sin-reuniones">${escapa(t("pop.sinGrabaciones"))}</div>`;
+    return;
+  }
   // La más reciente con texto se abre sola, una vez: si el usuario la cierra, se queda cerrada.
   const primera = historial.find((h) => textoDelPanel(h).trim());
   if (primera && primera.id !== ultimaAbierta) { abiertas.add(primera.id); ultimaAbierta = primera.id; }
-  for (const h of historial) {
-    const div = document.createElement("div");
-    div.className = "item";
-    const badge = h.estado === "ok" ? `<span class="badge-estado ok">${esc(t("pop.badgeLista"))}</span>`
-      : h.estado === "error" ? `<span class="badge-estado err">${esc(t("pop.badgeError"))}</span>`
-      : h.estado === "pendiente" ? `<span class="badge-estado pend">${esc(t("pop.badgeIncompleta"))}</span>`
-      : h.estado === "grabando" ? `<span class="badge-estado rec">${esc(t("pop.badgeGrabando"))}</span>`
-      : `<span class="badge-estado proc">${esc(t("pop.badgeTranscribiendo", h.progreso || ""))}</span>`;
-    const icono = h.origen === "archivo" ? "📂 " : "";
-    div.innerHTML = `<div class="tit">${icono}${esc(h.titulo)} ${badge}</div><div class="fec">${esc(fechaVisible(h))}</div>` +
-      (h.estado === "pendiente" ? `<div class="nota">${esc(notaPendiente(h))}</div>` : "") + '<div class="acc"></div>';
-    const acc = div.querySelector(".acc");
-    if (ESTADOS_FINALES.includes(h.estado)) {
-      if (h.estado === "pendiente") boton(acc, t("pop.reintentarAhora"), (ev) => reintentar(ev.target, h));
-      const nActas = Object.keys(h.analisis || {}).length;
-      const actas = nActas ? " · " + t(nActas > 1 ? "pop.actasVarias" : "pop.actasUna", nActas) : "";
-      boton(acc, h.estado === "error" ? t("pop.verError") : t("pop.abrir") + actas, () => abrirBiblioteca(h.id));
-      boton(acc, "🗑", () => pideBorrar(acc, h));
-    }
-    const texto = textoDelPanel(h);
-    if (texto.trim()) {
-      const abierta = abiertas.has(h.id);
-      boton(acc, abierta ? t("pop.ocultarTexto") : t("pop.verTexto"), () => {
-        if (abierta) abiertas.delete(h.id); else abiertas.add(h.id);
-        pintaHistorial();
-      });
-      if (abierta) {
-        const caja = document.createElement("div");
-        caja.className = "texto";
-        const ta = document.createElement("textarea");
-        ta.readOnly = true;
-        ta.value = texto;
-        const fila = document.createElement("div");
-        fila.className = "acc";
-        boton(fila, t("pop.copiar"), async (ev) => {
-          await navigator.clipboard.writeText(ta.value);
-          ev.target.textContent = t("pop.copiado");
-        });
-        caja.append(ta, fila);
-        div.appendChild(caja);
-      }
-    }
-    cont.appendChild(div);
-  }
+  for (const h of historial.slice(0, 15)) cont.appendChild(tarjeta(h));
 }
-function boton(parent, txt, fn) { const b = document.createElement("button"); b.textContent = txt; b.onclick = fn; parent.appendChild(b); }
+
+function tarjeta(h) {
+  const div = document.createElement("div");
+  const abierta = abiertas.has(h.id);
+  div.className = "reu" + (abierta ? " abierta" : "");
+  const nActas = Object.keys(h.analisis || {}).length;
+  const sub = [fechaCorta(h)];
+  if (h.meta && h.meta.minutos) sub.push(t("ui.minutos", h.meta.minutos));
+  if (nActas) sub.push(t(nActas > 1 ? "pop.actasVarias" : "pop.actasUna", nActas));
+  const cab = document.createElement("button");
+  cab.className = "reu-cab";
+  cab.setAttribute("aria-expanded", String(abierta));
+  cab.innerHTML = `<span class="reu-icono">${icono(h.origen === "archivo" ? "archivo-audio" : "micro")}</span>` +
+    `<span class="reu-info"><span class="reu-tit">${escapa(h.titulo || t("com.reunion"))}</span><span class="reu-sub">${escapa(sub.join(" · "))}</span></span>` +
+    pildora(h) + icono("abajo");
+  cab.title = abierta ? t("pop.ocultarTexto") : t("pop.mostrarTexto");
+  cab.onclick = () => {
+    if (abiertas.has(h.id)) abiertas.delete(h.id); else abiertas.add(h.id);
+    pintaHistorial();
+  };
+  div.appendChild(cab);
+
+  if (h.estado === "transcribiendo" && Array.isArray(h.tramos) && h.tramos.length) {
+    const r = resumenTramos(h.tramos);
+    const p = document.createElement("div");
+    p.className = "progreso";
+    p.innerHTML = `<div style="width:${Math.round(((r.total - r.pendientes) / r.total) * 100)}%"></div>`;
+    div.appendChild(p);
+  }
+  if (!abierta) return div;
+
+  const cuerpo = document.createElement("div");
+  cuerpo.className = "reu-cuerpo";
+  if (h.estado === "pendiente") {
+    cuerpo.insertAdjacentHTML("beforeend", `<div class="reu-nota">${icono("alerta")}<span>${escapa(notaPendiente(h))}</span></div>`);
+  }
+  const texto = textoDelPanel(h);
+  const caja = document.createElement("div");
+  caja.className = "reu-texto";
+  if (h.estado === "error") caja.innerHTML = `<p class="ln">${escapa((h.transcript || "").replace(/^[^\n]*\n+/, "").slice(0, 400) || t("pop.listaError"))}</p>`;
+  else {
+    const hablado = textoHablado(h);
+    caja.innerHTML = hablado.trim() ? htmlTexto(hablado) : `<p class="vacio-t">${escapa(t("pop.sinTexto"))}</p>`;
+  }
+  cuerpo.appendChild(caja);
+
+  const acc = document.createElement("div");
+  acc.className = "reu-acc";
+  if (texto.trim() && h.estado !== "error") {
+    acc.appendChild(botonUI({ texto: t("pop.copiar"), icono: "copiar", clase: "btn-peq btn-primario", alPulsar: async (ev) => {
+      const b = ev.currentTarget; // después del await ya no existe
+      await navigator.clipboard.writeText(texto);
+      b.innerHTML = icono("check") + `<span>${escapa(t("pop.copiado"))}</span>`;
+      setTimeout(() => { b.innerHTML = icono("copiar") + `<span>${escapa(t("pop.copiar"))}</span>`; }, 1600);
+    } }));
+  }
+  if (ESTADOS_FINALES.includes(h.estado)) {
+    acc.appendChild(botonUI({ texto: h.estado === "error" ? t("pop.verError") : t("pop.abrirBiblio"), icono: "libro", clase: "btn-peq", alPulsar: () => abrirBiblioteca(h.id) }));
+    // Lo que se usa poco o es delicado, en el menú «⋯».
+    const menu = document.createElement("div");
+    menu.className = "menu";
+    const bMas = botonUI({ icono: "mas", clase: "btn-peq btn-icono btn-fantasma", titulo: t("pop.mas") });
+    const lista = document.createElement("div");
+    lista.className = "menu-lista arriba";
+    lista.hidden = true;
+    if (h.estado === "pendiente") {
+      lista.appendChild(itemMenu({ texto: t("pop.reintentarAhora"), icono: "reintentar", alPulsar: () => reintentar(h) }));
+    }
+    lista.appendChild(itemMenu({ texto: t("pop.borrar"), icono: "borrar", peligro: true, alPulsar: () => pideBorrar(confirma, h) }));
+    menu.append(bMas, lista);
+    conMenu(bMas, lista);
+    acc.appendChild(menu);
+  }
+  cuerpo.appendChild(acc);
+  const confirma = document.createElement("div");
+  confirma.hidden = true;
+  cuerpo.appendChild(confirma);
+  div.appendChild(cuerpo);
+  return div;
+}
 
 // Qué le falta a una reunión incompleta y qué va a pasar con ella, en una línea.
 function notaPendiente(h) {
   const r = resumenTramos(h.tramos);
   const re = h.reintento || {};
-  const codigo = ((h.tramos || []).find((t) => t.estado === "pendiente") || {}).codigo;
+  const codigo = ((h.tramos || []).find((tr) => tr.estado === "pendiente") || {}).codigo;
   let luego = t("pop.luegoSola");
   if (re.esperaClave) {
     luego = codigo === "sin_clave" ? t("pop.luegoSinClave") : t("pop.luegoClaveMala");
@@ -356,60 +472,42 @@ function notaPendiente(h) {
   return r.total === 1 ? t("pop.notaUno", luego) : t("pop.notaVarios", r.pendientes, r.total, luego);
 }
 
-async function reintentar(btn, h) {
-  btn.disabled = true;
-  btn.textContent = t("pop.reintentando");
+async function reintentar(h) {
+  estado(t("pop.reintentando"), null, { ic: "reintentar" });
   const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "reintentar", id: h.id });
-  if (!r || !r.ok) {
-    btn.disabled = false;
-    btn.textContent = t("pop.reintentarAhora");
-    $("estado").textContent = "❌ " + ((r && r.error) || t("pop.noSePudoReintentar"));
-  }
+  if (!r || !r.ok) estado((r && r.error) || t("pop.noSePudoReintentar"), "error");
   // Si arranca, el historial se repinta solo con el progreso.
 }
 
 // Borrar es irreversible, así que siempre se pregunta primero — y el audio de
 // respaldo se pregunta aparte, que es lo único que no se puede regenerar.
-function pideBorrar(acc, h) {
+async function pideBorrar(donde, h) {
   const nAudio = (h.filesAudio || []).length;
-  acc.innerHTML = "";
-  const caja = document.createElement("div");
-  caja.style.cssText = "font-size:11px;line-height:1.45;background:#fdecef;border:1px solid #e6a9ba;color:#7d2d43;border-radius:6px;padding:7px 8px;width:100%";
-  caja.innerHTML = t("pop.borrarUnaHtml")
-    + (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" class="cbAudio" checked> ${esc(t(nAudio > 1 ? "pop.borrarAudioVarios" : "pop.borrarAudioUno", nAudio))}</label>` : "");
-  const fila = document.createElement("div");
-  fila.style.cssText = "display:flex;gap:4px;margin-top:6px";
-  boton(fila, t("pop.siBorrar"), async () => {
-    const cb = caja.querySelector(".cbAudio");
-    await chrome.runtime.sendMessage({ target: "bg", cmd: "borrar", ids: [h.id], conAudio: !!(cb && cb.checked) });
-    pintaHistorial();
+  const r = await confirmar(donde, {
+    html: t("pop.borrarUnaHtml"),
+    casilla: nAudio ? t(nAudio > 1 ? "pop.borrarAudioVarios" : "pop.borrarAudioUno", nAudio) : "",
+    si: t("pop.siBorrar"), no: t("pop.cancelar"),
   });
-  boton(fila, t("pop.cancelar"), () => pintaHistorial());
-  caja.appendChild(fila);
-  acc.appendChild(caja);
+  if (!r.si) return;
+  abiertas.delete(h.id);
+  await chrome.runtime.sendMessage({ target: "bg", cmd: "borrar", ids: [h.id], conAudio: r.casilla });
+  pintaHistorial();
 }
 
 $("btnBorrarTodo").onclick = async () => {
   const caja = $("confirmaTodo");
-  if (caja.style.display === "block") { caja.style.display = "none"; return; }
+  if (!caja.hidden) { caja.hidden = true; caja.innerHTML = ""; return; }
   const { historial } = await chrome.storage.local.get({ historial: [] });
   if (!historial.length) return;
   const nAudio = historial.reduce((a, h) => a + (h.filesAudio || []).length, 0);
-  caja.style.display = "block";
-  caja.innerHTML = t("pop.borrarTodasHtml", historial.length)
-    + (nAudio ? `<label style="display:block;margin-top:5px"><input type="checkbox" id="cbAudioTodo" checked> ${esc(t(nAudio > 1 ? "pop.borrarAudioTodoVarios" : "pop.borrarAudioTodoUno", nAudio))}</label>` : "");
-  const fila = document.createElement("div");
-  fila.style.cssText = "display:flex;gap:4px;margin-top:6px";
-  boton(fila, t("pop.siBorrarTodo"), async () => {
-    const cb = $("cbAudioTodo");
-    const r = await chrome.runtime.sendMessage({
-      target: "bg", cmd: "borrar", ids: historial.map((h) => h.id), conAudio: !!(cb && cb.checked),
-    });
-    caja.style.display = "none";
-    pintaHistorial();
-    $("estado").textContent = t("pop.borradas", r.entradas, r.ficheros);
+  caja.scrollIntoView({ block: "nearest" });
+  const r = await confirmar(caja, {
+    html: t("pop.borrarTodasHtml", historial.length),
+    casilla: nAudio ? t(nAudio > 1 ? "pop.borrarAudioTodoVarios" : "pop.borrarAudioTodoUno", nAudio) : "",
+    si: t("pop.siBorrarTodo"), no: t("pop.cancelar"),
   });
-  boton(fila, t("pop.cancelar"), () => { caja.style.display = "none"; });
-  caja.appendChild(fila);
+  if (!r.si) return;
+  const res = await chrome.runtime.sendMessage({ target: "bg", cmd: "borrar", ids: historial.map((h) => h.id), conAudio: r.casilla });
+  pintaHistorial();
+  toast(t("pop.borradas", res.entradas, res.ficheros), "ok");
 };
-function esc(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }

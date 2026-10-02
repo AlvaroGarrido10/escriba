@@ -24,13 +24,42 @@ Cada persona usa **su propia clave**: no hay servidores ni secretos en el repo.
 | `background.js` | Service worker: orquesta todo. **Es el único que puede usar `chrome.storage`, `chrome.downloads`, `chrome.tabs` y `chrome.tabCapture`** |
 | `offscreen.js` | Documento offscreen: graba el audio (pestaña + micro) y tiene el motor de transcripción (`transcribirReunion`) que usan grabaciones, reintentos e importaciones. Sobrevive al cierre del popup |
 | `comun.js` | Compartido por todos: almacén de audio en IndexedDB, códigos de error, estado y markdown de una reunión, troceado y WAV |
-| `importar.js/html` | Página «Transcribir un archivo»: decodifica, trocea en tramos de 5 min, guarda el audio y encarga la transcripción |
-| `popup.js/html` | Panel: grabar/parar, pausar, marcar, participantes, historial, reintentar, diagnóstico |
+| `estilo.css` | Sistema visual común (3.6): tokens de claro y oscuro y componentes. Los colores se usan **siempre por token**: el test de contraste lee las parejas texto/fondo de aquí |
+| `ui.js` | Piezas de interfaz comunes: tema (se aplica antes de pintar, desde `localStorage`), `icono()`, avisos, `toast`, menús y confirmación de borrado. Va en el `<head>` justo después de `i18n.js`. Solo declara funciones: cada página tiene su `const # Desarrollar en Escriba
+
+Extensión de Chrome (Manifest V3). No hay build ni dependencias: se edita el código y se recarga. Cualquiera con el repo puede tocar y probar en 2 minutos.
+
+## Poner en marcha
+
+```bash
+git clone https://github.com/AlvaroGarrido10/escriba.git
+```
+
+1. Chrome → `chrome://extensions` → activa **Modo de desarrollador**
+2. **Cargar descomprimida** → elige la carpeta del repo
+3. Clic derecho en el icono de Escriba → **Opciones** → pega tu clave gratuita de [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (se valida sola) y permite el micrófono
+
+Cada persona usa **su propia clave**: no hay servidores ni secretos en el repo.
+
+**Tras cada cambio de código:** `chrome://extensions` → botón ↻ de la extensión.
+
+## Cómo está montado
+
+| Archivo | Qué hace |
+|---|---|
+| `manifest.json` | Permisos y declaración de la extensión (MV3) |
+| `background.js` | Service worker: orquesta todo. **Es el único que puede usar `chrome.storage`, `chrome.downloads`, `chrome.tabs` y `chrome.tabCapture`** |
+| `offscreen.js` | Documento offscreen: graba el audio (pestaña + micro) y tiene el motor de transcripción (`transcribirReunion`) que usan grabaciones, reintentos e importaciones. Sobrevive al cierre del popup |
+| `comun.js` | Compartido por todos: almacén de audio en IndexedDB, códigos de error, estado y markdown de una reunión, troceado y WAV |
+ |
+| `iconos.svg` | Sprite de iconos (Lucide, ISC). Se usan con `<svg class="i"><use href="iconos.svg#nombre">` o `icono("nombre")`; un test comprueba que todo icono usado existe |
+| `importar.js/html/css` | Página «Transcribir un archivo»: decodifica, trocea en tramos de 5 min, guarda el audio y encarga la transcripción |
+| `popup.js/html/css` | Panel: grabar/parar, pausar, marcar, participantes, historial, reintentar, diagnóstico |
 | `reuniones.js/html/css` | Biblioteca: buscar, leer con tiempos, renombrar hablantes, exportar, actas con plantillas, preguntar, notas, escuchar |
-| `vivo.js/html` | Panel lateral en vivo: texto que llega, niveles, pausa, marcadores y notas |
+| `vivo.js/html/css` | Panel lateral en vivo: texto que llega, niveles, pausa, marcadores y notas |
 | `ia.js` | Plantillas de acta, llamadas a Gemini/GPT/Claude con reintentos y tokens, preguntas a la reunión. Sin DOM ni `chrome.*` |
 | `exportar.js` | Word (.docx sin librerías), SRT, texto plano y markdown → HTML seguro |
-| `options.js/html` | Configuración: valida la clave, elige modelo compatible y pide permiso de micrófono |
+| `options.js/html/css` | Configuración: valida la clave, elige modelo compatible y pide permiso de micrófono |
 | `config.js` | Dónde vive cada ajuste, y la migración de las claves de `sync` a `local`. Lo cargan el popup, las opciones y el service worker (`importScripts`) |
 | `tests/` | Suite en Node con el navegador simulado. `npm test` |
 
@@ -58,18 +87,21 @@ uno se pone rojo, ese fallo ha vuelto — no lo relajes, arregla el código.
 - La captura de pestaña falla en páginas `chrome://`, de la Web Store y de la propia extensión. `background.js` busca la pestaña que **esté sonando** (`tab.audible`).
 - **El audio de un tramo se borra DESPUÉS de guardar su texto**, nunca antes: un fallo entre medias perdería las dos cosas.
 - Un fallo de transcripción siempre lleva `codigo` (`comun.js`). Sin él no se sabe si reintentar con alarma o esperar a que el usuario cambie la clave, y el usuario recibe un mensaje falso.
-- `comun.js` y `offscreen.js` se cargan como scripts clásicos en la misma página: una constante declarada en los dos es un `SyntaxError` que deja la extensión sin grabador. Lo compartido vive solo en `comun.js`.
+- `comun.js` y `offscreen.js` se cargan como scripts clásicos en la misma página: una constante declarada en los dos es un `SyntaxError` que deja la extensión sin grabador. Lo compartido vive solo en `comun.js`. Lo mismo con `ui.js` y `exportar.js` en la biblioteca: por eso el escape de `ui.js` se llama `escapa` y no `escHtml`.
+- **Un botón con `data-i18n` pierde lo que tenga dentro al traducirse** (`textContent`). Si lleva icono, el `data-i18n` va en un `<span>` interior.
+- **Los textos de la interfaz no empiezan por emoji** (lo comprueba la suite): el icono va en el HTML o lo pone `ponAviso`/`ponEstado` según el tipo de aviso.
+- En un manejador `async`, guarda `ev.currentTarget` **antes** del primer `await`: después vale `null`.
 
 ## Depurar
 
-- **Botón 🩺 Diagnóstico** en el panel: comprueba clave, conexión con Gemini, permiso de micro, graba 3 s de prueba y transcribe. Es la vía rápida cuando algo no va.
+- **Botón «Diagnóstico»** en el panel: comprueba clave, conexión con Gemini, permiso de micro, graba 3 s de prueba y transcribe. Es la vía rápida cuando algo no va.
 - Errores del grabador: `chrome://extensions` → tarjeta de la extensión → **Errores** / **Service worker** (consola).
 - La transcripción y el audio siempre acaban en `Descargas/reuniones/`, incluso si algo falla.
 
 ## Publicar una versión
 
 1. Sube el número en `manifest.json` **y en `package.json`**: el CI falla si no coinciden, y la Store rechaza versiones repetidas.
-2. Zip con: `manifest.json`, `background.js`, `config.js`, `comun.js`, `offscreen.*`, `popup.*`, `options.*`, `importar.*`, `icon*.png`, `LEEME.txt` (sin docs, ni tests, ni zips). **Ojo con `config.js` y `comun.js`**: sin ellos la extensión no arranca.
+2. Zip con todo lo que carga Chrome: `manifest.json`, `_locales/`, `*.js` de la raíz, `*.html`, `*.css`, `iconos.svg`, `icon*.png`, `LEEME.txt` y `PRIVACY.md` (sin docs, ni tests, ni zips). **Ojo con `config.js`, `comun.js`, `i18n.js`, `ui.js`, `estilo.css` e `iconos.svg`**: sin ellos la extensión no arranca o sale sin estilos ni iconos.
 3. [Chrome Web Store Developer Console](https://chrome.google.com/webstore/devconsole) → el elemento → **Paquete** → subir → **Enviar a revisión**.
 
 Textos de la ficha y justificación de permisos: `STORE_LISTING.md`. Política de privacidad: `PRIVACY.md`.

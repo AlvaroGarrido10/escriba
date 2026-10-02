@@ -1,0 +1,41 @@
+/* Escriba — transcribir un archivo (3.6). Lo común está en estilo.css. */
+
+.barra { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; background: var(--superficie); border-bottom: 1px solid var(--borde); }
+main { max-width: 680px; margin: 0 auto; padding: 40px 20px 60px; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 27px; }
+.sub { color: var(--texto-2); font-size: 14.5px; margin-top: -8px; }
+
+.zona {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; cursor: pointer;
+  border: 2px dashed var(--borde-fuerte); border-radius: var(--r-4); padding: 38px 22px; background: var(--superficie);
+  transition: background var(--t-rapida), border-color var(--t-rapida), transform var(--t-rapida);
+}
+.zona:hover, .zona.encima { background: var(--marca-suave); border-color: var(--acento); }
+.zona.encima { transform: scale(1.01); }
+.zona .ilus { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; background: var(--marca-suave); color: var(--marca-texto); margin-bottom: 4px; }
+.zona:hover .ilus, .zona.encima .ilus { background: var(--superficie); }
+.zona .ilus .i { width: 25px; height: 25px; }
+.zona b { font-size: 15.5px; color: var(--texto); }
+.zona small { color: var(--texto-3); font-size: 12.5px; max-width: 460px; line-height: 1.5; }
+
+.lista-ficheros { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lista-ficheros:empty { display: none; }
+.lista-ficheros li { display: flex; align-items: center; gap: 10px; font-size: 13.5px; padding: 9px 12px; border: 1px solid var(--borde); border-radius: var(--r-2); background: var(--superficie); }
+.lista-ficheros li .i { color: var(--marca-texto); }
+.lista-ficheros li .nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lista-ficheros li .tam { color: var(--texto-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.formulario { padding: 18px 20px; display: flex; flex-direction: column; gap: 4px; }
+.formulario .etiqueta { margin-top: 10px; }
+.formulario .etiqueta:first-child { margin-top: 0; }
+.acciones { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+
+.progreso-caja { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.progreso-txt { display: flex; gap: 9px; align-items: center; font-size: 14px; font-weight: 600; }
+.progreso-txt .i { color: var(--marca-texto); animation: latido 1.4s ease-in-out infinite; }
+.progreso { height: 8px; }
+.nota { font-size: 12.5px; color: var(--texto-3); line-height: 1.5; }
+
+.resultado { display: flex; flex-direction: column; gap: 12px; }
+.resultado textarea { min-height: 280px; font-size: 13px; line-height: 1.55; }
+.resultado .acciones { margin-top: 0; }

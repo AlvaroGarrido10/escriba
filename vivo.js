@@ -6,7 +6,6 @@
 
 const $ = (id) => document.getElementById(id);
 const aBgMsg = (cmd, extra = {}) => chrome.runtime.sendMessage({ target: "bg", cmd, ...extra });
-const escV = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 let sesion = {}, reunion = null, relojInt = null, nivelesInt = null, notasTimer = null, ultimoTextoLineas = -1;
 
 $("btnBiblio").onclick = () => chrome.tabs.create({ url: "reuniones.html" });
@@ -32,11 +31,13 @@ async function refresca() {
   const { historial } = await chrome.storage.local.get({ historial: [] });
   $("sinGrabacion").hidden = !!sesion.grabando;
   $("conGrabacion").hidden = !sesion.grabando;
+  $("conGrabacion").classList.toggle("pausa", !!sesion.pausado);
   const est = $("estadoRec");
-  est.className = sesion.grabando ? (sesion.pausado ? "pausa" : "rec") : "";
-  est.textContent = sesion.grabando ? (sesion.pausado ? t("viv.enPausaBadge") : t("viv.grabandoBadge")) : t("viv.sinGrabacion");
-  $("btnPausa").textContent = sesion.pausado ? t("viv.reanudar") : t("viv.pausar");
-  $("reloj").classList.toggle("pausa", !!sesion.pausado);
+  est.className = "pildora" + (sesion.grabando ? (sesion.pausado ? "" : " rec") : "");
+  est.innerHTML = sesion.grabando
+    ? (sesion.pausado ? icono("pausa") + escapa(t("viv.enPausaBadge")) : '<span class="punto"></span>' + escapa(t("viv.grabandoBadge")))
+    : escapa(t("viv.sinGrabacion"));
+  $("btnPausa").innerHTML = icono(sesion.pausado ? "play" : "pausa") + `<span>${escapa(t(sesion.pausado ? "viv.reanudar" : "viv.pausar"))}</span>`;
   $("sub").textContent = sesion.pausado ? t("viv.enPausa") : "";
   clearInterval(relojInt);
   clearInterval(nivelesInt);
@@ -53,23 +54,17 @@ function pintaReloj() {
   const ms = (sesion.pausado ? sesion.pausadoDesde : Date.now()) - sesion.t0 - (sesion.pausaMs || 0);
   const s = Math.max(0, ms) / 1000;
   $("reloj").textContent = formatoTiempo(s);
-  if (!sesion.pausado) {
-    const enTramo = s % DURACION_TRAMO_S;
-    $("sub").textContent = t("viv.siguienteTrozo", formatoTiempo(DURACION_TRAMO_S - enTramo));
-  }
+  const enTramo = s % DURACION_TRAMO_S;
+  $("progTramo").style.width = Math.round((enTramo / DURACION_TRAMO_S) * 100) + "%";
+  if (!sesion.pausado) $("sub").textContent = t("viv.siguienteTrozo", formatoTiempo(DURACION_TRAMO_S - enTramo));
 }
 
 async function pintaNiveles() {
   const r = await aBgMsg("niveles").catch(() => null);
   if (!r || !r.ok || !r.id) return;
-  $("niveles").innerHTML = (r.fuentes || []).map((f) => {
-    // En decibelios, como un vúmetro: -60 dB (silencio) = 0 %, -10 dB = lleno.
-    const db = 20 * Math.log10(Math.max(f.rms, 1e-6));
-    const pct = Math.max(0, Math.min(100, Math.round(((db + 60) / 50) * 100)));
-    return `<div class="nivel"><span>${escV(f.nombre === "pestaña" ? t("viv.fuentePestana") : t("viv.fuenteMicro"))}</span><div class="barra"><div style="width:${pct}%"></div></div></div>`;
-  }).join("");
+  $("niveles").innerHTML = (r.fuentes || []).map(htmlNivel).join("");
   const aviso = $("avisoNivel");
-  if (r.sinMicro) { aviso.hidden = false; aviso.textContent = t("viv.sinMicro"); }
+  if (r.sinMicro) ponAviso(aviso, "atencion", escapa(t("viv.sinMicro")), "micro-no");
   else aviso.hidden = true;
 }
 
@@ -80,36 +75,63 @@ function pintaReunion(historial) {
   if (!sesion.grabando) {
     const h = reunion || historial[0];
     const u = $("ultima");
+    u.innerHTML = "";
     if (h && ["transcribiendo", "ok", "pendiente"].includes(h.estado)) {
-      u.innerHTML = `<p class="vacio">${t(h.estado === "transcribiendo" ? "viv.transcribiendoFinal" : "viv.lista", escV(h.titulo))}</p>`;
-      if (h.estado !== "transcribiendo") {
-        const b = document.createElement("button");
-        b.textContent = t("viv.abrirBiblio");
-        b.style.cssText = "width:100%;margin-bottom:6px";
-        b.onclick = () => chrome.tabs.create({ url: "reuniones.html#" + h.id });
-        u.appendChild(b);
+      const transcribiendo = h.estado === "transcribiendo";
+      u.innerHTML = avisoHtml(transcribiendo ? "" : "ok", t(transcribiendo ? "viv.transcribiendoFinal" : "viv.lista", escapa(h.titulo)), transcribiendo ? "reloj" : "ok");
+      if (!transcribiendo) {
+        const b = botonUI({ texto: t("viv.abrirBiblio"), icono: "libro", clase: "btn-peq btn-primario", alPulsar: () => chrome.tabs.create({ url: "reuniones.html#" + h.id }) });
+        b.style.marginTop = "8px";
+        u.querySelector(".cuerpo").appendChild(document.createElement("div")).appendChild(b);
       }
-    } else u.innerHTML = "";
+    }
     return;
   }
   if (!reunion) return;
   // Notas: no se pisa lo que se está escribiendo.
   if (document.activeElement !== $("notas")) $("notas").value = reunion.notas || "";
-  $("marcas").innerHTML = (reunion.marcas || []).map((m) => `<li><b>${formatoTiempo(m.t)}</b>${escV(m.nota || "⭐")}</li>`).join("");
+  $("marcas").innerHTML = (reunion.marcas || []).map((m) => `<li>${icono("estrella")}<b>${formatoTiempo(m.t)}</b>${escapa(m.nota || "")}</li>`).join("");
   const lineas = [];
-  for (const t of reunion.tramos || []) {
-    if (t.estado === "ok") lineas.push(...lineasTranscripcion(aplicarHablantes(t.texto || "", reunion.hablantes)));
+  for (const tr of reunion.tramos || []) {
+    if (tr.estado === "ok") lineas.push(...lineasTranscripcion(aplicarHablantes(tr.texto || "", mapaVisible(tr.texto || "", reunion.hablantes))));
   }
   if (lineas.length !== ultimoTextoLineas) {
     ultimoTextoLineas = lineas.length;
     const cont = $("texto");
     if (lineas.length) {
       const abajo = cont.scrollTop + cont.clientHeight >= cont.scrollHeight - 30;
-      cont.innerHTML = lineas.map((l) => `<div class="l">${l.t !== null ? `<span class="t">${formatoTiempo(l.t)}</span>` : ""}${l.hablante ? `<span class="h">${escV(l.hablante)}:</span>` : ""}${escV(l.texto)}</div>`).join("");
+      cont.innerHTML = htmlTurnos(lineas);
       if (abajo) cont.scrollTop = cont.scrollHeight;
+      revisaIrFinal();
     }
   }
 }
+
+// Las frases seguidas de la misma voz, juntas bajo su nombre.
+function htmlTurnos(lineas) {
+  const voces = [];
+  let html = "", previo;
+  for (const l of lineas) {
+    const quien = l.hablante || "";
+    if (quien && !voces.includes(quien)) voces.push(quien);
+    if (quien !== previo) {
+      if (previo !== undefined) html += "</div>";
+      previo = quien;
+      html += `<div class="turno" style="--c:var(--voz-${Math.max(0, voces.indexOf(quien)) % 8})">` +
+        (quien ? `<div class="quien"><span class="avatar">${escapa(inicialDe(quien))}</span>${escapa(quien)}${l.t !== null ? `<span class="t">${formatoTiempo(l.t)}</span>` : ""}</div>` : "");
+    }
+    html += `<p>${escapa(l.texto)}</p>`;
+  }
+  return html + (previo !== undefined ? "</div>" : "");
+}
+
+// «Ir al final» solo si el usuario ha subido a leer algo anterior.
+function revisaIrFinal() {
+  const c = $("texto");
+  $("irFinal").hidden = c.scrollTop + c.clientHeight >= c.scrollHeight - 30;
+}
+$("texto").addEventListener("scroll", revisaIrFinal);
+$("irFinal").onclick = () => { $("texto").scrollTo({ top: $("texto").scrollHeight, behavior: "smooth" }); };
 
 $("btnPausa").onclick = async () => {
   $("btnPausa").disabled = true;
@@ -126,8 +148,8 @@ $("btnParar").onclick = async () => {
 $("formMarca").onsubmit = async (e) => {
   e.preventDefault();
   const r = await aBgMsg("marcar", { nota: $("notaMarca").value });
-  if (r && r.ok) $("notaMarca").value = "";
-  else $("sub").textContent = "❌ " + ((r && r.error) || t("viv.noSePudoMarcar"));
+  if (r && r.ok) { $("notaMarca").value = ""; toast(t("viv.marcado", formatoTiempo(r.marca.t)), "ok"); }
+  else toast((r && r.error) || t("viv.noSePudoMarcar"), "error");
 };
 
 $("notas").addEventListener("input", () => {
@@ -142,4 +164,5 @@ async function guardaNotas() {
   if (notas === (reunion.notas || "")) return;
   const r = await aBgMsg("histEditar", { id: reunion.id, cambios: { notas } });
   $("guardado").textContent = r && r.ok ? t("viv.guardado") : t("viv.noGuardadas");
+  $("guardado").style.color = r && r.ok ? "" : "var(--error)";
 }

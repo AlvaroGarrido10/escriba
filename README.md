@@ -7,7 +7,7 @@ Extensión de Chrome (Manifest V3) que graba reuniones y las transcribe con IA. 
 
 - **Reuniones online** (Meet, Teams web…): graba el audio de la pestaña **y** el micrófono a la vez.
 - **Reuniones presenciales**: graba solo con el micrófono.
-- **Archivos que ya tienes** (notas de voz, grabaciones de otra herramienta): «📂 Transcribir un archivo» acepta mp3, m4a, wav, webm, ogg, flac o mp4.
+- **Archivos que ya tienes** (notas de voz, grabaciones de otra herramienta): «Transcribir un archivo» acepta mp3, m4a, wav, webm, ogg, flac o mp4.
 - Al parar, la transcripción se descarga en `Descargas\reuniones\` como `.md` y queda en el historial.
 - **No se pierde audio**: si un tramo no se puede transcribir, su audio se guarda y se reintenta solo. Si Chrome se cierra a mitad de reunión, se recupera lo grabado.
 - **Biblioteca de reuniones** (3.2): búsqueda en todas las reuniones, lectura con marcas de tiempo y cada voz en su color, nombres reales para cada hablante («Hablante 2» → «Marcos») y exportación a Word, PDF, texto, Markdown o subtítulos SRT.
@@ -17,8 +17,9 @@ Extensión de Chrome (Manifest V3) que graba reuniones y las transcribe con IA. 
 - **Coste estimado** (3.5): con los precios que pongas en Opciones, la biblioteca dice cuánto costó cada reunión y lo que llevas de mes. Sin precios no se inventa nada.
 - **Aviso al entrar en una reunión** (3.5, opcional): Meet, Teams, Zoom web, kMeet de Infomaniak o Jitsi. Te recuerda grabar; grabar sigue siendo cosa tuya (Chrome solo deja capturar una pestaña si pulsas el icono o el atajo).
 - **Interfaz en español e inglés** (3.5): según el idioma de Chrome, o el que elijas en Opciones.
-- **Se oye la reunión por cualquier salida** (3.5.1): si cambia el dispositivo (monitor, cascos) el sonido se rehace, y mientras grabas, «🔊 ¿No oyes la reunión?» cambia en vivo la forma de devolverlo.
-- **La transcripción, en el propio panel** (3.5.2): la última sale abierta con «📋 Copiar»; las anteriores, con «📄 Ver aquí». La biblioteca sigue a un clic.
+- **Se oye la reunión por cualquier salida** (3.5.1): si cambia el dispositivo (monitor, cascos) el sonido se rehace, y mientras grabas, «¿No oyes la reunión?» cambia en vivo la forma de devolverlo.
+- **La transcripción, en el propio panel** (3.5.2): la última sale abierta con «Copiar»; las anteriores se abren con un clic. La biblioteca sigue a un clic.
+- **Interfaz nueva** (3.6): modo oscuro (automático, claro u oscuro), iconos propios en lugar de emojis, un popup que enseña solo lo que toca en cada momento (y los niveles de audio mientras grabas), la transcripción agrupada por quién habla, Opciones por apartados y todas las pantallas adaptadas a ventanas estrechas. Contraste WCAG AA comprobado por la suite.
 - Idioma configurable, incluida la detección automática para reuniones que mezclan idiomas.
 
 ## Cómo está construido
@@ -122,13 +123,13 @@ Pruebas en pantalla de la 3.2 – 3.4 (30/09/2026), en Chromium con la extensió
 ## Uso
 
 1. En la pestaña de la reunión, pulsa el icono de Escriba y elige modo: **pestaña + micro** (Meet, Teams o cualquier reunión en el navegador) o **solo micro** (presenciales).
-2. **⏺ Empezar a grabar.** Puedes cerrar el popup: el badge REC indica que sigue grabando.
+2. **Empezar a grabar.** Puedes cerrar el popup: el badge REC indica que sigue grabando.
    Opcional: escribe los **participantes** («Marcos, Ana»); ayudan a poner nombre a cada voz y al acta.
-3. Mientras grabas: **⏸ Pausar**, **⭐ Marcar** un momento (o Alt+Shift+M) y **🪟 En vivo** para abrir el panel lateral con el texto que va llegando, los niveles y tus notas.
-4. **⏹ Parar y transcribir** (o Alt+Shift+G). Como los tramos se transcriben mientras grabas, al parar solo falta el último.
-5. La reunión se abre en la **biblioteca** («📚 Reuniones»): léela, pon nombre a cada voz, exporta a Word o PDF, saca el acta con la plantilla que quieras o pregúntale lo que necesites.
+3. Mientras grabas, el popup enseña el reloj y el nivel de cada fuente. **Pausar**, **Marcar** un momento (o Alt+Shift+M) y **En vivo** para abrir el panel lateral con el texto que va llegando, los niveles y tus notas.
+4. **Parar y transcribir** (o Alt+Shift+G). Como los tramos se transcriben mientras grabas, al parar solo falta el último.
+5. La reunión se abre en la **biblioteca** («Reuniones»): léela, pon nombre a cada voz, exporta a Word o PDF, saca el acta con la plantilla que quieras o pregúntale lo que necesites.
 
-Para un audio que ya tienes: **📂 Transcribir un archivo** en el panel, arrástralo y pulsa Transcribir. Varios archivos a la vez se tratan como partes seguidas de la misma reunión.
+Para un audio que ya tienes: **Transcribir un archivo** en el panel, arrástralo y pulsa Transcribir. Varios archivos a la vez se tratan como partes seguidas de la misma reunión.
 
 ## Preguntas rápidas
 

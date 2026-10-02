@@ -1762,6 +1762,189 @@ test("la fecha de una reunión: en español la guardada; en inglés se rehace, q
 });
 
 // ============================================================================
+grupo("3.6 · interfaz: estilo.css, iconos.svg y ui.js");
+
+const PAGINAS = ["popup.html", "reuniones.html", "vivo.html", "options.html", "importar.html"];
+const leeExt = (f) => fsT.readFileSync(pathT.join(RAIZ_EXT, f), "utf8");
+
+// Bloque `selector { … }` de una hoja de estilos, con sus llaves anidadas.
+function bloqueCss(css, selector) {
+  const i = css.indexOf(selector + " {");
+  assert.ok(i >= 0, "no está el bloque " + selector);
+  let j = css.indexOf("{", i) + 1, prof = 1, k = j;
+  while (prof) { if (css[k] === "{") prof++; else if (css[k] === "}") prof--; k++; }
+  return css.slice(j, k - 1);
+}
+const tokensCss = (txt) => Object.fromEntries([...txt.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
+// Contraste WCAG 2.x entre dos colores #rrggbb.
+function contraste(a, b) {
+  const lum = (hex) => {
+    const c = [0, 2, 4].map((i) => parseInt(hex.slice(1 + i, 3 + i), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+test("cada página carga i18n.js, después ui.js (el tema, antes de pintar) y la hoja común estilo.css", () => {
+  for (const f of PAGINAS) {
+    const html = leeExt(f);
+    const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepStrictEqual(scripts.slice(0, 2), ["i18n.js", "ui.js"], f);
+    const cabeza = html.slice(0, html.indexOf("</head>"));
+    assert.match(cabeza, /<script src="ui\.js"><\/script>/, f + ": ui.js va en el <head>");
+    assert.match(cabeza, /<link rel="stylesheet" href="estilo\.css">/, f);
+  }
+});
+
+test("todo icono que usan el HTML y el JS existe en iconos.svg", () => {
+  const simbolos = new Set([...leeExt("iconos.svg").matchAll(/<symbol id="([a-z-]+)"/g)].map((m) => m[1]));
+  assert.ok(simbolos.size > 40, "el sprite tiene sus iconos");
+  const usados = new Map();
+  const apunta = (f, n) => { if (!usados.has(n)) usados.set(n, f); };
+  for (const f of [...PAGINAS, "popup.js", "reuniones.js", "vivo.js", "options.js", "importar.js", "ui.js"]) {
+    const src = leeExt(f);
+    for (const m of src.matchAll(/iconos\.svg#([a-z-]+)/g)) apunta(f, m[1]);
+    for (const m of src.matchAll(/icono\(\s*"([a-z-]+)"/g)) apunta(f, m[1]);
+    for (const m of src.matchAll(/icono\([^()]*\?\s*"([a-z-]+)"\s*:\s*"([a-z-]+)"/g)) { apunta(f, m[1]); apunta(f, m[2]); }
+    for (const m of src.matchAll(/\b(?:icono|ic):\s*"([a-z-]+)"/g)) apunta(f, m[1]);
+    for (const m of src.matchAll(/(?:ponAviso|avisoHtml)\([^;]*?,\s*"([a-z-]+)"\)/g)) apunta(f, m[1]);
+    const mapa = src.match(/ICONO_PLANTILLA = \{([^}]*)\}/);
+    if (mapa) for (const m of mapa[1].matchAll(/"([a-z-]+)"/g)) apunta(f, m[1]);
+  }
+  for (const m of leeExt("ui.js").match(/function iconoDeTipo[\s\S]*?\}\[tipo\]/)[0].matchAll(/:\s*"([a-z-]+)"/g)) apunta("ui.js", m[1]);
+  assert.ok(usados.size > 40, "se encuentran los iconos usados (" + usados.size + ")");
+  const faltan = [...usados].filter(([n]) => !simbolos.has(n)).map(([n, f]) => `${f}: ${n}`);
+  assert.deepStrictEqual(faltan, []);
+});
+
+test("ningún texto de la interfaz empieza por un emoji: el icono lo pone el HTML", () => {
+  const emoji = /^\s*\p{Extended_Pictographic}/u;
+  // Las líneas del diagnóstico son un informe para copiar y pegar: ahí sí.
+  const permitidos = new Set(["pop.diag0kb", "pop.diagSilencio"]);
+  const malos = [];
+  for (const idioma of ["es", "en"]) {
+    for (const [k, v] of Object.entries(i18n.TEXTOS[idioma])) {
+      if (/^(pop|bib|viv|opc|imp|ui)\./.test(k) && !permitidos.has(k) && emoji.test(v)) malos.push(`${idioma} ${k}: ${v.slice(0, 30)}`);
+    }
+  }
+  assert.deepStrictEqual(malos, []);
+  for (const f of PAGINAS) assert.doesNotMatch(leeExt(f), /\p{Extended_Pictographic}/u, f + " no lleva emojis");
+});
+
+test("claro y oscuro definen los mismos colores, y el oscuro del sistema es igual que el elegido", () => {
+  const css = leeExt("estilo.css");
+  const claro = tokensCss(bloqueCss(css, ":root"));
+  const oscuro = tokensCss(bloqueCss(css, ':root[data-tema="oscuro"]'));
+  const sistema = tokensCss(bloqueCss(bloqueCss(css, "@media (prefers-color-scheme: dark)"), ':root:not([data-tema="claro"])'));
+  const colores = Object.keys(claro).filter((k) => /^(#|rgba)/.test(claro[k]));
+  assert.ok(colores.length > 40);
+  assert.deepStrictEqual(colores.filter((k) => !(k in oscuro)), [], "colores sin versión oscura");
+  assert.deepStrictEqual(sistema, oscuro, "el oscuro por @media y el de data-tema deben ser el mismo");
+});
+
+test("contraste WCAG AA (≥ 4,5:1) de cada texto sobre su fondo, en claro y en oscuro", () => {
+  const css = leeExt("estilo.css");
+  const temas = { claro: tokensCss(bloqueCss(css, ":root")), oscuro: tokensCss(bloqueCss(css, ':root[data-tema="oscuro"]')) };
+  const pares = [
+    ["texto", "fondo"], ["texto", "superficie"], ["texto", "superficie-2"], ["texto", "marca-suave"],
+    ["texto-2", "fondo"], ["texto-2", "superficie"], ["texto-2", "superficie-2"], ["texto-2", "superficie-3"],
+    ["texto-3", "fondo"], ["texto-3", "superficie"], ["texto-3", "superficie-2"],
+    ["marca-texto", "fondo"], ["marca-texto", "superficie"], ["marca-texto", "marca-suave"],
+    ["sobre-marca", "marca"], ["sobre-marca", "marca-hover"], ["sobre-grabando", "grabando"], ["sobre-grabando", "grabando-hover"],
+    ["ok", "ok-suave"], ["ok", "superficie"], ["atencion", "atencion-suave"], ["atencion", "superficie"],
+    ["error", "error-suave"], ["error", "superficie"], ["error", "grabando-suave"],
+    ["texto", "atencion-suave"], ["texto", "error-suave"], ["texto", "ok-suave"], ["texto", "info-suave"],
+    ["sobre-resaltado", "resaltado"], ["sobre-resaltado", "resaltado-actual"],
+    // Cada voz: su nombre sobre la tarjeta y la inicial sobre su círculo.
+    ...[0, 1, 2, 3, 4, 5, 6, 7].flatMap((i) => [["voz-" + i, "superficie"], ["superficie", "voz-" + i]]),
+  ];
+  const bajos = [];
+  for (const [nombre, tk] of Object.entries(temas)) {
+    for (const [a, b] of pares) {
+      const r = contraste(tk[a], tk[b]);
+      if (!(r >= 4.5)) bajos.push(`${nombre}: ${a} sobre ${b} = ${r.toFixed(2)}`);
+    }
+  }
+  assert.deepStrictEqual(bajos, []);
+});
+
+function contextoUI() {
+  const guardado = {};
+  const raiz = { dataset: {} };
+  const ctx = cargar("ui.js", {
+    document: { documentElement: raiz, addEventListener() {}, querySelector: () => null },
+    localStorage: { getItem: (k) => (k in guardado ? guardado[k] : null), setItem: (k, v) => { guardado[k] = String(v); } },
+  });
+  return { ctx, raiz, guardado };
+}
+
+test("tema: «claro» y «oscuro» se marcan en <html> y se recuerdan; cualquier otra cosa es «auto»", () => {
+  const { ctx, raiz, guardado } = contextoUI();
+  assert.strictEqual(raiz.dataset.tema, undefined, "sin nada guardado, el del sistema");
+  assert.strictEqual(ctx.ponTema("oscuro"), "oscuro");
+  assert.strictEqual(raiz.dataset.tema, "oscuro");
+  assert.strictEqual(guardado["escriba.tema"], "oscuro");
+  ctx.ponTema("claro");
+  assert.strictEqual(raiz.dataset.tema, "claro");
+  assert.strictEqual(ctx.ponTema("rosa"), "auto");
+  assert.strictEqual(raiz.dataset.tema, undefined);
+  assert.strictEqual(guardado["escriba.tema"], "auto");
+  const cfg = require("../config.js");
+  assert.strictEqual(cfg.CFG_SYNC.tema, "auto", "se sincroniza: no es un secreto");
+  assert.ok(!("tema" in cfg.CFG_LOCAL));
+});
+
+test("fechas de la lista: hoy, ayer, esta semana y por meses; y la inicial de cada voz", () => {
+  const { ctx } = contextoUI();
+  const ahora = new Date();
+  const hoy = (h, m) => new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), h, m).getTime();
+  const haceDias = (n, h, m) => new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() - n, h, m).getTime();
+  assert.strictEqual(ctx.fechaCorta({ id: hoy(0, 5) }), "Hoy, 00:05");
+  assert.strictEqual(ctx.fechaCorta({ id: haceDias(1, 17, 5) }), "Ayer, 17:05");
+  assert.strictEqual(ctx.fechaCorta({ fecha: "29/09/2026 09:15" }), "29/09/2026 09:15", "sin marca de tiempo, la guardada");
+  assert.strictEqual(ctx.grupoDeFecha({ id: hoy(0, 5) }).clave, "hoy");
+  assert.strictEqual(ctx.grupoDeFecha({ id: haceDias(1, 23, 59) }).clave, "ayer");
+  const viejo = ctx.grupoDeFecha({ id: haceDias(40, 12, 0) });
+  assert.match(viejo.clave, /^\d{4}-\d{1,2}$/);
+  assert.match(viejo.nombre, /^\p{Lu}/u, "el mes, con mayúscula");
+  // El lunes de esta semana, si no es hoy ni ayer, va en «esta semana».
+  const lunes = haceDias((ahora.getDay() + 6) % 7, 0, 30);
+  if (lunes < haceDias(1, 0, 0)) assert.strictEqual(ctx.grupoDeFecha({ id: lunes }).clave, "semana");
+  ctx.ponIdiomaUI("en");
+  assert.match(ctx.fechaCorta({ id: haceDias(1, 17, 5) }), /^Yesterday, 0?5:05[\s ]PM$/u, "el espacio antes de PM cambia según la versión de ICU");
+  ctx.ponIdiomaUI("es");
+  assert.strictEqual(ctx.inicialDe("Hablante 2"), "2");
+  assert.strictEqual(ctx.inicialDe("Speaker 12"), "12");
+  assert.strictEqual(ctx.inicialDe("álvaro"), "Á");
+  assert.strictEqual(ctx.inicialDe(""), "?");
+});
+
+test("el nivel de audio: silencio, bajo y bueno, con el nombre de la fuente en su idioma", () => {
+  const { ctx } = contextoUI();
+  const ancho = (html) => Number(html.match(/width:(\d+)%/)[1]);
+  const mudo = ctx.htmlNivel({ nombre: "pestaña", rms: 0 });
+  assert.strictEqual(ancho(mudo), 0);
+  assert.match(mudo, /barra-nivel mudo/);
+  assert.match(mudo, /Pestaña/);
+  const bajo = ctx.htmlNivel({ nombre: "micrófono", rms: 0.003 }); // ≈ -50 dB
+  assert.match(bajo, /barra-nivel bajo/);
+  assert.match(bajo, /Micro/);
+  const bueno = ctx.htmlNivel({ nombre: "pestaña", rms: 0.1 }); // -20 dB
+  assert.strictEqual(ancho(bueno), 80);
+  assert.match(bueno, /barra-nivel "/);
+  assert.strictEqual(ancho(ctx.htmlNivel({ nombre: "pestaña", rms: 1 })), 100, "no se pasa del 100 %");
+});
+
+test("escapa() no deja pasar HTML: los títulos y textos del modelo nunca se ejecutan", () => {
+  const { ctx } = contextoUI();
+  assert.strictEqual(ctx.escapa('<img src=x onerror="alert(1)">&'), "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;");
+  assert.strictEqual(ctx.escapa(null), "");
+  assert.match(ctx.icono("micro", "g"), /^<svg class="i g" aria-hidden="true"><use href="iconos\.svg#micro"><\/use><\/svg>$/);
+});
+
+// ============================================================================
 (async function main() {
   let ok = 0, fallos = 0;
   for (const c of casos) {

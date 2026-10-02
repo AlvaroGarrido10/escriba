@@ -1,0 +1,84 @@
+/* Escriba — Opciones (3.6). Lo común está en estilo.css. */
+
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+.pagina { display: grid; grid-template-columns: 240px minmax(0, 760px); gap: 48px; max-width: 1100px; margin: 0 auto; padding: 0 28px; justify-content: center; }
+
+/* --- índice --- */
+.indice { position: sticky; top: 0; align-self: start; height: 100vh; padding: 32px 0 24px; display: flex; flex-direction: column; gap: 22px; }
+.indice .logo { font-size: 18px; padding-left: 10px; }
+.indice .logo img { width: 30px; height: 30px; border-radius: 8px; }
+.indice nav { display: flex; flex-direction: column; gap: 2px; }
+.indice nav a {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-2);
+  font-size: 14px; font-weight: 550; color: var(--texto-2); text-decoration: none;
+}
+.indice nav a .i { color: var(--texto-3); width: 17px; height: 17px; }
+.indice nav a:hover { background: var(--superficie-2); color: var(--texto); }
+.indice nav a.activo { background: var(--marca-suave); color: var(--marca-texto); }
+.indice nav a.activo .i { color: var(--marca-texto); }
+.pie-indice { margin-top: auto; font-size: 12.5px; color: var(--texto-3); display: flex; gap: 7px; align-items: center; padding-left: 10px; }
+.pie-indice .i { color: var(--ok); }
+
+/* --- contenido --- */
+main { padding: 36px 0 80px; }
+.cabecera h1 { font-size: 28px; }
+.cabecera .sub { color: var(--texto-2); margin-top: 4px; font-size: 14.5px; }
+.resumen { margin: 22px 0 6px; }
+.resumen:empty { display: none; }
+.resumen .lista-pasos { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.resumen .paso-mini { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 5px 10px; border-radius: var(--r-redondo); background: var(--superficie); border: 1px solid var(--borde); color: var(--texto-2); }
+.resumen .paso-mini.hecho { color: var(--ok); border-color: var(--ok-borde); }
+.resumen .paso-mini .i { width: 15px; height: 15px; }
+
+.apartado { padding-top: 34px; }
+.apartado > h2 { display: flex; align-items: center; gap: 10px; font-size: 19px; margin-bottom: 14px; }
+.apartado > h2 .i { color: var(--marca-texto); width: 20px; height: 20px; }
+
+.paso { padding: 18px 20px; margin-bottom: 12px; transition: border-color var(--t-media), background var(--t-media); }
+.paso-cab { display: flex; align-items: center; gap: 10px; }
+.paso-cab h3 { font-size: 15.5px; }
+.paso .n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; flex: none; background: var(--marca); color: var(--sobre-marca); }
+.paso.listo { border-color: var(--ok-borde); }
+.paso.listo .n { background: var(--ok); color: var(--superficie); font-size: 0; }
+.paso.listo .n::after { content: "✓"; font-size: 14px; }
+.paso-txt { color: var(--texto-2); font-size: 13.5px; margin: 6px 0 12px 36px; }
+.paso .con-boton, .paso > .btn, .paso > .estado { margin-left: 36px; }
+.paso .con-boton { max-width: 520px; }
+
+.tarjeta > .fila { padding: 18px 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: start; }
+.tarjeta > .fila + .fila { border-top: 1px solid var(--borde); }
+.fila-txt > b { display: block; font-size: 14.5px; font-weight: 650; }
+.fila-txt p { font-size: 13px; color: var(--texto-2); margin-top: 3px; line-height: 1.5; }
+.fila-ctl { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
+.fila-ctl select.campo, .fila-ctl input.campo { width: 240px; }
+.fila > .estado { grid-column: 1 / -1; margin-top: 0; }
+.fila-bloque { grid-template-columns: minmax(0, 1fr) !important; }
+.fila-cab { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; }
+.en-linea { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.en-linea select.campo { width: auto; min-width: 190px; }
+.par { display: grid; grid-template-columns: 1.6fr 1fr; gap: 8px; }
+.con-boton { position: relative; display: flex; align-items: center; }
+.con-boton .campo { padding-right: 42px; }
+.con-boton .ver-clave { position: absolute; right: 3px; min-height: 30px; width: 30px; }
+.casilla.en-linea { align-items: center; }
+.casilla input[type=radio] { margin-top: 0; }
+
+.precios { display: grid; grid-template-columns: 1.2fr repeat(3, 1fr); gap: 8px 10px; align-items: center; font-size: 13px; }
+.precios .cab { color: var(--texto-3); font-size: 12px; font-weight: 600; }
+.precios .prov { font-weight: 600; }
+.precios .prov a { font-weight: 400; font-size: 12px; margin-left: 4px; }
+.precios .campo { min-height: 34px; font-size: 13.5px; }
+
+.segmentado.tema label { padding: 6px 12px; }
+
+@media (max-width: 920px) {
+  .pagina { grid-template-columns: 1fr; gap: 0; padding: 0 16px; }
+  .indice { position: sticky; height: auto; padding: 12px 0; z-index: 5; background: var(--fondo); flex-direction: row; align-items: center; overflow-x: auto; gap: 12px; border-bottom: 1px solid var(--borde); }
+  .indice nav { flex-direction: row; }
+  .indice nav a span { white-space: nowrap; }
+  .indice .logo span, .pie-indice { display: none; }
+  .tarjeta > .fila { grid-template-columns: 1fr; }
+  .fila-ctl { justify-content: flex-start; }
+  .par { grid-template-columns: 1fr; }
+  .precios { grid-template-columns: 1fr 1fr 1fr 1fr; }
+}

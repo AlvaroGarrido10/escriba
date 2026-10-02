@@ -2,83 +2,68 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="viv.tituloPagina">Escriba — En vivo</title>
-<style>
-  :root { --vino: #5d2a42; --vino2: #7c3a58; --rosa: #d6336c; --borde: #e6dce1; --suave: #7b6b73; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #241d21; background: #faf7f9; font-size: 13px; }
-  header { background: var(--vino); color: #fff; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; }
-  header b { display: flex; align-items: center; gap: 7px; font-size: 14px; }
-  header img { width: 18px; height: 18px; }
-  #estadoRec { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,.15); }
-  #estadoRec.rec { background: #c0392b; } #estadoRec.pausa { background: #7b6b73; }
-  main { padding: 12px; }
-  .reloj { text-align: center; font-size: 30px; font-variant-numeric: tabular-nums; color: var(--vino); margin: 4px 0 2px; }
-  .reloj.pausa { color: var(--suave); }
-  .sub { text-align: center; color: var(--suave); font-size: 11.5px; min-height: 16px; }
-  .botones { display: flex; gap: 6px; margin: 10px 0; }
-  .botones button { flex: 1; }
-  button { font: inherit; font-size: 12.5px; cursor: pointer; border-radius: 8px; border: 1px solid var(--vino); background: #fff; color: var(--vino); padding: 7px 6px; }
-  button:hover { background: #f7edf2; }
-  button.parar { background: #c0392b; border-color: #c0392b; color: #fff; }
-  button:disabled { opacity: .5; cursor: default; }
-  h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--suave); margin: 16px 0 6px; }
-  .nivel { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 12px; }
-  .barra { height: 8px; background: #efe5ea; border-radius: 6px; overflow: hidden; }
-  .barra div { height: 100%; width: 0; background: linear-gradient(90deg, #2e7d32, #8bc34a); transition: width .25s; }
-  .aviso { font-size: 12px; line-height: 1.4; border-radius: 8px; padding: 8px 10px; margin-top: 8px; background: #fff4e5; color: #7a4a00; border: 1px solid #f0c48a; }
-  .marca { display: flex; gap: 6px; margin-top: 4px; }
-  .marca input { flex: 1; padding: 7px 9px; border: 1px solid var(--borde); border-radius: 8px; font: inherit; font-size: 12.5px; }
-  #marcas { list-style: none; padding: 0; margin: 6px 0 0; }
-  #marcas li { font-size: 12px; padding: 4px 0; border-bottom: 1px dashed #eee; }
-  #marcas li b { color: var(--vino); font-variant-numeric: tabular-nums; margin-right: 6px; }
-  textarea { width: 100%; height: 110px; padding: 8px; border: 1px solid var(--borde); border-radius: 9px; font: inherit; font-size: 12.5px; resize: vertical; background: #fff; }
-  #texto { background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 6px 4px; max-height: 42vh; overflow-y: auto; }
-  .l { padding: 4px 8px; line-height: 1.45; font-size: 12.5px; }
-  .l .t { color: var(--suave); font-size: 11px; margin-right: 5px; font-variant-numeric: tabular-nums; }
-  .l .h { font-weight: 700; color: var(--vino); margin-right: 4px; }
-  .vacio { color: var(--suave); font-size: 12px; padding: 8px; line-height: 1.45; }
-  .guardado { font-size: 11px; color: #2e7d32; min-height: 14px; }
-  [hidden] { display: none !important; }
-</style>
+<script src="i18n.js"></script><script src="ui.js"></script>
+<link rel="stylesheet" href="estilo.css">
+<link rel="stylesheet" href="vivo.css">
 </head>
 <body>
-<header><b><img src="icon32.png" alt=""><span data-i18n="viv.cabecera">Escriba · En vivo</span></b><span id="estadoRec" data-i18n="viv.sinGrabacion">sin grabación</span></header>
+<header class="cab">
+  <span class="logo"><img src="icon32.png" alt=""><span>Escriba <span class="sub-logo" data-i18n="viv.enVivo">en vivo</span></span></span>
+  <span id="estadoRec" class="pildora" data-i18n="viv.sinGrabacion">sin grabación</span>
+</header>
+
 <main>
-  <div id="sinGrabacion">
-    <p class="vacio"><span data-i18n="viv.vacio1">No hay ninguna grabación en curso. Empieza desde el icono de Escriba</span><span id="atajo"></span><span data-i18n="viv.vacio2">, y aquí verás el texto según llega, los niveles de audio y tus notas.</span></p>
+  <div id="sinGrabacion" class="sin-grabacion">
+    <div class="vacio">
+      <div class="ilus"><svg class="i" aria-hidden="true"><use href="iconos.svg#micro"></use></svg></div>
+      <h3 data-i18n="viv.vacioTitulo">No estás grabando</h3>
+      <p><span data-i18n="viv.vacio1">No hay ninguna grabación en curso. Empieza desde el icono de Escriba</span><span id="atajo"></span><span data-i18n="viv.vacio2">, y aquí verás el texto según llega, los niveles de audio y tus notas.</span></p>
+    </div>
     <div id="ultima"></div>
-    <button id="btnBiblio" style="width:100%" data-i18n="viv.verTodas">📚 Ver todas las reuniones</button>
+    <button id="btnBiblio" class="btn btn-bloque"><svg class="i" aria-hidden="true"><use href="iconos.svg#libro"></use></svg><span data-i18n="viv.verTodas">Ver todas las reuniones</span></button>
   </div>
 
-  <div id="conGrabacion" hidden>
-    <div id="reloj" class="reloj">00:00</div>
-    <div id="sub" class="sub"></div>
-    <div class="botones">
-      <button id="btnPausa" data-i18n="viv.pausar">⏸ Pausar</button>
-      <button id="btnParar" class="parar" data-i18n="viv.parar">⏹ Parar y transcribir</button>
-    </div>
+  <div id="conGrabacion" class="con-grabacion" hidden>
+    <section class="reloj-caja">
+      <div id="reloj" class="reloj mono">00:00</div>
+      <div class="progreso" title="Hasta el siguiente trozo de texto" data-i18n-title="viv.progresoTitle"><div id="progTramo"></div></div>
+      <div id="sub" class="sub"></div>
+      <div class="botones">
+        <button id="btnPausa" class="btn"><svg class="i" aria-hidden="true"><use href="iconos.svg#pausa"></use></svg><span data-i18n="viv.pausar">Pausar</span></button>
+        <button id="btnParar" class="btn btn-grabar"><svg class="i" aria-hidden="true"><use href="iconos.svg#parar"></use></svg><span data-i18n="viv.parar">Parar y transcribir</span></button>
+      </div>
+    </section>
 
-    <h3 data-i18n="viv.niveles">Niveles</h3>
-    <div id="niveles"></div>
-    <div id="avisoNivel" class="aviso" hidden></div>
+    <section class="seccion">
+      <h3 data-i18n="viv.niveles">Niveles</h3>
+      <div id="niveles" class="niveles"></div>
+      <div id="avisoNivel" class="aviso atencion" hidden></div>
+    </section>
 
-    <h3 data-i18n="viv.marcarMomento">Marcar un momento</h3>
-    <form id="formMarca" class="marca">
-      <input id="notaMarca" placeholder="Qué pasa ahora (opcional)" maxlength="160" data-i18n-placeholder="viv.notaMarcaPh">
-      <button data-i18n="viv.marcar">⭐ Marcar</button>
-    </form>
-    <ul id="marcas"></ul>
+    <section class="seccion">
+      <h3 data-i18n="viv.marcarMomento">Marcar un momento</h3>
+      <form id="formMarca" class="form-marca">
+        <input id="notaMarca" class="campo" placeholder="Qué pasa ahora (opcional)" maxlength="160" data-i18n-placeholder="viv.notaMarcaPh">
+        <button class="btn"><svg class="i" aria-hidden="true"><use href="iconos.svg#estrella"></use></svg><span data-i18n="viv.marcar">Marcar</span></button>
+      </form>
+      <ul id="marcas" class="marcas"></ul>
+    </section>
 
-    <h3 data-i18n="viv.notas">Notas</h3>
-    <textarea id="notas" placeholder="Apunta lo que quieras: sale en la transcripción y el acta lo tiene en cuenta." data-i18n-placeholder="viv.notasPh"></textarea>
-    <div id="guardado" class="guardado"></div>
+    <details id="notasCaja" class="seccion notas-caja">
+      <summary><svg class="i" aria-hidden="true"><use href="iconos.svg#nota"></use></svg><span data-i18n="viv.notas">Notas</span><span id="guardado" class="guardado"></span><svg class="i flecha" aria-hidden="true"><use href="iconos.svg#abajo"></use></svg></summary>
+      <textarea id="notas" class="campo" placeholder="Apunta lo que quieras: sale en la transcripción y el acta lo tiene en cuenta." data-i18n-placeholder="viv.notasPh"></textarea>
+    </details>
 
-    <h3 data-i18n="viv.loQueSeDice">Lo que se va diciendo</h3>
-    <div id="texto"><div class="vacio" data-i18n="viv.textoVacio">El texto aparece por tramos de 5 minutos, en cuanto se cierra cada uno.</div></div>
+    <section class="seccion texto-vivo">
+      <h3 data-i18n="viv.loQueSeDice">Lo que se va diciendo</h3>
+      <div id="texto" class="texto"><div class="vacio-t" data-i18n="viv.textoVacio">El texto aparece por tramos de 5 minutos, en cuanto se cierra cada uno.</div></div>
+      <button id="irFinal" class="btn btn-peq ir-final" hidden><svg class="i" aria-hidden="true"><use href="iconos.svg#flecha-abajo"></use></svg><span data-i18n="viv.irFinal">Ir al final</span></button>
+    </section>
   </div>
 </main>
-<script src="i18n.js"></script><script src="comun.js"></script>
+<script src="comun.js"></script>
 <script src="vivo.js"></script>
 </body>
 </html>

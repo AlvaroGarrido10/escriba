@@ -2,198 +2,271 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title data-i18n="opc.tituloPagina">Escriba — Configuración</title>
-<style>
-  :root { --vino: #5d2a42; --ok: #2e7d32; --err: #c0392b; }
-  * { box-sizing: border-box; }
-  body { font-family: "Segoe UI", Arial, sans-serif; max-width: 620px; margin: 36px auto; color: #241d21; padding: 0 18px; }
-  h1 { color: var(--vino); font-size: 23px; margin-bottom: 4px; }
-  .sub { color: #7b6b73; margin-bottom: 26px; }
-  .paso { border: 1px solid #e6dce1; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; background: #fff; }
-  .paso h2 { font-size: 15px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
-  .paso h2 .n { background: var(--vino); color: #fff; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; flex: none; }
-  .paso p { margin: 4px 0 10px; font-size: 13px; color: #6d5f66; }
-  .paso.listo { border-color: #b9dfb8; background: #f4fbf4; }
-  input[type=password], input[type=text] { width: 100%; padding: 10px; border: 1px solid #bbb; border-radius: 8px; font-size: 13px; }
-  button { padding: 10px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 13.5px; background: var(--vino); color: #fff; }
-  button.sec { background: #fff; border: 1px solid var(--vino); color: var(--vino); }
-  .estado { font-size: 13px; margin-top: 8px; min-height: 18px; }
-  .estado.ok { color: var(--ok); } .estado.err { color: var(--err); }
-  a { color: var(--vino); }
-  details { margin-top: 18px; }
-  summary { cursor: pointer; color: #7b6b73; font-size: 13px; }
-  .avz { padding-top: 12px; }
-  .avz label { display: block; font-size: 12.5px; font-weight: 600; margin: 10px 0 4px; }
-  textarea { width: 100%; height: 70px; padding: 8px; border: 1px solid #bbb; border-radius: 8px; font-size: 12.5px; resize: vertical; }
-  .par { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
-  small { color: #8b7c83; }
-  .precios { display: grid; grid-template-columns: 1.3fr repeat(3, 1fr); gap: 6px 8px; align-items: center; font-size: 12.5px; }
-  .precios .cab { color: #8b7c83; font-size: 11.5px; }
-  .precios input { width: 100%; padding: 7px; border: 1px solid #bbb; border-radius: 7px; font-size: 12.5px; }
-</style>
+<link rel="icon" href="icon32.png">
+<script src="i18n.js"></script><script src="ui.js"></script>
+<link rel="stylesheet" href="estilo.css">
+<link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <h1 style="display:flex;align-items:center;gap:10px"><img src="icon128.png" alt="" style="width:34px;height:34px">Escriba</h1>
-  <div class="sub" data-i18n="opc.sub">Dos pasos y listo. Se guarda todo solo.</div>
+<div class="pagina">
+  <aside class="indice">
+    <span class="logo"><img src="icon128.png" alt="">Escriba</span>
+    <nav id="indice">
+      <a href="#empezar" class="activo"><svg class="i" aria-hidden="true"><use href="iconos.svg#llave"></use></svg><span data-i18n="opc.navEmpezar">Empezar</span></a>
+      <a href="#transcripcion"><svg class="i" aria-hidden="true"><use href="iconos.svg#ondas"></use></svg><span data-i18n="opc.navTranscripcion">Transcripción</span></a>
+      <a href="#actas"><svg class="i" aria-hidden="true"><use href="iconos.svg#chispas"></use></svg><span data-i18n="opc.navActas">Actas e IA</span></a>
+      <a href="#audio"><svg class="i" aria-hidden="true"><use href="iconos.svg#altavoz"></use></svg><span data-i18n="opc.navAudio">Audio</span></a>
+      <a href="#avisos"><svg class="i" aria-hidden="true"><use href="iconos.svg#campana"></use></svg><span data-i18n="opc.navAvisos">Avisos y atajo</span></a>
+      <a href="#coste"><svg class="i" aria-hidden="true"><use href="iconos.svg#euro"></use></svg><span data-i18n="opc.navCoste">Coste</span></a>
+      <a href="#almacen"><svg class="i" aria-hidden="true"><use href="iconos.svg#disco"></use></svg><span data-i18n="opc.navAlmacen">Almacenamiento</span></a>
+      <a href="#apariencia"><svg class="i" aria-hidden="true"><use href="iconos.svg#tema"></use></svg><span data-i18n="opc.navApariencia">Apariencia</span></a>
+    </nav>
+    <p class="pie-indice"><svg class="i" aria-hidden="true"><use href="iconos.svg#check"></use></svg><span data-i18n="opc.seGuardaSolo">Todo se guarda solo, al momento.</span></p>
+  </aside>
 
-  <div class="paso" id="p1">
-    <h2><span class="n">1</span> <span data-i18n="opc.p1Titulo">Pega tu clave de Google Gemini</span></h2>
-    <p data-i18n-html="opc.p1Texto">Es gratis: entra en <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> → «Create API key» → cópiala y pégala aquí.</p>
-    <input type="password" id="geminiKey" placeholder="Pega aquí la clave" data-i18n-placeholder="opc.p1Placeholder" autocomplete="off">
-    <div class="estado" id="e1"></div>
-  </div>
+  <main>
+    <header class="cabecera">
+      <h1 data-i18n="opc.titulo">Configuración</h1>
+      <p class="sub" data-i18n="opc.sub">Dos pasos y listo. Lo demás es para afinar.</p>
+    </header>
 
-  <div class="paso" id="p2">
-    <h2><span class="n">2</span> <span data-i18n="opc.p2Titulo">Permite el micrófono</span></h2>
-    <p data-i18n="opc.p2Texto">Necesario para grabarte a ti (en reuniones online y presenciales).</p>
-    <button id="btnMic" data-i18n="opc.btnMic">🎙️ Permitir micrófono</button>
-    <div class="estado" id="e2"></div>
-  </div>
+    <div id="resumen" class="resumen"></div>
 
-  <div class="estado ok" id="final" style="font-size:14px;font-weight:600"></div>
-
-  <div class="paso" id="p10" style="margin-top:14px">
-    <h2 data-i18n="opc.idiomaUITitulo">🌐 Idioma de la interfaz</h2>
-    <p data-i18n="opc.idiomaUITexto">El de los menús, botones y mensajes de Escriba. No cambia el idioma de las transcripciones ni de las actas: eso depende de «Idioma de las reuniones», justo debajo.</p>
-    <select id="idiomaUI" style="padding:8px;border:1px solid #bbb;border-radius:8px;font-size:13.5px">
-      <option value="auto" data-i18n="opc.idiomaUIAuto">Automático (el de Chrome)</option>
-      <option value="es">Español</option>
-      <option value="en">English</option>
-    </select>
-    <div class="estado" id="e10"></div>
-  </div>
-
-  <div class="paso" id="p5">
-    <h2 data-i18n="opc.idiomaTitulo">🗣️ Idioma de las reuniones</h2>
-    <p data-i18n="opc.idiomaTexto">En qué idioma se habla. «Detectar» sirve para reuniones que mezclan idiomas: cada frase se deja en el suyo, sin traducir.</p>
-    <select id="idioma" style="padding:8px;border:1px solid #bbb;border-radius:8px;font-size:13.5px">
-      <option value="es" data-i18n="opc.idiomaEs">Español</option>
-      <option value="auto" data-i18n="opc.idiomaAuto">Detectar automáticamente (respeta mezclas)</option>
-      <option value="en" data-i18n="opc.idiomaEn">Inglés</option>
-      <option value="ca" data-i18n="opc.idiomaCa">Catalán</option>
-      <option value="pt" data-i18n="opc.idiomaPt">Portugués</option>
-      <option value="fr" data-i18n="opc.idiomaFr">Francés</option>
-      <option value="de" data-i18n="opc.idiomaDe">Alemán</option>
-      <option value="it" data-i18n="opc.idiomaIt">Italiano</option>
-    </select>
-    <div class="estado" id="e5"></div>
-  </div>
-
-  <div class="paso" id="p6">
-    <h2 data-i18n="opc.actaTitulo">📝 Acta automática</h2>
-    <p data-i18n="opc.actaTexto">Al terminar cada transcripción, Escriba genera sola el acta y la deja en la reunión. Gasta una llamada más por reunión, con tu clave.</p>
-    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
-      <input type="checkbox" id="autoActa"> <span data-i18n="opc.actaGenerar">Generar automáticamente</span>
-      <select id="autoActaPlantilla" style="padding:6px;border:1px solid #bbb;border-radius:7px">
-        <option value="acta" data-i18n="opc.plantillaActa">Acta completa</option>
-        <option value="resumen" data-i18n="opc.plantillaResumen">Resumen breve</option>
-        <option value="tareas" data-i18n="opc.plantillaTareas">Tareas y responsables</option>
-        <option value="correo" data-i18n="opc.plantillaCorreo">Correo de seguimiento</option>
-        <option value="personalizada" data-i18n="opc.plantillaMia">Mi plantilla</option>
-      </select>
-      <span data-i18n="opc.actaCon">con</span>
-      <select id="autoActaProv" style="padding:6px;border:1px solid #bbb;border-radius:7px">
-        <option value="gemini">Gemini</option>
-        <option value="gpt">GPT</option>
-        <option value="claude">Claude</option>
-      </select>
-    </label>
-    <div class="estado" id="e6"></div>
-  </div>
-
-  <div class="paso" id="p7">
-    <h2 data-i18n="opc.audioTitulo">🔊 Escuchar las reuniones</h2>
-    <p data-i18n="opc.audioTexto">Guarda el audio de cada reunión en este navegador para oírla desde la biblioteca: pulsas una frase y suena ese momento. Una hora de reunión ocupa unos 30 MB; se borra con la reunión.</p>
-    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
-      <input type="checkbox" id="conservarAudio"> <span data-i18n="opc.audioConservar">Conservar el audio de las próximas reuniones</span>
-    </label>
-    <div class="estado" id="e7"></div>
-  </div>
-
-  <div class="paso" id="p9">
-    <h2 data-i18n="opc.avisoTitulo">🔔 Aviso al entrar en una reunión</h2>
-    <p data-i18n="opc.avisoTexto">Te avisa cuando entras en una reunión de Google Meet, Microsoft Teams, Zoom (en el navegador), kMeet de Infomaniak o Jitsi, para que no se te olvide grabarla. Chrome te pedirá permiso para esas webs: solo se mira la dirección de la pestaña, nunca lo que hay dentro. Grabar lo decides tú, con el icono o el atajo.</p>
-    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
-      <input type="checkbox" id="avisoReunion"> <span data-i18n="opc.avisoActivar">Avisarme al entrar en una reunión</span>
-    </label>
-    <div class="estado" id="atajo" style="color:#6d5f66"></div>
-    <div class="estado" id="e9"></div>
-  </div>
-
-  <div class="paso" id="p8">
-    <h2 data-i18n="opc.costeTitulo">💶 Coste estimado</h2>
-    <p data-i18n-html="opc.costeTexto">Escriba no cobra nada: pagas a Google, OpenAI o Anthropic lo que gastes con tu clave. Pon lo que te cobra cada uno por <b>millón de tokens</b>, en euros, y la biblioteca te dirá cuánto costó cada reunión y lo que llevas de mes. Si usas la capa gratuita de Gemini, pon 0. Vacío quiere decir «sin precio»: no se calcula.</p>
-    <div class="precios">
-      <span></span><span class="cab" data-i18n="opc.cabAudio">Entrada · audio</span><span class="cab" data-i18n="opc.cabTexto">Entrada · texto</span><span class="cab" data-i18n="opc.cabSalida">Salida</span>
-      <span>Gemini <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
-      <input data-prov="gemini" data-tipo="audio" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon" title="Transcribir: el audio que se manda a Gemini" data-i18n-title="opc.tituloAudio">
-      <input data-prov="gemini" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon" title="Actas y preguntas: el texto que se manda" data-i18n-title="opc.tituloTexto">
-      <input data-prov="gemini" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
-      <span>OpenAI <a href="https://openai.com/api/pricing/" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
-      <span></span>
-      <input data-prov="gpt" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
-      <input data-prov="gpt" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
-      <span>Anthropic <a href="https://www.anthropic.com/pricing#api" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
-      <span></span>
-      <input data-prov="claude" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
-      <input data-prov="claude" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
-    </div>
-    <div class="estado" id="e8"></div>
-  </div>
-
-  <div class="paso" id="p3" style="margin-top:14px">
-    <h2 data-i18n="opc.retenTitulo">🧹 Cuántas transcripciones conservar</h2>
-    <p data-i18n-html="opc.retenTexto">Al terminar cada reunión se borran las más antiguas, tanto del historial como de <code>Descargas/reuniones</code>. Solo se tocan ficheros descargados por esta extensión.</p>
-    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:8px">
-      <input type="radio" name="reten" id="retenN" value="n"> <span data-i18n="opc.retenUltimas">Conservar solo las últimas</span>
-      <input type="number" id="limite" min="1" max="200" value="10" style="width:70px;padding:6px;border:1px solid #bbb;border-radius:7px">
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;font-size:13.5px">
-      <input type="radio" name="reten" id="retenTodo" value="todo"> <span data-i18n="opc.retenTodas">Guardarlas todas (no borrar nada solo)</span>
-    </label>
-    <div class="estado" id="e4"></div>
-  </div>
-
-  <details>
-    <summary data-i18n="opc.avanzadas">Opciones avanzadas (glosario, mi plantilla, GPT y Claude)</summary>
-    <div class="avz">
-      <label data-i18n="opc.glosario">Glosario — nombres propios y jerga que la IA debe escribir bien</label>
-      <textarea id="glosario" placeholder="Ej: nombres de tu empresa, clientes, productos y siglas de tu sector, separados por comas" data-i18n-placeholder="opc.glosarioPlaceholder"></textarea>
-      <small data-i18n="opc.glosarioAyuda">Mejora mucho la transcripción de nombres. Se usa también al generar el acta.</small>
-
-      <label data-i18n="opc.plantilla">Mi plantilla de acta — lo que quieres que saque de cada reunión</label>
-      <textarea id="plantillaPersonalizada" style="height:110px" placeholder="Ej: Devuelve una tabla con los riesgos que se mencionen, quién los detectó y qué se decidió hacer. Después, una lista de compromisos con fecha." data-i18n-placeholder="opc.plantillaPlaceholder"></textarea>
-      <small data-i18n="opc.plantillaAyuda">Aparece como «Mi plantilla» en la biblioteca y en el acta automática. Participantes, glosario y notas se le añaden solos.</small>
-
-      <label data-i18n="opc.altavozLabel">Sonido de la pestaña mientras grabas</label>
-      <select id="modoAltavoz" style="padding:7px;border:1px solid #bbb;border-radius:8px;font-size:12.5px">
-        <option value="auto" data-i18n="opc.altavozAuto">Automático (recomendado)</option>
-        <option value="audio" data-i18n="opc.altavozAudio">Reproductor de Chrome</option>
-        <option value="contexto" data-i18n="opc.altavozContexto">Motor de audio</option>
-      </select>
-      <small data-i18n="opc.altavozAyuda">Al grabar una pestaña, Chrome la silencia y Escriba te devuelve su sonido. Si no oyes bien la reunión (pasa con algunos monitores y altavoces), prueba otra forma. También se cambia en vivo desde el panel mientras grabas.</small>
-
-      <label data-i18n="opc.modeloGemini">Modelo de Gemini</label>
-      <input type="text" id="geminiModel" readonly>
-      <small data-i18n="opc.modeloGeminiAyuda">Se elige automáticamente el que funcione con tu clave.</small>
-
-      <label data-i18n="opc.openai">OpenAI — GPT (opcional, solo para el botón «Analizar con GPT»)</label>
-      <div class="par">
-        <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off">
-        <input type="text" id="openaiModel" placeholder="gpt-4o" list="modelosOpenai"><datalist id="modelosOpenai"></datalist>
+    <!-- ===================================================== Empezar -->
+    <section id="empezar" class="apartado">
+      <h2><svg class="i" aria-hidden="true"><use href="iconos.svg#llave"></use></svg><span data-i18n="opc.navEmpezar">Empezar</span></h2>
+      <div class="tarjeta paso" id="p1">
+        <div class="paso-cab"><span class="n">1</span><h3 data-i18n="opc.p1Titulo">Pega tu clave de Google Gemini</h3></div>
+        <p class="paso-txt" data-i18n-html="opc.p1Texto">Es gratis: entra en <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> → «Create API key» → cópiala y pégala aquí.</p>
+        <div class="con-boton">
+          <input type="password" id="geminiKey" class="campo" placeholder="Pega aquí la clave" data-i18n-placeholder="opc.p1Placeholder" autocomplete="off" spellcheck="false">
+          <button type="button" class="btn btn-fantasma btn-icono ver-clave" data-para="geminiKey" title="Mostrar u ocultar" aria-label="Mostrar u ocultar" data-i18n-title="opc.verClave" data-i18n-aria-label="opc.verClave"><svg class="i" aria-hidden="true"><use href="iconos.svg#ojo"></use></svg></button>
+        </div>
+        <div class="estado" id="e1"></div>
       </div>
-
-      <label data-i18n="opc.claude">Anthropic — Claude (opcional, para «Analizar con Claude»)</label>
-      <div class="par">
-        <input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off">
-        <input type="text" id="claudeModel" placeholder="claude-sonnet-5" list="modelosClaude"><datalist id="modelosClaude"></datalist>
+      <div class="tarjeta paso" id="p2">
+        <div class="paso-cab"><span class="n">2</span><h3 data-i18n="opc.p2Titulo">Permite el micrófono</h3></div>
+        <p class="paso-txt" data-i18n="opc.p2Texto">Necesario para grabarte a ti (en reuniones online y presenciales).</p>
+        <button id="btnMic" class="btn btn-primario"><svg class="i" aria-hidden="true"><use href="iconos.svg#micro"></use></svg><span data-i18n="opc.btnMic">Permitir micrófono</span></button>
+        <div class="estado" id="e2"></div>
       </div>
-      <small data-i18n="opc.modelosAyuda">Con la clave puesta, al pulsar el campo del modelo salen los que tu cuenta puede usar.</small>
-      <div class="estado" id="e3"></div>
-    </div>
-  </details>
+      <div class="estado ok" id="final" hidden></div>
+    </section>
 
-  <script src="i18n.js"></script><script src="config.js"></script>
-  <script src="options.js"></script>
+    <!-- ===================================================== Transcripción -->
+    <section id="transcripcion" class="apartado">
+      <h2><svg class="i" aria-hidden="true"><use href="iconos.svg#ondas"></use></svg><span data-i18n="opc.navTranscripcion">Transcripción</span></h2>
+      <div class="tarjeta">
+        <div class="fila" id="p5">
+          <div class="fila-txt"><b data-i18n="opc.idiomaTitulo">Idioma de las reuniones</b>
+            <p data-i18n="opc.idiomaTexto">En qué idioma se habla. «Detectar» sirve para reuniones que mezclan idiomas: cada frase se deja en el suyo, sin traducir.</p></div>
+          <div class="fila-ctl">
+            <select id="idioma" class="campo">
+              <option value="es" data-i18n="opc.idiomaEs">Español</option>
+              <option value="auto" data-i18n="opc.idiomaAuto">Detectar automáticamente (respeta mezclas)</option>
+              <option value="en" data-i18n="opc.idiomaEn">Inglés</option>
+              <option value="ca" data-i18n="opc.idiomaCa">Catalán</option>
+              <option value="pt" data-i18n="opc.idiomaPt">Portugués</option>
+              <option value="fr" data-i18n="opc.idiomaFr">Francés</option>
+              <option value="de" data-i18n="opc.idiomaDe">Alemán</option>
+              <option value="it" data-i18n="opc.idiomaIt">Italiano</option>
+            </select>
+          </div>
+          <div class="estado" id="e5"></div>
+        </div>
+        <div class="fila fila-bloque">
+          <div class="fila-txt"><b data-i18n="opc.glosario">Glosario: nombres propios y jerga que la IA debe escribir bien</b>
+            <p data-i18n="opc.glosarioAyuda">Mejora mucho la transcripción de nombres. Se usa también al generar el acta.</p></div>
+          <textarea id="glosario" class="campo" placeholder="Ej: nombres de tu empresa, clientes, productos y siglas de tu sector, separados por comas" data-i18n-placeholder="opc.glosarioPlaceholder"></textarea>
+          <div class="estado" id="e12"></div>
+        </div>
+        <div class="fila">
+          <div class="fila-txt"><b data-i18n="opc.modeloGemini">Modelo de Gemini</b>
+            <p data-i18n="opc.modeloGeminiAyuda">Se elige automáticamente el que funcione con tu clave.</p></div>
+          <div class="fila-ctl"><input type="text" id="geminiModel" class="campo mono" readonly></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== Actas e IA -->
+    <section id="actas" class="apartado">
+      <h2><svg class="i" aria-hidden="true"><use href="iconos.svg#chispas"></use></svg><span data-i18n="opc.navActas">Actas e IA</span></h2>
+      <div class="tarjeta">
+        <div class="fila fila-bloque" id="p6">
+          <div class="fila-cab">
+            <div class="fila-txt"><b data-i18n="opc.actaTitulo">Acta automática</b>
+              <p data-i18n="opc.actaTexto">Al terminar cada transcripción, Escriba genera sola el acta y la deja en la reunión. Gasta una llamada más por reunión, con tu clave.</p></div>
+            <input type="checkbox" id="autoActa" class="interruptor" aria-label="Generar automáticamente" data-i18n-aria-label="opc.actaGenerar">
+          </div>
+          <div class="en-linea">
+            <select id="autoActaPlantilla" class="campo">
+              <option value="acta" data-i18n="opc.plantillaActa">Acta completa</option>
+              <option value="resumen" data-i18n="opc.plantillaResumen">Resumen breve</option>
+              <option value="tareas" data-i18n="opc.plantillaTareas">Tareas y responsables</option>
+              <option value="correo" data-i18n="opc.plantillaCorreo">Correo de seguimiento</option>
+              <option value="personalizada" data-i18n="opc.plantillaMia">Mi plantilla</option>
+            </select>
+            <span class="suave" data-i18n="opc.actaCon">con</span>
+            <select id="autoActaProv" class="campo">
+              <option value="gemini">Gemini</option>
+              <option value="gpt">GPT</option>
+              <option value="claude">Claude</option>
+            </select>
+          </div>
+          <div class="estado" id="e6"></div>
+        </div>
+        <div class="fila fila-bloque">
+          <div class="fila-txt"><b data-i18n="opc.plantilla">Mi plantilla de acta: lo que quieres que saque de cada reunión</b>
+            <p data-i18n="opc.plantillaAyuda">Aparece como «Mi plantilla» en la biblioteca y en el acta automática. Participantes, glosario y notas se le añaden solos.</p></div>
+          <textarea id="plantillaPersonalizada" class="campo" style="min-height:110px" placeholder="Ej: Devuelve una tabla con los riesgos que se mencionen, quién los detectó y qué se decidió hacer. Después, una lista de compromisos con fecha." data-i18n-placeholder="opc.plantillaPlaceholder"></textarea>
+          <div class="estado" id="e13"></div>
+        </div>
+        <div class="fila fila-bloque">
+          <div class="fila-txt"><b data-i18n="opc.openai">OpenAI — GPT (opcional)</b>
+            <p data-i18n="opc.openaiTexto">Para sacar actas y preguntar con GPT. La transcripción la hace siempre Gemini.</p></div>
+          <div class="par">
+            <div class="con-boton">
+              <input type="password" id="openaiKey" class="campo" placeholder="sk-..." autocomplete="off" spellcheck="false">
+              <button type="button" class="btn btn-fantasma btn-icono ver-clave" data-para="openaiKey" title="Mostrar u ocultar" aria-label="Mostrar u ocultar" data-i18n-title="opc.verClave" data-i18n-aria-label="opc.verClave"><svg class="i" aria-hidden="true"><use href="iconos.svg#ojo"></use></svg></button>
+            </div>
+            <input type="text" id="openaiModel" class="campo mono" placeholder="gpt-4o" list="modelosOpenai"><datalist id="modelosOpenai"></datalist>
+          </div>
+        </div>
+        <div class="fila fila-bloque">
+          <div class="fila-txt"><b data-i18n="opc.claude">Anthropic — Claude (opcional)</b>
+            <p data-i18n="opc.modelosAyuda">Con la clave puesta, al pulsar el campo del modelo salen los que tu cuenta puede usar.</p></div>
+          <div class="par">
+            <div class="con-boton">
+              <input type="password" id="claudeKey" class="campo" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+              <button type="button" class="btn btn-fantasma btn-icono ver-clave" data-para="claudeKey" title="Mostrar u ocultar" aria-label="Mostrar u ocultar" data-i18n-title="opc.verClave" data-i18n-aria-label="opc.verClave"><svg class="i" aria-hidden="true"><use href="iconos.svg#ojo"></use></svg></button>
+            </div>
+            <input type="text" id="claudeModel" class="campo mono" placeholder="claude-sonnet-5" list="modelosClaude"><datalist id="modelosClaude"></datalist>
+          </div>
+          <div class="estado" id="e3"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== Audio -->
+    <section id="audio" class="apartado">
+      <h2><svg class="i" aria-hidden="true"><use href="iconos.svg#altavoz"></use></svg><span data-i18n="opc.navAudio">Audio</span></h2>
+      <div class="tarjeta">
+        <div class="fila" id="p7">
+          <div class="fila-txt"><b data-i18n="opc.audioTitulo">Escuchar las reuniones</b>
+            <p data-i18n="opc.audioTexto">Guarda el audio de cada reunión en este navegador para oírla desde la biblioteca: pulsas una frase y suena ese momento. Una hora de reunión ocupa unos 30 MB; se borra con la reunión.</p></div>
+          <div class="fila-ctl"><input type="checkbox" id="conservarAudio" class="interruptor" aria-label="Conservar el audio de las próximas reuniones" data-i18n-aria-label="opc.audioConservar"></div>
+          <div class="estado" id="e7"></div>
+        </div>
+        <div class="fila">
+          <div class="fila-txt"><b data-i18n="opc.altavozLabel">Sonido de la pestaña mientras grabas</b>
+            <p data-i18n="opc.altavozAyuda">Al grabar una pestaña, Chrome la silencia y Escriba te devuelve su sonido. Si no oyes bien la reunión (pasa con algunos monitores y altavoces), prueba otra forma. También se cambia en vivo desde el panel mientras grabas.</p></div>
+          <div class="fila-ctl">
+            <select id="modoAltavoz" class="campo">
+              <option value="auto" data-i18n="opc.altavozAuto">Automático (recomendado)</option>
+              <option value="audio" data-i18n="opc.altavozAudio">Reproductor de Chrome</option>
+              <option value="contexto" data-i18n="opc.altavozContexto">Motor de audio</option>
+            </select>
+          </div>
+          <div class="estado" id="e14"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== Avisos -->
+    <section id="avisos" class="apartado">
+      <h2><svg class="i" aria-hidden="true"><use href="iconos.svg#campana"></use></svg><span data-i18n="opc.navAvisos">Avisos y atajo</span></h2>
+      <div class="tarjeta">
+        <div class="fila" id="p9">
+          <div class="fila-txt"><b data-i18n="opc.avisoTitulo">Aviso al entrar en una reunión</b>
+            <p data-i18n="opc.avisoTexto">Te avisa cuando entras en una reunión de Google Meet, Microsoft Teams, Zoom (en el navegador), kMeet de Infomaniak o Jitsi, para que no se te olvide grabarla. Chrome te pedirá permiso para esas webs: solo se mira la dirección de la pestaña, nunca lo que hay dentro. Grabar lo decides tú, con el icono o el atajo.</p></div>
+          <div class="fila-ctl"><input type="checkbox" id="avisoReunion" class="interruptor" aria-label="Avisarme al entrar en una reunión" data-i18n-aria-label="opc.avisoActivar"></div>
+          <div class="estado" id="e9"></div>
+        </div>
+        <div class="fila">
+          <div class="fila-txt"><b data-i18n="opc.atajoTitulo">Atajo de teclado</b>
+            <p id="atajo" class="suave"></p></div>
+          <div class="fila-ctl"><button id="btnAtajos" class="btn"><svg class="i" aria-hidden="true"><use href="iconos.svg#teclado"></use></svg><span data-i18n="opc.cambiarAtajo">Cambiar</span></button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== Coste -->
+    <section id="coste" class="apartado">
+      <h2><svg class="i" aria-hidden="true"><use href="iconos.svg#euro"></use></svg><span data-i18n="opc.navCoste">Coste</span></h2>
+      <div class="tarjeta" id="p8">
+        <div class="fila fila-bloque">
+          <div class="fila-txt"><b data-i18n="opc.costeTitulo">Coste estimado</b>
+            <p data-i18n-html="opc.costeTexto">Escriba no cobra nada: pagas a Google, OpenAI o Anthropic lo que gastes con tu clave. Pon lo que te cobra cada uno por <b>millón de tokens</b>, en euros, y la biblioteca te dirá cuánto costó cada reunión y lo que llevas de mes. Si usas la capa gratuita de Gemini, pon 0. Vacío quiere decir «sin precio»: no se calcula.</p></div>
+          <div class="precios">
+            <span></span><span class="cab" data-i18n="opc.cabAudio">Entrada · audio</span><span class="cab" data-i18n="opc.cabTexto">Entrada · texto</span><span class="cab" data-i18n="opc.cabSalida">Salida</span>
+            <span class="prov">Gemini <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
+            <input class="campo" data-prov="gemini" data-tipo="audio" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon" title="Transcribir: el audio que se manda a Gemini" data-i18n-title="opc.tituloAudio">
+            <input class="campo" data-prov="gemini" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon" title="Actas y preguntas: el texto que se manda" data-i18n-title="opc.tituloTexto">
+            <input class="campo" data-prov="gemini" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+            <span class="prov">OpenAI <a href="https://openai.com/api/pricing/" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
+            <span></span>
+            <input class="campo" data-prov="gpt" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+            <input class="campo" data-prov="gpt" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+            <span class="prov">Anthropic <a href="https://www.anthropic.com/pricing#api" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
+            <span></span>
+            <input class="campo" data-prov="claude" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+            <input class="campo" data-prov="claude" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+          </div>
+          <div class="estado" id="e8"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== Almacenamiento -->
+    <section id="almacen" class="apartado">
+      <h2><svg class="i" aria-hidden="true"><use href="iconos.svg#disco"></use></svg><span data-i18n="opc.navAlmacen">Almacenamiento</span></h2>
+      <div class="tarjeta" id="p3">
+        <div class="fila fila-bloque">
+          <div class="fila-txt"><b data-i18n="opc.retenTitulo">Cuántas transcripciones conservar</b>
+            <p data-i18n-html="opc.retenTexto">Al terminar cada reunión se borran las más antiguas, tanto del historial como de <code>Descargas/reuniones</code>. Solo se tocan ficheros descargados por esta extensión.</p></div>
+          <label class="casilla en-linea"><input type="radio" name="reten" id="retenN" value="n"> <span data-i18n="opc.retenUltimas">Conservar solo las últimas</span>
+            <input type="number" id="limite" class="campo" min="1" max="200" value="10" style="width:80px"></label>
+          <label class="casilla"><input type="radio" name="reten" id="retenTodo" value="todo"> <span data-i18n="opc.retenTodas">Guardarlas todas (no borrar nada solo)</span></label>
+          <div class="estado" id="e4"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================== Apariencia -->
+    <section id="apariencia" class="apartado">
+      <h2><svg class="i" aria-hidden="true"><use href="iconos.svg#tema"></use></svg><span data-i18n="opc.navApariencia">Apariencia</span></h2>
+      <div class="tarjeta">
+        <div class="fila" id="p10">
+          <div class="fila-txt"><b data-i18n="opc.idiomaUITitulo">Idioma de la interfaz</b>
+            <p data-i18n="opc.idiomaUITexto">El de los menús, botones y mensajes de Escriba. No cambia el idioma de las transcripciones ni de las actas: eso depende de «Idioma de las reuniones».</p></div>
+          <div class="fila-ctl">
+            <select id="idiomaUI" class="campo">
+              <option value="auto" data-i18n="opc.idiomaUIAuto">Automático (el de Chrome)</option>
+              <option value="es">Español</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="estado" id="e10"></div>
+        </div>
+        <div class="fila" id="p11">
+          <div class="fila-txt"><b data-i18n="opc.temaTitulo">Tema</b>
+            <p data-i18n="opc.temaTexto">Claro u oscuro. En automático, Escriba sigue al sistema.</p></div>
+          <div class="fila-ctl">
+            <div class="segmentado tema" role="radiogroup">
+              <label><input type="radio" name="tema" value="auto"><svg class="i" aria-hidden="true"><use href="iconos.svg#tema"></use></svg><span data-i18n="opc.temaAuto">Automático</span></label>
+              <label><input type="radio" name="tema" value="claro"><svg class="i" aria-hidden="true"><use href="iconos.svg#sol"></use></svg><span data-i18n="opc.temaClaro">Claro</span></label>
+              <label><input type="radio" name="tema" value="oscuro"><svg class="i" aria-hidden="true"><use href="iconos.svg#luna"></use></svg><span data-i18n="opc.temaOscuro">Oscuro</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="config.js"></script>
+<script src="options.js"></script>
 </body>
 </html>

@@ -11,9 +11,7 @@ const estados = {};
 function pinta(id, txt, ok) {
   const texto = typeof txt === "function" ? txt : () => txt;
   estados[id] = { texto, ok };
-  const e = $(id);
-  e.textContent = texto();
-  e.className = "estado" + (ok === true ? " ok" : ok === false ? " err" : "");
+  ponEstado($(id), texto(), ok === true ? "ok" : ok === false ? "err" : null);
 }
 function repintaEstados() {
   for (const [id, { texto, ok }] of Object.entries(estados)) pinta(id, texto, ok);
@@ -48,7 +46,9 @@ async function guarda(campos) {
   for (const el of document.querySelectorAll(".precios input")) el.value = ((d.precios || {})[el.dataset.prov] || {})[el.dataset.tipo] || "";
   // Activado solo si además sigue el permiso: el usuario puede retirarlo desde Chrome.
   $("avisoReunion").checked = !!d.avisoReunion && await chrome.permissions.contains({ origins: ORIGENES_REUNION }).catch(() => false);
+  for (const r of document.querySelectorAll("input[name=tema]")) r.checked = r.value === (d.tema || "auto");
   pintaAtajo();
+  pintaResumen();
   cargaModelos(d);
   pintaEspacio();
   if (d.geminiKey) validarClave(d.geminiKey, d.geminiModel);
@@ -60,7 +60,7 @@ let t1 = null;
 $("geminiKey").addEventListener("input", () => {
   clearTimeout(t1);
   const k = $("geminiKey").value.trim();
-  if (!k) { pinta("e1", "", null); $("p1").classList.remove("listo"); return; }
+  if (!k) { pinta("e1", "", null); $("p1").classList.remove("listo"); pintaResumen(); return; }
   pinta("e1", () => t("opc.comprobandoClave"));
   t1 = setTimeout(() => validarClave(k), 500);
 });
@@ -104,7 +104,8 @@ async function validarClave(key, modeloGuardado) {
     listo();
   } catch (e) {
     $("p1").classList.remove("listo");
-    pinta("e1", () => "❌ " + (e.texto ? e.texto() : e.message), false);
+    pinta("e1", () => (e.texto ? e.texto() : e.message), false);
+    pintaResumen();
   }
 }
 
@@ -127,11 +128,46 @@ $("btnMic").onclick = async () => {
   }
 };
 
-function listo() {
-  if ($("p1").classList.contains("listo") && $("p2").classList.contains("listo")) {
-    pinta("final", () => t("opc.todoListo"), true);
+function listo() { pintaResumen(); }
+
+// Arriba del todo: si Escriba ya puede grabar o qué le falta, de un vistazo.
+function pintaResumen() {
+  const clave = $("p1").classList.contains("listo"), micro = $("p2").classList.contains("listo");
+  const r = $("resumen");
+  if (clave && micro) {
+    ponAviso(r, "ok", escapa(t("opc.todoListo")));
+    r.classList.add("resumen");
+    return;
   }
+  const paso = (hecho, txt) => `<span class="paso-mini${hecho ? " hecho" : ""}">${icono(hecho ? "ok" : "reloj")}${escapa(txt)}</span>`;
+  ponAviso(r, "", `<b>${escapa(t("opc.faltan"))}</b><div class="lista-pasos">${paso(clave, t("opc.p1Titulo"))}${paso(micro, t("opc.p2Titulo"))}</div>`);
+  r.classList.add("resumen");
 }
+
+// Mostrar u ocultar una clave mientras se pega.
+for (const b of document.querySelectorAll(".ver-clave")) {
+  b.onclick = () => {
+    const input = $(b.dataset.para), ver = input.type === "password";
+    input.type = ver ? "text" : "password";
+    b.innerHTML = icono(ver ? "ojo-no" : "ojo");
+  };
+}
+
+// El índice de la izquierda marca el apartado que se está viendo.
+const enlaces = [...document.querySelectorAll("#indice a")];
+const vigia = new IntersectionObserver((entradas) => {
+  for (const e of entradas) {
+    if (!e.isIntersecting) continue;
+    for (const a of enlaces) a.classList.toggle("activo", a.getAttribute("href") === "#" + e.target.id);
+  }
+}, { rootMargin: "-10% 0px -70% 0px" });
+for (const a of enlaces) { const sec = document.querySelector(a.getAttribute("href")); if (sec) vigia.observe(sec); }
+
+// --- tema: claro, oscuro o el del sistema (ui.js lo aplica en todas las páginas) ---
+for (const r of document.querySelectorAll("input[name=tema]")) {
+  r.addEventListener("change", async () => { await guardarConfig({ tema: r.value }); ponTema(r.value); });
+}
+$("btnAtajos").onclick = () => chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
 
 // --- retención: cuántas transcripciones conservar ---
 // limite = 0 significa "guardarlas todas".
@@ -158,6 +194,8 @@ $("idiomaUI").addEventListener("change", async () => {
   await guardarConfig({ idiomaUI: $("idiomaUI").value });
   await cargarIdiomaUI();
   repintaEstados();
+  pintaAtajo();
+  pintaResumen();
   pinta("e10", () => t("opc.guardado"), true);
 });
 
@@ -217,7 +255,7 @@ $("avisoReunion").addEventListener("change", async () => {
 async function pintaAtajo() {
   let atajo = "";
   try { atajo = ((await chrome.commands.getAll()).find((c) => c.name === "grabar") || {}).shortcut || ""; } catch (_) {}
-  pinta("atajo", () => (atajo ? t("opc.atajo", atajo) : t("opc.sinAtajo")));
+  $("atajo").textContent = atajo ? t("opc.atajo", atajo) : t("opc.sinAtajo");
 }
 
 // --- precios para el coste estimado ---
@@ -280,12 +318,15 @@ for (const id of ["openaiKey", "claudeKey"]) {
 // Cómo vuelve la pestaña a los altavoces mientras se graba (offscreen.js: abreAltavoz).
 $("modoAltavoz").addEventListener("change", async () => {
   await guardarConfig({ modoAltavoz: $("modoAltavoz").value });
-  pinta("e3", () => t("opc.altavozGuardado"), true);
+  pinta("e14", () => t("opc.altavozGuardado"), true);
 });
 
+// Cada campo cuenta su «Guardado» debajo de sí mismo (glosario y plantilla
+// tienen su línea; las claves y modelos de GPT y Claude comparten la suya).
+const LINEA_ESTADO = { glosario: "e12", plantillaPersonalizada: "e13" };
 for (const id of ["glosario", "plantillaPersonalizada", "openaiKey", "openaiModel", "claudeKey", "claudeModel"]) {
   $(id).addEventListener("input", () => {
     guarda({ [id]: $(id).value.trim() });
-    pinta("e3", () => t("opc.guardado"), true);
+    pinta(LINEA_ESTADO[id] || "e3", () => t("opc.guardado"), true);
   });
 }

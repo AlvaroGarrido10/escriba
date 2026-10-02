@@ -68,6 +68,9 @@ main { padding: 36px 0 80px; }
 .precios .prov { font-weight: 600; }
 .precios .prov a { font-weight: 400; font-size: 12px; margin-left: 4px; }
 .precios .campo { min-height: 34px; font-size: 13.5px; }
+.precios .modelo { display: block; font-weight: 400; font-size: 11.5px; color: var(--texto-3); font-family: var(--mono); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.referencia { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.referencia .suave { font-size: 12.5px; line-height: 1.45; flex: 1; min-width: 240px; }
 
 .segmentado.tema label { padding: 6px 12px; }
 

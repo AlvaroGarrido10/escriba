@@ -1944,6 +1944,33 @@ test("escapa() no deja pasar HTML: los títulos y textos del modelo nunca se eje
   assert.match(ctx.icono("micro", "g"), /^<svg class="i g" aria-hidden="true"><use href="iconos\.svg#micro"><\/use><\/svg>$/);
 });
 
+test("precios de referencia (3.6.1): el modelo de cada proveedor, en euros y con su fecha", () => {
+  const cfg = require("../config.js");
+  assert.match(cfg.PRECIOS_REFERENCIA.fecha, /^\d{4}-\d{2}-\d{2}$/, "con la fecha en que se copiaron");
+  const otono = new Date(2026, 9, 2), invierno = new Date(2027, 0, 1, 9);
+  // Gemini Flash: 0,75 $ hasta fin de 2026 y el doble desde el 1 de enero.
+  assert.deepStrictEqual({ ...cfg.precioReferencia("gemini", "gemini-flash-latest", otono) }, { audio: 0.652, entrada: 0.652, salida: 3.261 });
+  assert.deepStrictEqual({ ...cfg.precioReferencia("gemini", "gemini-flash-latest", invierno) }, { audio: 1.304, entrada: 1.304, salida: 6.522 });
+  // Las variantes antes que el modelo base: «lite» no cobra como Flash, ni «mini» como GPT-4o.
+  assert.strictEqual(cfg.precioReferencia("gemini", "gemini-flash-lite-latest", otono).salida, 2.174);
+  assert.strictEqual(cfg.precioReferencia("gemini", "gemini-2.5-flash", otono).audio, 0.87, "en 2.5 el audio cuesta más que el texto");
+  assert.strictEqual(cfg.precioReferencia("gemini", "gemini-2.5-flash", otono).entrada, 0.261);
+  assert.deepStrictEqual({ ...cfg.precioReferencia("gpt", "gpt-4o-mini") }, { entrada: 0.13, salida: 0.522 });
+  assert.deepStrictEqual({ ...cfg.precioReferencia("gpt", "gpt-4o") }, { entrada: 2.174, salida: 8.696 });
+  assert.deepStrictEqual({ ...cfg.precioReferencia("claude", cfg.CFG_LOCAL.claudeModel) }, { entrada: 1.739, salida: 8.696 });
+  assert.strictEqual(cfg.precioReferencia("claude", "claude-opus-5-5").entrada, 3.478, "Opus 5.5 es más barato que los Opus anteriores");
+  assert.strictEqual(cfg.precioReferencia("claude", "claude-opus-4-8").entrada, 4.348);
+  // Sin referencia, null: no se inventa un precio.
+  assert.strictEqual(cfg.precioReferencia("gpt", "o3-pro"), null);
+  assert.strictEqual(cfg.precioReferencia("gemini", "gemini-2.0-flash"), null);
+  assert.strictEqual(cfg.precioReferencia("nadie", "x"), null);
+  // Lo que se carga lo entiende el cálculo del coste.
+  const p = cfg.precioReferencia("gemini", "gemini-flash-latest", otono);
+  const h = { tramos: [{ estado: "ok", uso: { entrada: 1e6, salida: 1e5 } }] };
+  const c = comun.costeReunion(h, { gemini: { audio: String(p.audio).replace(".", ","), entrada: "", salida: String(p.salida) } });
+  assert.ok(Math.abs(c.euros - (0.652 + 0.3261)) < 1e-6, "un millón de audio y cien mil de salida: " + c.euros);
+});
+
 // ============================================================================
 (async function main() {
   let ok = 0, fallos = 0;

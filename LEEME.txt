@@ -48,6 +48,8 @@ YA ESTÁ. Para grabar una reunión, elige modo:
    - Opcional, en Opciones: "Aviso al entrar en una reunión" (Meet, Teams, Zoom
      web, kMeet...) para que no se te olvide grabar, y "Coste estimado" con lo que
      te cobra tu proveedor: la biblioteca te dirá cuánto costó cada reunión.
+     Con "Cargar precios de referencia" se rellenan solos con los precios de
+     lista (compruébalos: cambian cada pocos meses).
 
 EN EL PROPIO PANEL
    - La última transcripción sale ya abierta, con "Copiar": la copias sin ir a

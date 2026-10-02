@@ -14,7 +14,7 @@ Extensión de Chrome (Manifest V3) que graba reuniones y las transcribe con IA. 
 - **Actas con plantillas** (acta completa, resumen breve, tareas y responsables, correo de seguimiento o una plantilla propia) y **preguntas a la reunión**, con **Gemini, GPT o Claude**. El acta puede generarse sola al terminar.
 - **Mientras grabas** (3.3): cada tramo se transcribe en cuanto se cierra, **pausa**, **marcadores** de momentos importantes, **notas**, **panel lateral en vivo** con niveles de audio, **aviso si en dos minutos no entra voz** y **atajo de teclado** (Alt+Shift+G).
 - **Escuchar la reunión** (3.4, opcional): se pulsa una frase y suena ese momento.
-- **Coste estimado** (3.5): con los precios que pongas en Opciones, la biblioteca dice cuánto costó cada reunión y lo que llevas de mes. Sin precios no se inventa nada.
+- **Coste estimado** (3.5): con los precios que pongas en Opciones, la biblioteca dice cuánto costó cada reunión y lo que llevas de mes. Sin precios no se inventa nada. Desde la 3.6.1, «Cargar precios de referencia» rellena los precios de lista del modelo que usas, con la fecha en que se copiaron (`config.js`, `PRECIOS_REFERENCIA`).
 - **Aviso al entrar en una reunión** (3.5, opcional): Meet, Teams, Zoom web, kMeet de Infomaniak o Jitsi. Te recuerda grabar; grabar sigue siendo cosa tuya (Chrome solo deja capturar una pestaña si pulsas el icono o el atajo).
 - **Interfaz en español e inglés** (3.5): según el idioma de Chrome, o el que elijas en Opciones.
 - **Se oye la reunión por cualquier salida** (3.5.1): si cambia el dispositivo (monitor, cascos) el sonido se rehace, y mientras grabas, «¿No oyes la reunión?» cambia en vivo la forma de devolverlo.

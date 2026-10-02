@@ -201,18 +201,22 @@
             <p data-i18n-html="opc.costeTexto">Escriba no cobra nada: pagas a Google, OpenAI o Anthropic lo que gastes con tu clave. Pon lo que te cobra cada uno por <b>millón de tokens</b>, en euros, y la biblioteca te dirá cuánto costó cada reunión y lo que llevas de mes. Si usas la capa gratuita de Gemini, pon 0. Vacío quiere decir «sin precio»: no se calcula.</p></div>
           <div class="precios">
             <span></span><span class="cab" data-i18n="opc.cabAudio">Entrada · audio</span><span class="cab" data-i18n="opc.cabTexto">Entrada · texto</span><span class="cab" data-i18n="opc.cabSalida">Salida</span>
-            <span class="prov">Gemini <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
+            <span class="prov">Gemini <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a><small class="modelo" id="refGemini"></small></span>
             <input class="campo" data-prov="gemini" data-tipo="audio" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon" title="Transcribir: el audio que se manda a Gemini" data-i18n-title="opc.tituloAudio">
             <input class="campo" data-prov="gemini" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon" title="Actas y preguntas: el texto que se manda" data-i18n-title="opc.tituloTexto">
             <input class="campo" data-prov="gemini" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
-            <span class="prov">OpenAI <a href="https://openai.com/api/pricing/" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
+            <span class="prov">OpenAI <a href="https://openai.com/api/pricing/" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a><small class="modelo" id="refGpt"></small></span>
             <span></span>
             <input class="campo" data-prov="gpt" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
             <input class="campo" data-prov="gpt" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
-            <span class="prov">Anthropic <a href="https://www.anthropic.com/pricing#api" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a></span>
+            <span class="prov">Anthropic <a href="https://claude.com/pricing#api" target="_blank" rel="noopener" data-i18n="opc.precios">precios</a><small class="modelo" id="refClaude"></small></span>
             <span></span>
             <input class="campo" data-prov="claude" data-tipo="entrada" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
             <input class="campo" data-prov="claude" data-tipo="salida" inputmode="decimal" placeholder="€ / millón" data-i18n-placeholder="opc.porMillon">
+          </div>
+          <div class="referencia">
+            <button id="btnPreciosRef" class="btn"><svg class="i" aria-hidden="true"><use href="iconos.svg#descargar"></use></svg><span data-i18n="opc.cargarPrecios">Cargar precios de referencia</span></button>
+            <span id="notaPreciosRef" class="suave"></span>
           </div>
           <div class="estado" id="e8"></div>
         </div>

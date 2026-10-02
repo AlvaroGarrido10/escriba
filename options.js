@@ -49,6 +49,7 @@ async function guarda(campos) {
   for (const r of document.querySelectorAll("input[name=tema]")) r.checked = r.value === (d.tema || "auto");
   pintaAtajo();
   pintaResumen();
+  pintaReferencias();
   cargaModelos(d);
   pintaEspacio();
   if (d.geminiKey) validarClave(d.geminiKey, d.geminiModel);
@@ -88,6 +89,7 @@ async function validarClave(key, modeloGuardado) {
     if (!elegido) throw errorTraducible(() => t("opc.sinModelo"));
 
     $("geminiModel").value = elegido;
+    pintaReferencias();
     await guardarConfig({ geminiKey: key, geminiModel: elegido });
     $("p1").classList.add("listo");
     // Guardar una clave nueva reintenta solo lo que estaba esperando por ella
@@ -153,15 +155,27 @@ for (const b of document.querySelectorAll(".ver-clave")) {
   };
 }
 
-// El índice de la izquierda marca el apartado que se está viendo.
+// El índice de la izquierda marca el apartado que se está viendo: el último
+// cuyo título ya ha pasado del primer tercio de la pantalla. Los del final nunca
+// llegan tan arriba (no queda página por debajo), así que al tocar fondo se marca
+// el último; y al pulsar uno, se marca ese mientras dura el desplazamiento.
 const enlaces = [...document.querySelectorAll("#indice a")];
-const vigia = new IntersectionObserver((entradas) => {
-  for (const e of entradas) {
-    if (!e.isIntersecting) continue;
-    for (const a of enlaces) a.classList.toggle("activo", a.getAttribute("href") === "#" + e.target.id);
+const secciones = enlaces.map((a) => document.querySelector(a.getAttribute("href")));
+let pulsado = null, pulsadoHasta = 0;
+function marcaIndice() {
+  let actual = secciones[0];
+  if (pulsado && Date.now() < pulsadoHasta) actual = pulsado;
+  else {
+    pulsado = null;
+    for (const sec of secciones) if (sec && sec.getBoundingClientRect().top <= innerHeight / 3) actual = sec;
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) actual = secciones[secciones.length - 1];
   }
-}, { rootMargin: "-10% 0px -70% 0px" });
-for (const a of enlaces) { const sec = document.querySelector(a.getAttribute("href")); if (sec) vigia.observe(sec); }
+  enlaces.forEach((a, i) => a.classList.toggle("activo", secciones[i] === actual));
+}
+enlaces.forEach((a, i) => a.addEventListener("click", () => { pulsado = secciones[i]; pulsadoHasta = Date.now() + 1200; marcaIndice(); }));
+addEventListener("scroll", marcaIndice, { passive: true });
+addEventListener("resize", marcaIndice);
+marcaIndice();
 
 // --- tema: claro, oscuro o el del sistema (ui.js lo aplica en todas las páginas) ---
 for (const r of document.querySelectorAll("input[name=tema]")) {
@@ -196,6 +210,7 @@ $("idiomaUI").addEventListener("change", async () => {
   repintaEstados();
   pintaAtajo();
   pintaResumen();
+  pintaReferencias();
   pinta("e10", () => t("opc.guardado"), true);
 });
 
@@ -262,22 +277,60 @@ async function pintaAtajo() {
 // Temporizador propio: `guarda` comparte uno entre campos y, escribiendo rápido
 // en dos, el primero no llegaría a guardarse.
 let tPrecios = null;
+async function guardaPrecios(mensajeOk) {
+  const precios = {}, malos = [];
+  for (const i of document.querySelectorAll(".precios input")) {
+    const v = i.value.trim();
+    if (v && !/^\d+([.,]\d+)?$/.test(v)) malos.push(v);
+    (precios[i.dataset.prov] = precios[i.dataset.prov] || {})[i.dataset.tipo] = v;
+  }
+  await guardarConfig({ precios });
+  if (malos.length) pinta("e8", () => t("opc.precioMalo", malos[0]), false);
+  else pinta("e8", mensajeOk || (() => t("opc.preciosGuardados")), true);
+}
 for (const el of document.querySelectorAll(".precios input")) {
   el.addEventListener("input", () => {
     clearTimeout(tPrecios);
-    tPrecios = setTimeout(async () => {
-      const precios = {}, malos = [];
-      for (const i of document.querySelectorAll(".precios input")) {
-        const v = i.value.trim();
-        if (v && !/^\d+([.,]\d+)?$/.test(v)) malos.push(v);
-        (precios[i.dataset.prov] = precios[i.dataset.prov] || {})[i.dataset.tipo] = v;
-      }
-      await guardarConfig({ precios });
-      if (malos.length) pinta("e8", () => t("opc.precioMalo", malos[0]), false);
-      else pinta("e8", () => t("opc.preciosGuardados"), true);
-    }, 400);
+    tPrecios = setTimeout(() => guardaPrecios(), 400);
   });
 }
+
+// --- precios de referencia (config.js: PRECIOS_REFERENCIA) ---
+// Para el modelo que usa cada proveedor (o el de por defecto, si aún no hay
+// clave), el precio de lista pasado a euros. Se enseña como pista en cada
+// casilla vacía y el botón lo escribe; nunca se pone solo.
+const MODELO_POR_DEFECTO = { gemini: "gemini-flash-latest", gpt: CFG_LOCAL.openaiModel, claude: CFG_LOCAL.claudeModel };
+const numeroUI = (n) => n.toLocaleString(LOCALE_UI(), { maximumFractionDigits: 3, useGrouping: false });
+function modelosDePrecio() {
+  return {
+    gemini: $("geminiModel").value.trim() || MODELO_POR_DEFECTO.gemini,
+    gpt: $("openaiModel").value.trim() || MODELO_POR_DEFECTO.gpt,
+    claude: $("claudeModel").value.trim() || MODELO_POR_DEFECTO.claude,
+  };
+}
+function pintaReferencias() {
+  const modelos = modelosDePrecio();
+  for (const [prov, id] of [["gemini", "refGemini"], ["gpt", "refGpt"], ["claude", "refClaude"]]) $(id).textContent = modelos[prov];
+  for (const i of document.querySelectorAll(".precios input")) {
+    const ref = precioReferencia(i.dataset.prov, modelos[i.dataset.prov]);
+    i.placeholder = ref && typeof ref[i.dataset.tipo] === "number" ? "≈ " + numeroUI(ref[i.dataset.tipo]) : t("opc.porMillon");
+  }
+  const f = new Date(PRECIOS_REFERENCIA.fecha + "T12:00:00").toLocaleDateString(LOCALE_UI(), { day: "numeric", month: "long", year: "numeric" });
+  $("notaPreciosRef").textContent = t("opc.preciosRefNota", f, numeroUI(PRECIOS_REFERENCIA.dolaresPorEuro));
+}
+$("btnPreciosRef").onclick = async () => {
+  const modelos = modelosDePrecio(), sinRef = [];
+  for (const prov of ["gemini", "gpt", "claude"]) {
+    const ref = precioReferencia(prov, modelos[prov]);
+    if (!ref) { sinRef.push(modelos[prov]); continue; }
+    for (const i of document.querySelectorAll(`.precios input[data-prov="${prov}"]`)) {
+      if (typeof ref[i.dataset.tipo] === "number") i.value = numeroUI(ref[i.dataset.tipo]);
+    }
+  }
+  clearTimeout(tPrecios);
+  await guardaPrecios(() => t("opc.preciosCargados") + (sinRef.length ? " " + t("opc.preciosSinRef", sinRef.join(", ")) : ""));
+};
+for (const id of ["openaiModel", "claudeModel"]) $(id).addEventListener("input", pintaReferencias);
 
 // --- modelos de GPT y Claude, leídos de sus APIs con la clave del usuario ---
 // Los nombres cambian cada pocos meses: escribirlos a mano acaba en un 404.

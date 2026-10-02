@@ -76,11 +76,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       else if (msg.cmd === "tiempo") {
         sendResponse({ ok: true, id: yaProcesado ? null : reunionActual, t: yaProcesado ? 0 : segundosGrabados(), pausado });
       }
-      // Para el panel en vivo: nivel de cada fuente ahora mismo.
+      // Para el popup y el panel en vivo: nivel de cada fuente ahora mismo.
       else if (msg.cmd === "niveles") {
+        despiertaMedidorRapido();
         sendResponse({
           ok: true, id: yaProcesado ? null : reunionActual, t: yaProcesado ? 0 : segundosGrabados(), pausado,
-          fuentes: medidores.map((m) => ({ nombre: m.nombre, rms: m.ultimoRms || 0 })), sinMicro: !!errorMic,
+          fuentes: medidores.map((m) => ({ nombre: m.nombre, rms: m.nivel !== null ? m.nivel : (m.ultimoRms || 0) })), sinMicro: !!errorMic,
         });
       }
       else if (msg.cmd === "selftest") { sendResponse(await selftest(msg)); }
@@ -454,6 +455,31 @@ function stop() {
   // Procesar aquí perdería ese último tramo, que aún no está en `tramos`.
 }
 
+// Medidor para las barras del popup y del panel (3.6.1). El de vigila() mide una
+// sola ventana de 43 ms por segundo: vale para la estadística de voz, pero en
+// pantalla la barra saltaba una vez por segundo y marcaba casi cero si esa
+// ventana caía entre dos palabras. Este mide cada 50 ms, sube al momento y baja
+// despacio, como un vúmetro. Solo corre mientras alguien pide «niveles»: se
+// apaga solo 2 s después de la última petición.
+let rapidoInt = null, rapidoHasta = 0;
+const PASO_RAPIDO_MS = 50, CAIDA_RAPIDO = 0.8;
+function despiertaMedidorRapido() {
+  rapidoHasta = Date.now() + 2000;
+  if (rapidoInt) return;
+  rapidoInt = setInterval(() => {
+    if (Date.now() > rapidoHasta || !medidores.length) {
+      clearInterval(rapidoInt);
+      rapidoInt = null;
+      for (const m of medidores) m.nivel = null;
+      return;
+    }
+    for (const m of medidores) {
+      const rms = m.rmsAhora();
+      m.nivel = m.nivel === null || rms >= m.nivel ? rms : m.nivel * CAIDA_RAPIDO + rms * (1 - CAIDA_RAPIDO);
+    }
+  }, PASO_RAPIDO_MS);
+}
+
 // Mide cuánta voz entra por cada fuente. Si luego la transcripción sale llena
 // de [inaudible], el informe dice cuál de las dos venía muda o baja.
 function vigila(nombre, nodo) {
@@ -461,12 +487,15 @@ function vigila(nombre, nodo) {
   an.fftSize = 2048;
   nodo.connect(an);
   const buf = new Float32Array(an.fftSize);
-  const m = { nombre, pico: 0, muestras: 0, conVoz: 0, timer: null, picoTramo: 0, muestrasTramo: 0, vozTramo: 0 };
-  m.timer = setInterval(() => {
+  const rmsAhora = () => {
     an.getFloatTimeDomainData(buf);
     let s = 0;
     for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
-    const rms = Math.sqrt(s / buf.length);
+    return Math.sqrt(s / buf.length);
+  };
+  const m = { nombre, pico: 0, muestras: 0, conVoz: 0, timer: null, picoTramo: 0, muestrasTramo: 0, vozTramo: 0, rmsAhora, nivel: null };
+  m.timer = setInterval(() => {
+    const rms = rmsAhora();
     m.muestras++; m.muestrasTramo++;
     m.ultimoRms = rms;
     if (rms > m.pico) m.pico = rms;

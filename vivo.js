@@ -44,7 +44,7 @@ async function refresca() {
   if (sesion.grabando) {
     pintaReloj();
     relojInt = setInterval(pintaReloj, 500);
-    nivelesInt = setInterval(pintaNiveles, 700);
+    nivelesInt = setInterval(pintaNiveles, 150);
     pintaNiveles();
   }
   pintaReunion(historial);
@@ -59,13 +59,18 @@ function pintaReloj() {
   if (!sesion.pausado) $("sub").textContent = t("viv.siguienteTrozo", formatoTiempo(DURACION_TRAMO_S - enTramo));
 }
 
+// Cada 150 ms; si una respuesta tarda más, no se amontonan las peticiones.
+let pidiendoNiveles = false;
 async function pintaNiveles() {
+  if (pidiendoNiveles) return;
+  pidiendoNiveles = true;
   const r = await aBgMsg("niveles").catch(() => null);
+  pidiendoNiveles = false;
   if (!r || !r.ok || !r.id) return;
-  $("niveles").innerHTML = (r.fuentes || []).map(htmlNivel).join("");
+  actualizaNiveles($("niveles"), r.fuentes || []);
   const aviso = $("avisoNivel");
-  if (r.sinMicro) ponAviso(aviso, "atencion", escapa(t("viv.sinMicro")), "micro-no");
-  else aviso.hidden = true;
+  if (r.sinMicro && aviso.hidden) ponAviso(aviso, "atencion", escapa(t("viv.sinMicro")), "micro-no");
+  else if (!r.sinMicro) aviso.hidden = true;
 }
 
 // La reunión en curso (o la última, si ya se paró).

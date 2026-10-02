@@ -227,6 +227,8 @@ async function refrescaGrabacion() {
   clearInterval(nivelesInt);
   if (!grabando) {
     $("niveles").innerHTML = "";
+    delete $("niveles").dataset.fuentes;
+    $("avisoSinMicro").hidden = true;
     pintaObjetivo(sesion.objetivo);
     return;
   }
@@ -243,16 +245,23 @@ async function refrescaGrabacion() {
   pinta();
   timerInt = setInterval(pinta, 500);
   pintaNiveles();
-  nivelesInt = setInterval(pintaNiveles, 700);
+  nivelesInt = setInterval(pintaNiveles, 150);
 }
 
 // Lo que oye el grabador, fuente a fuente, como un vúmetro.
+// Cada 150 ms; si una respuesta tarda más, no se amontonan las peticiones.
+let pidiendoNiveles = false;
 async function pintaNiveles() {
+  if (pidiendoNiveles) return;
+  pidiendoNiveles = true;
   const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "niveles" }).catch(() => null);
+  pidiendoNiveles = false;
   if (!r || !r.ok || !r.id) return;
-  $("niveles").innerHTML = (r.fuentes || []).map(htmlNivel).join("") +
-    (r.sinMicro ? avisoHtml("atencion", escapa(t("viv.sinMicro")), "micro-no") : "");
+  actualizaNiveles($("niveles"), r.fuentes || []);
+  if (r.sinMicro && $("avisoSinMicro").hidden) ponAviso($("avisoSinMicro"), "atencion", escapa(t("viv.sinMicro")), "micro-no");
+  else if (!r.sinMicro) $("avisoSinMicro").hidden = true;
 }
+
 // ---------- Diagnóstico ----------
 $("diagCerrar").onclick = () => { $("diagCaja").hidden = true; };
 $("diagCopiar").onclick = async () => {

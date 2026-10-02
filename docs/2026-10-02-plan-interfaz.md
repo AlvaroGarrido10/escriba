@@ -204,3 +204,14 @@ Hecho todo el apartado 2, en la versión 3.6.0. Sin commit.
 **Sin hacer:**
 - No se ha grabado una pestaña real con un clic real en el icono, porque el motor no se ha tocado: es el mismo que se verificó en la 3.5.x.
 - Falta que Álvaro recargue la extensión en su Chrome y la vea.
+
+## 7. 3.6.1 (02/10/2026): lo que vio Álvaro al recargarla
+
+| Qué dijo | Causa | Arreglo y medida |
+|---|---|---|
+| «Lo del micro no va en tiempo real, se ve raro aunque funciona» | El grabador medía el nivel una vez por segundo y sobre 43 ms de audio, así que la barra saltaba y caía a casi cero entre palabras. Además, el popup rehacía las barras en cada petición y se perdía la animación. | Un medidor aparte que mide cada 50 ms, sube al momento y baja despacio. Solo funciona mientras alguien mira y se apaga a los 2 s. El popup y el panel piden el nivel cada 150 ms y solo cambian el ancho de la barra. Medido: antes, 6 valores distintos en 5 s; ahora, 47 de 47. |
+| «alvaro.garrido@ditaytech.com no está sonando: no sé qué es» | Es el título de la pestaña que tenía delante (el correo). El aviso lo ponía como si fuera el nombre de la reunión. | Texto nuevo: «Ninguna pestaña está sonando. Se grabaría la que tienes delante, «…». Ve a la pestaña de la reunión antes de grabar…». |
+| Precios: «pondría los estimados o un botón para cargarlos» | — | `PRECIOS_REFERENCIA` en `config.js`, con los precios de lista del 02/10/2026 copiados de las páginas oficiales. Salen como pista en cada casilla, y el botón «Cargar precios de referencia» los escribe para el modelo que se usa, pasados a euros a 1 € = 1,15 $. |
+| «Los botones de la izquierda no se marcan a partir de Coste» | El índice solo marcaba un apartado cuando su título subía al primer tercio de la pantalla, y los del final nunca llegan tan arriba porque no queda página por debajo. | Se marca por la posición del scroll. Al tocar fondo se marca el último, y el que se pulsa queda marcado. |
+
+Verificación: suite 150/150 (un test nuevo para los precios) y prueba de pantalla 87/87, con las comprobaciones nuevas: barra continua, índice al final, pistas y botón de precios.

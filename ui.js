@@ -181,13 +181,32 @@ function confirmar(donde, { html, casilla, si, no }) {
 
 // Barra de nivel de una fuente de audio, como un vúmetro: -60 dB (silencio) = 0 %,
 // -10 dB = llena. La usan el popup y el panel en vivo con la orden «niveles».
-function htmlNivel(f) {
-  const db = 20 * Math.log10(Math.max(f.rms, 1e-6));
+function medidaNivel(rms) {
+  const db = 20 * Math.log10(Math.max(rms, 1e-6));
   const pct = Math.max(0, Math.min(100, Math.round(((db + 60) / 50) * 100)));
-  const clase = pct < 4 ? "mudo" : pct < 25 ? "bajo" : "";
+  return { pct, clase: pct < 4 ? "mudo" : pct < 25 ? "bajo" : "" };
+}
+function htmlNivel(f) {
+  const { pct, clase } = medidaNivel(f.rms);
   const esPestana = f.nombre === "pestaña";
   return `<div class="nivel"><span class="nombre">${icono(esPestana ? "pestana" : "micro")}${escapa(t(esPestana ? "viv.fuentePestana" : "viv.fuenteMicro"))}</span>` +
     `<div class="barra-nivel ${clase}"><div style="width:${pct}%"></div></div></div>`;
+}
+// Pinta las barras en `cont`. Si son las mismas fuentes que ya había, solo
+// cambia el ancho: rehacer el HTML cada vez se come la animación y la barra salta.
+function actualizaNiveles(cont, fuentes) {
+  const clave = fuentes.map((f) => f.nombre).join("|");
+  if (cont.dataset.fuentes !== clave) {
+    cont.innerHTML = fuentes.map(htmlNivel).join("");
+    cont.dataset.fuentes = clave;
+    return;
+  }
+  const barras = cont.querySelectorAll(".barra-nivel");
+  fuentes.forEach((f, i) => {
+    const { pct, clase } = medidaNivel(f.rms);
+    barras[i].className = "barra-nivel" + (clase ? " " + clase : "");
+    barras[i].firstElementChild.style.width = pct + "%";
+  });
 }
 
 // Inicial de un nombre para el círculo de cada voz («Hablante 2» → «2»).

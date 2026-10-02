@@ -411,7 +411,7 @@ kbd, .kbd {
 .nivel .nombre { display: inline-flex; align-items: center; gap: 6px; min-width: 74px; }
 .nivel .nombre .i { width: 15px; height: 15px; }
 .barra-nivel { height: 8px; border-radius: var(--r-redondo); background: var(--nivel-fondo); overflow: hidden; }
-.barra-nivel > div { height: 100%; width: 0; border-radius: inherit; background: var(--nivel-bueno); transition: width .2s linear, background .3s; }
+.barra-nivel > div { height: 100%; width: 0; border-radius: inherit; background: var(--nivel-bueno); transition: width .14s linear, background .3s; }
 .barra-nivel.bajo > div { background: var(--nivel-bajo); }
 .barra-nivel.mudo > div { background: var(--borde-fuerte); }
 

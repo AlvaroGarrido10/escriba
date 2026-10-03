@@ -243,22 +243,37 @@ function nuevoColchon() {
 // getUserMedia y MediaRecorder mínimos para arrancar y parar una grabación.
 // Cada stream guarda las restricciones con que se pidió (`_c`).
 // Con `conAudio`, cada tramo entrega un trozo de audio al pararse, como uno real.
-function nuevosMedios({ conAudio = false } = {}) {
-  const pista = () => {
+// `compartir` dice qué pasa en la ventana de Chrome de «elegir qué compartir»:
+// "pestana" (con sonido), "pantalla" (con el sonido del equipo), "ventana" (sin
+// sonido) o "cancela".
+function nuevosMedios({ conAudio = false, compartir = "pestana" } = {}) {
+  const pista = (extra = {}) => {
+    const oyentesPista = {};
     const p = {
       parada: false, stop() { p.parada = true; },
-      getSettings: () => ({ sampleRate: 48000 }),
+      getSettings: () => ({ sampleRate: 48000, ...extra }),
       clone() { const c = pista(); c._copiaDe = p; return c; },
+      addEventListener(tipo, f) { (oyentesPista[tipo] = oyentesPista[tipo] || []).push(f); },
+      _dispara(tipo) { (oyentesPista[tipo] || []).forEach((f) => f({ type: tipo })); },
     };
     return p;
   };
   const oyentes = {};
   const mediaDevices = {
+    _compartidos: [],
     addEventListener(tipo, f) { (oyentes[tipo] = oyentes[tipo] || []).push(f); },
     _dispara(tipo) { (oyentes[tipo] || []).forEach((f) => f({ type: tipo })); },
     async getUserMedia(c) {
       const pistas = [pista()];
       return { _c: c, getTracks: () => pistas, getAudioTracks: () => pistas };
+    },
+    async getDisplayMedia(c) {
+      if (compartir === "cancela") { const e = new Error("Permission denied by user"); e.name = "NotAllowedError"; throw e; }
+      const video = [pista({ displaySurface: compartir === "pestana" ? "browser" : compartir === "pantalla" ? "monitor" : "window" })];
+      const audio = compartir === "ventana" ? [] : [pista()];
+      const s = { _c: c, getTracks: () => [...video, ...audio], getAudioTracks: () => audio, getVideoTracks: () => video };
+      mediaDevices._compartidos.push(s);
+      return s;
     },
   };
   const creados = [];

@@ -127,7 +127,7 @@ async function ensureOffscreen() {
   if (!creandoOffscreen) {
     creandoOffscreen = chrome.offscreen.createDocument({
       url: OFFSCREEN_URL,
-      reasons: ["USER_MEDIA", "BLOBS"],
+      reasons: ["USER_MEDIA", "DISPLAY_MEDIA", "BLOBS"],
       justification: "Grabar el audio de la reunión en segundo plano y transcribirlo por tramos",
     }).finally(() => { creandoOffscreen = null; });
   }
@@ -194,16 +194,26 @@ async function empezar({ modo, participantes }) {
     } catch (e) {
       return { ok: false, error: t("bg.errCaptura", tab.title || t("bg.laPestana"), (e && e.message) || e) };
     }
+  } else if (modo === "orig_mic") {
+    // La pestaña la elige el usuario en la ventana de Chrome, y Chrome no dice
+    // cuál: de título vale el de la que tiene delante, que suele ser esa.
+    const [activa] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+    tabTitle = (activa && activa.title) || "";
   }
   await ensureOffscreen();
+  // En "orig_mic" esto tarda lo que el usuario tarde en elegir (el popup ya se ha
+  // cerrado para entonces: la ventana de Chrome le quita el foco).
   const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "start", modo, streamId, tabTitle, participantes: participantes || "" });
   if (r && r.ok) {
     await chrome.storage.session.set({
-      grabando: true, t0: Date.now(), tabTitle, pausado: false, pausadoDesde: 0, pausaMs: 0,
+      grabando: true, t0: Date.now(), tabTitle: r.titulo !== undefined ? r.titulo : tabTitle, pausado: false, pausadoDesde: 0, pausaMs: 0,
       ultimoModo: modo, participantesBorrador: "", reunionId: r.id,
     });
     chrome.action.setBadgeText({ text: "REC" });
     chrome.action.setBadgeBackgroundColor({ color: "#c0392b" });
+  } else if (modo === "orig_mic" && r && r.error && !r.cancelado && chrome.notifications) {
+    // Nadie lo vería: el popup está cerrado. Cancelar en la ventana no es un fallo.
+    chrome.notifications.create("escriba-captura", { type: "basic", iconUrl: "icon128.png", priority: 2, title: t("bg.noGrabaTitulo"), message: r.error });
   }
   return r || { ok: false, error: t("bg.sinGrabador") };
 }
@@ -217,8 +227,11 @@ async function parar() {
 }
 
 async function alternarGrabacion() {
-  const s = await chrome.storage.session.get({ grabando: false, ultimoModo: "tab_mic", participantesBorrador: "" });
-  return s.grabando ? parar() : empezar({ modo: s.ultimoModo, participantes: s.participantesBorrador });
+  const s = await chrome.storage.session.get({ grabando: false, ultimoModo: "", participantesBorrador: "" });
+  if (s.grabando) return parar();
+  // La última forma usada en esta sesión de Chrome; si no, la elegida en el popup.
+  const modo = s.ultimoModo || (await leerConfig()).modoGrabar || "orig_mic";
+  return empezar({ modo, participantes: s.participantesBorrador });
 }
 
 async function pausa(pausar) {
@@ -482,6 +495,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       } else if (msg.cmd === "stop") {
         sendResponse(await parar());
+
+      // El grabador avisa de que Chrome ha dejado de compartir («Dejar de compartir»
+      // en su barra, o la pestaña cerrada): se cierra la grabación como con Parar.
+      } else if (msg.cmd === "finCaptura") {
+        const { grabando } = await chrome.storage.session.get({ grabando: false });
+        sendResponse(grabando ? await parar() : { ok: true });
 
       } else if (msg.cmd === "pausar" || msg.cmd === "reanudar") {
         sendResponse(await pausa(msg.cmd === "pausar"));

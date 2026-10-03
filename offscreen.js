@@ -68,7 +68,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.target !== "offscreen") return false;
   (async () => {
     try {
-      if (msg.cmd === "start") { await start(msg); sendResponse({ ok: true, id: reunionActual }); }
+      if (msg.cmd === "start") { await start(msg); sendResponse({ ok: true, id: reunionActual, titulo: tabTitle }); }
       else if (msg.cmd === "stop") { stop(); sendResponse({ ok: true }); }
       else if (msg.cmd === "pausar") { sendResponse({ ok: pausar() }); }
       else if (msg.cmd === "reanudar") { sendResponse({ ok: reanudar() }); }
@@ -105,7 +105,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, grabandoId: yaProcesado && !cerrando ? null : reunionActual, enCurso: [...enCurso] });
       }
       else sendResponse({ ok: false, error: "orden desconocida" });
-    } catch (e) { sendResponse({ ok: false, error: (e && e.message) || String(e) }); }
+    } catch (e) { sendResponse({ ok: false, error: (e && e.message) || String(e), ...(e && e.cancelado ? { cancelado: true } : {}) }); }
   })();
   return true;
 });
@@ -148,11 +148,62 @@ async function leerConfig() {
 }
 
 // --- grabación ---
+// Tres formas (`modo`):
+//  "orig_mic" (3.7, la principal): Chrome enseña su ventana de «elegir qué
+//    compartir» y entrega el sonido de la pestaña (o de todo el equipo) SIN
+//    silenciarla. Lo que se oye es el sonido original, sin pasar por aquí.
+//  "tab_mic" (la rápida): la pestaña que suena, con un clic y sin preguntar. A
+//    cambio Chrome la silencia y hay que devolver su sonido (abreAltavoz), y esa
+//    captura pierde trozos cuando el equipo ahorra energía: con batería se oye
+//    con cortes y no hay forma de evitarlo desde una extensión.
+//  "mic": solo el micrófono.
+
+// Pide a Chrome lo que el usuario quiera compartir. Este documento no se ve, pero
+// la ventana de elegir la pone Chrome y no hace falta gesto (probado en Chrome y
+// Edge 154). Devuelve el stream ya sin imagen y qué se eligió.
+let pidiendoCompartir = false;
+async function pideCompartir() {
+  if (pidiendoCompartir) throw new Error(t("off.compartirYaAbierto"));
+  pidiendoCompartir = true;
+  let s;
+  try {
+    s = await navigator.mediaDevices.getDisplayMedia({
+      // Pestañas primero; la imagen la exige Chrome, pero no se usa.
+      video: { displaySurface: "browser" },
+      // Sin tocar: ni cancelación de eco ni reducción de ruido (vienen puestas por
+      // defecto y están pensadas para un micro, no para el sonido de una reunión).
+      audio: { suppressLocalAudioPlayback: false, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      systemAudio: "include",        // «toda la pantalla» puede traer el sonido del equipo (Teams de escritorio…)
+      selfBrowserSurface: "exclude",
+      surfaceSwitching: "include",
+    });
+  } catch (e) {
+    const cancelado = !!e && e.name === "NotAllowedError";
+    const err = new Error(cancelado ? t("off.compartirCancelado") : t("off.compartirFallo", (e && e.message) || String(e)));
+    err.cancelado = cancelado;
+    throw err;
+  } finally {
+    pidiendoCompartir = false;
+  }
+  const video = s.getVideoTracks()[0];
+  const superficie = (video && video.getSettings && video.getSettings().displaySurface) || "";
+  s.getVideoTracks().forEach((v) => v.stop());
+  if (!s.getAudioTracks().length) {
+    // Una ventana suelta no trae sonido, y en pestaña o pantalla se puede desmarcar.
+    s.getTracks().forEach((p) => p.stop());
+    throw new Error(t("off.compartirSinAudio"));
+  }
+  return { stream: s, superficie };
+}
+
 async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
   // Una sola petición, sin reintentos: no puede retrasar la grabación.
   const cfgInicio = await aBg("cfg").catch(() => null);
   await ponIdioma(cfgInicio);
-  tabTitle = tt || "";
+  // Antes de montar nada: el usuario puede tardar en elegir, o cancelar.
+  const compartido = modo === "orig_mic" ? await pideCompartir() : null;
+  // Chrome no dice qué pestaña se eligió: vale el título de la que había delante.
+  tabTitle = compartido && compartido.superficie !== "browser" ? t("off.tituloPantalla") : tt || "";
   participantes = (pp || "").trim();
   // "playback": este contexto no necesita respuesta inmediata, solo alimenta la
   // grabación. Con el valor por defecto trabaja en bloques de ~10 ms y cualquier
@@ -198,9 +249,19 @@ async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
     medidores.push(vigila("pestaña", g));
   }
 
-  // No hay modo «todo el PC»: Chrome solo deja usar la captura de pantalla al
-  // documento que la pidió, y este documento no puede enseñar el selector (se
-  // quitó en la 3.1.1; no llegó a grabar nunca).
+  if (compartido) {
+    streams.push(compartido.stream);
+    const g = audioCtx.createGain();
+    audioCtx.createMediaStreamSource(compartido.stream).connect(g);
+    g.connect(mezcla);
+    // Sin altavoz: aquí Chrome no silencia nada y lo que se oye es el original.
+    medidores.push(vigila("pestaña", g));
+    // «Dejar de compartir» en la barra de Chrome, o la pestaña cerrada: la
+    // grabación termina como si se hubiera pulsado Parar.
+    compartido.stream.getAudioTracks()[0].addEventListener("ended", () => {
+      if (!yaProcesado && !finalizando) aBg("finCaptura").catch(() => {});
+    });
+  }
 
   try {
     const mic = await navigator.mediaDevices.getUserMedia({

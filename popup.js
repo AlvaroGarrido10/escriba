@@ -139,6 +139,10 @@ async function init() {
     pintaHistorial();
     return;
   }
+  // La forma de grabar que se usó la última vez sale ya elegida.
+  const { modoGrabar } = await leerConfig();
+  const elegida = document.querySelector(`.modo input[value="${modoGrabar}"]`);
+  if (elegida) elegida.checked = true;
   await revisaMicro();
   const { participantesBorrador } = await chrome.storage.session.get({ participantesBorrador: "" });
   $("participantes").value = participantesBorrador;
@@ -146,12 +150,16 @@ async function init() {
   pintaHistorial();
 }
 
-// Qué pestaña se va a grabar y si está sonando.
+// Qué se va a grabar. En la forma rápida, qué pestaña y si está sonando.
 function pintaObjetivo(obj) {
   const el = $("objetivo");
   el.className = "objetivo";
   if (modoElegido() === "mic") {
     el.innerHTML = icono("micro") + `<span class="txt">${escapa(t("pop.soloTuMicro"))}</span>`;
+    return;
+  }
+  if (modoElegido() === "orig_mic") {
+    el.innerHTML = icono("pestana") + `<span class="txt">${escapa(t("pop.elegirasPestana"))}</span>`;
     return;
   }
   if (!obj) {
@@ -167,6 +175,7 @@ function pintaObjetivo(obj) {
 }
 document.querySelectorAll(".modo input").forEach((r) => r.addEventListener("change", async () => {
   pintaAvisoMic();
+  guardarConfig({ modoGrabar: modoElegido() }).catch(() => {});
   const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
   if (!s.grabando) pintaObjetivo(s.objetivo);
 }));
@@ -177,9 +186,12 @@ $("btnRec").onclick = async () => {
   b.disabled = true;
   try {
     if (!(sesion && sesion.grabando)) {
-      estado(t("pop.arrancando"), null, { ic: "reloj" });
+      // En «Pestaña + micro» Chrome abre su ventana de elegir qué compartir, que le
+      // quita el foco a este panel y lo cierra: la grabación arranca igual.
+      estado(t(modoElegido() === "orig_mic" ? "pop.eligeEnChrome" : "pop.arrancando"), null, { ic: "reloj" });
       const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "start", modo: modoElegido(), participantes: $("participantes").value.trim() });
       if (r && r.ok) { estado(""); await refrescaGrabacion(); }
+      else if (r && r.cancelado) estado("");
       else estado((r && r.error) || t("pop.noSePudoIniciar"), "error");
     } else {
       await chrome.runtime.sendMessage({ target: "bg", cmd: "stop" });
@@ -297,7 +309,8 @@ $("btnDiag").onclick = async () => {
 
   // 4. Motor de grabación (offscreen) + captura real de 3 s
   escribe(t("pop.diagGrabador"));
-  const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "selftest", modo: modoElegido() });
+  // La prueba usa la captura rápida: no tiene sentido abrir la ventana de Chrome para 3 s.
+  const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "selftest", modo: modoElegido() === "mic" ? "mic" : "tab_mic" });
   if (!r || !r.ok) {
     escribe("   " + t("pop.diagFalla", (r && r.error) || t("pop.diagSinRespuesta")));
   } else {

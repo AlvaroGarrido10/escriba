@@ -23,6 +23,8 @@ main { padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 14px;
 .bienvenida p { color: var(--texto-2); font-size: 13.5px; }
 
 /* --- qué se va a grabar --- */
+/* Tres formas en una fila: cada una ocupa lo que pide su texto, sin partirlo. */
+.modo label { flex: 1 1 auto; white-space: nowrap; gap: 6px; padding-inline: 6px; }
 .objetivo {
   display: flex; align-items: center; gap: 9px; min-height: 40px;
   font-size: 13px; line-height: 1.35; color: var(--texto-2);

@@ -476,6 +476,101 @@ test("con «Reproductor de Chrome» fijado en Opciones no se usa el colchón", a
   assert.strictEqual(piezas.hilos.length, 0);
 });
 
+// --- «Pestaña + micro» sin silenciar (3.7.0) ---
+// Tapar los cortes no bastó: con batería Chrome llega a perder tres trozos por
+// segundo y el relleno se oye. La forma principal pide la captura con la ventana
+// de Chrome de «elegir qué compartir», que no silencia nada: lo que se oye es el
+// sonido original, en cualquier equipo. La rápida queda como alternativa.
+test("REGRESIÓN 03/10: «Pestaña + micro» pide a Chrome la captura sin silenciar y no devuelve nada a los altavoces", async () => {
+  const s = sistemaGrabando();
+  let pedidasRapidas = 0;
+  s.chrome.tabCapture.getMediaStreamId = async () => { pedidasRapidas++; return "x"; };
+  const r = await s.enviar({ target: "bg", cmd: "start", modo: "orig_mic", participantes: "" });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.strictEqual(pedidasRapidas, 0, "la captura rápida (la que silencia) no se toca");
+  const [cap] = s.medios.mediaDevices._compartidos;
+  assert.strictEqual(cap._c.audio.suppressLocalAudioPlayback, false, "Chrome no debe silenciar lo que se graba");
+  assert.deepStrictEqual([cap._c.audio.echoCancellation, cap._c.audio.noiseSuppression, cap._c.audio.autoGainControl], [false, false, false],
+    "el sonido de la reunión, sin los filtros de micro que Chrome pone por defecto");
+  assert.strictEqual(cap._c.systemAudio, "include", "con «toda la pantalla» puede venir el sonido del equipo");
+  assert.ok(cap.getVideoTracks()[0].parada, "la imagen no se usa: se suelta");
+  assert.ok(!cap.getAudioTracks()[0].parada, "el sonido sigue");
+  assert.strictEqual(s.off.altavozActual(), null, "nada que devolver: la pestaña suena por sí sola");
+  assert.strictEqual(s.entorno.Audio._creados.length, 0);
+  assert.strictEqual(s.entorno.AudioContext._instancias.length, 1, "solo el contexto de la grabación");
+  const ses = s.chrome.storage.session._volcado();
+  assert.strictEqual(ses.grabando, true);
+  assert.strictEqual(ses.ultimoModo, "orig_mic");
+  assert.ok(s.chrome._registro.badges.includes("REC"));
+});
+
+test("«Pestaña + micro»: de título, la pestaña que había delante; si se comparte toda la pantalla, «Pantalla compartida»", async () => {
+  const s = sistemaGrabando();
+  s.chrome.tabs.query = async () => [{ id: 3, title: "Reunión de equipo - Meet" }];
+  await s.enviar({ target: "bg", cmd: "start", modo: "orig_mic" });
+  assert.strictEqual(s.historial()[0].titulo, "Reunión de equipo - Meet");
+  assert.strictEqual(s.chrome.storage.session._volcado().tabTitle, "Reunión de equipo - Meet");
+  const p = sistemaGrabando({ compartir: "pantalla" });
+  p.chrome.tabs.query = async () => [{ id: 3, title: "Correo" }];
+  await p.enviar({ target: "bg", cmd: "start", modo: "orig_mic" });
+  assert.strictEqual(p.historial()[0].titulo, "Pantalla compartida", "el título de la pestaña de delante engañaría");
+  assert.strictEqual(p.chrome.storage.session._volcado().tabTitle, "Pantalla compartida");
+});
+
+test("cancelar en la ventana de Chrome no graba ni avisa; elegir algo sin sonido lo dice, porque el popup ya está cerrado", async () => {
+  const c = sistemaGrabando({ compartir: "cancela" });
+  const r = await c.enviar({ target: "bg", cmd: "start", modo: "orig_mic" });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.cancelado, true);
+  assert.ok(!c.chrome.storage.session._volcado().grabando);
+  assert.strictEqual(c.chrome._registro.notificaciones.length, 0, "cancelar es cosa del usuario: sin aviso");
+  assert.strictEqual(c.historial().length, 0);
+  assert.strictEqual(c.entorno.AudioContext._instancias.length, 0, "no se monta nada antes de saber qué se graba");
+
+  const v = sistemaGrabando({ compartir: "ventana" });
+  const rv = await v.enviar({ target: "bg", cmd: "start", modo: "orig_mic" });
+  assert.strictEqual(rv.ok, false);
+  assert.ok(/no trae sonido/.test(rv.error), rv.error);
+  assert.ok(!v.chrome.storage.session._volcado().grabando);
+  assert.deepStrictEqual(v.chrome._registro.notificaciones.map((n) => [n.id, n.message]), [["escriba-captura", rv.error]]);
+  assert.ok(v.medios.mediaDevices._compartidos[0].getTracks().every((p) => p.parada), "lo compartido se suelta: Chrome quita su barra");
+  assert.strictEqual(v.historial().length, 0);
+});
+
+test("«Dejar de compartir» en la barra de Chrome cierra la grabación como el botón de parar", async () => {
+  const s = sistemaGrabando({ fetch: fetchPorTramo({ 1: [respGemini("hola")] }) });
+  await s.enviar({ target: "bg", cmd: "start", modo: "orig_mic" });
+  s.medios.mediaDevices._compartidos[0].getAudioTracks()[0]._dispara("ended");
+  await hasta(() => s.chrome.storage.session._volcado().grabando === false, "que la grabación se cerrara");
+  await hasta(() => s.historial()[0] && s.historial()[0].estado === "ok", "y que se transcribiera lo grabado");
+});
+
+test("el atajo de teclado graba con la forma elegida en el popup; de fábrica, «Pestaña + micro»", async () => {
+  const s = sistemaGrabando();
+  s.chrome._oyentes.comando.forEach((f) => f("grabar"));
+  await hasta(() => s.chrome.storage.session._volcado().grabando === true, "que empezara a grabar");
+  assert.strictEqual(s.chrome.storage.session._volcado().ultimoModo, "orig_mic");
+  assert.strictEqual(s.medios.mediaDevices._compartidos.length, 1);
+  const m = sistemaGrabando({ sync: { modoGrabar: "mic" } });
+  m.chrome._oyentes.comando.forEach((f) => f("grabar"));
+  await hasta(() => m.chrome.storage.session._volcado().grabando === true, "que empezara a grabar");
+  assert.strictEqual(m.chrome.storage.session._volcado().ultimoModo, "mic");
+  assert.strictEqual(m.medios.mediaDevices._compartidos.length, 0);
+});
+
+test("mientras Chrome espera a que se elija qué compartir, una segunda orden de grabar no abre otra ventana", async () => {
+  const s = sistemaGrabando();
+  let suelta;
+  const original = s.medios.mediaDevices.getDisplayMedia;
+  s.medios.mediaDevices.getDisplayMedia = (c) => new Promise((ok) => { suelta = () => ok(original(c)); });
+  const primera = s.off.start({ modo: "orig_mic" });
+  await espera0();
+  await assert.rejects(s.off.start({ modo: "orig_mic" }), /ya está esperando/);
+  suelta();
+  await primera;
+  assert.strictEqual(s.medios.mediaDevices._compartidos.length, 1);
+});
+
 // --- el reproductor (AudioWorklet) y la bomba (Worker), con audio de verdad ---
 function cargaColchon(opciones = {}, hzSalida = 48000) {
   const registro = {}, mensajes = [];
@@ -1429,7 +1524,7 @@ function relojFalso(reloj) {
 // Service worker + documento offscreen GRABANDO de verdad (con los stubs de
 // medios), hablándose como en Chrome. Con `reloj`, Date.now lo decide el test;
 // con `retenerTimeouts`, los setTimeout se guardan en vez de ejecutarse.
-function sistemaGrabando({ fetch: fetchStub = nuevoFetch([]), local = {}, sync = {}, reloj = null, retenerTimeouts = false } = {}) {
+function sistemaGrabando({ fetch: fetchStub = nuevoFetch([]), local = {}, sync = {}, reloj = null, retenerTimeouts = false, compartir = "pestana" } = {}) {
   const chrome = nuevoChrome({ local: { geminiKey: "K", geminiModel: "gemini-flash-latest", ...local }, sync });
   const aud = nuevosAudios();
   const bgCtx = cargar("background.js", { chrome, fetch: async () => { throw new Error("bg no debe llamar a la red"); } });
@@ -1437,7 +1532,7 @@ function sistemaGrabando({ fetch: fetchStub = nuevoFetch([]), local = {}, sync =
   const enviarBg = mensajero(chrome);
   const offChrome = nuevoChrome();
   offChrome.runtime.sendMessage = (msg) => enviarBg(msg);
-  const medios = nuevosMedios({ conAudio: true });
+  const medios = nuevosMedios({ conAudio: true, compartir });
   const timeouts = [];
   const entorno = {
     ...entornoOffscreen(offChrome, fetchStub),
@@ -1453,7 +1548,7 @@ function sistemaGrabando({ fetch: fetchStub = nuevoFetch([]), local = {}, sync =
   chrome.runtime.sendMessage = (msg) => (msg.target === "offscreen" ? enviarOff(msg) : enviarBg(msg));
   chrome._registro.offscreen = 1;
   const historial = () => chrome.storage.local._volcado().historial || [];
-  return { chrome, bgCtx, off, audios: aud, medios, timeouts, enviar: enviarBg, historial, entrada: (id) => historial().find((h) => h.id === id) };
+  return { chrome, bgCtx, off, entorno, audios: aud, medios, timeouts, enviar: enviarBg, historial, entrada: (id) => historial().find((h) => h.id === id) };
 }
 
 grupo("3.3 · transcribir mientras se graba");

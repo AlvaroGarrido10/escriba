@@ -35,7 +35,8 @@
     <!-- Antes de grabar: qué se graba y con quién. -->
     <div id="preparar" class="bloque">
       <div class="segmentado modo" role="radiogroup">
-        <label id="lblTab"><input type="radio" name="modo" value="tab_mic" checked><svg class="i" aria-hidden="true"><use href="iconos.svg#pestana"></use></svg><span data-i18n="pop.modoTabMic">Pestaña + micro</span></label>
+        <label id="lblOrig" title="Chrome te pregunta qué compartir y su sonido se oye tal cual, sin pasar por Escriba" data-i18n-title="pop.modoOrigTitle"><input type="radio" name="modo" value="orig_mic" checked><svg class="i" aria-hidden="true"><use href="iconos.svg#pestana"></use></svg><span data-i18n="pop.modoTabMic">Pestaña + micro</span></label>
+        <label id="lblTab" title="Un clic, sin preguntar: graba la pestaña que suena. Su sonido te lo devuelve Escriba, y con el portátil sin enchufar puede oírse con cortes" data-i18n-title="pop.modoRapidoTitle"><input type="radio" name="modo" value="tab_mic"><svg class="i" aria-hidden="true"><use href="iconos.svg#cohete"></use></svg><span data-i18n="pop.modoRapido">Rápido</span></label>
         <label><input type="radio" name="modo" value="mic"><svg class="i" aria-hidden="true"><use href="iconos.svg#micro"></use></svg><span data-i18n="pop.modoMic">Solo micro</span></label>
       </div>
       <div id="objetivo" class="objetivo"></div>

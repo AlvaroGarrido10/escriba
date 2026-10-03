@@ -23,7 +23,7 @@ const BASE = "https://generativelanguage.googleapis.com";
 const MODELOS_RESERVA = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"];
 
 let mediaRecorder = null, streams = [], audioCtx = null, rotaTimer = null, parcialTimer = null;
-let altavoz = null;        // <audio> que devuelve la pestaña capturada a los altavoces
+let altavoz = null;        // lo que devuelve la pestaña capturada a los altavoces (ver abreAltavoz)
 const MS_PARCIAL = 30 * 1000;         // cada cuánto se guarda el tramo que se está grabando
 let tramos = [], trozosTramo = [], tabTitle = "", medidores = [], errorMic = "";
 let participantes = "";     // los que escribió el usuario al empezar (opcional)
@@ -313,18 +313,60 @@ function arrancaTramo(stream) {
 // troceado), así que: si cambia el dispositivo de salida se rehace; un vigía
 // reinicia el <audio> que se atasca y, en automático, a los tres reinicios pasa
 // al motor; y desde el popup («¿No oyes la reunión?») se cambia en vivo.
+//
+//  «colchon» (3.7.0, la que se usa en automático): reproductor propio con una
+//    reserva de audio. Las dos de arriba suenan con microcortes SIEMPRE, también
+//    con el equipo parado: medido con un tono, en 20 s el <audio> pierde o repite
+//    muestras un centenar de veces y mete huecos de hasta 50 ms, y el motor mete
+//    un hueco de 10 ms por segundo. Lo capturado llega entero; lo estropean ellos
+//    al reproducirlo casi sin reserva. Aquí el audio va de la captura a un anillo
+//    (altavoz-bomba.js, en un hilo aparte) y de ahí a los altavoces
+//    (altavoz-colchon.js), con MS_COLCHON de reserva. Las otras dos quedan como
+//    alternativa si Chrome no deja usar esta.
+const MS_COLCHON = 60;
+const colchonDisponible = () => typeof MediaStreamTrackProcessor !== "undefined" &&
+  typeof AudioWorkletNode !== "undefined" && typeof Worker !== "undefined";
 let vigiaAltavoz = null;
 if (typeof navigator !== "undefined" && navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
   // Se desconecta el monitor, se enchufan unos cascos…: el sonido se rehace en la salida nueva.
   navigator.mediaDevices.addEventListener("devicechange", () => { if (altavoz) reiniciaAltavoz(); });
 }
 
-// preferencia: "auto" (por defecto), "audio" o "contexto" (Opciones o el popup).
+// preferencia: "auto" (por defecto), "colchon", "audio" o "contexto" (Opciones o el popup).
 function abreAltavoz(stream, preferencia) {
   const auto = !preferencia || preferencia === "auto";
-  altavoz = { stream, modo: auto ? "audio" : preferencia, auto, el: null, ctx: null, reinicios: 0, quietos: 0, ultimoT: 0 };
+  const modo = auto || preferencia === "colchon" ? (colchonDisponible() ? "colchon" : "audio") : preferencia;
+  altavoz = { stream, modo, auto, el: null, ctx: null, copia: null, bomba: null, colchon: null, reinicios: 0, quietos: 0, ultimoT: 0 };
   enciendeAltavoz();
   return altavoz;
+}
+
+// La pestaña capturada, a los altavoces con reserva: captura → hilo aparte → anillo.
+async function enciendeColchon(a) {
+  const pista = a.stream.getAudioTracks()[0];
+  const hz = (pista.getSettings && pista.getSettings().sampleRate) || 48000;
+  // Al ritmo de la captura: si la tarjeta va a otro (44,1 kHz, 96 kHz…), Chrome
+  // convierte a la salida, igual que hace el contexto de la grabación.
+  const ctx = new AudioContext({ sampleRate: hz, latencyHint: "interactive" });
+  a.ctx = ctx;
+  await ctx.audioWorklet.addModule("altavoz-colchon.js");
+  if (altavoz !== a || a.ctx !== ctx) return; // se soltó o se cambió mientras cargaba
+  const nodo = new AudioWorkletNode(ctx, "escriba-altavoz", {
+    numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
+    processorOptions: { hzEntrada: hz, colchonMs: MS_COLCHON },
+  });
+  nodo.port.onmessage = (e) => { if (e.data && e.data.estado) a.colchon = e.data.estado; };
+  nodo.connect(ctx.destination);
+  // El audio no pasa por este documento: va de la captura al hilo de la bomba y de
+  // ahí al del sonido, por un canal entre los dos.
+  const canal = new MessageChannel();
+  nodo.port.postMessage({ entrada: canal.port1 }, [canal.port1]);
+  a.copia = pista.clone();
+  const audio = new MediaStreamTrackProcessor({ track: a.copia }).readable;
+  a.bomba = new Worker("altavoz-bomba.js");
+  a.bomba.onmessage = (e) => { if (e.data && e.data.remiendo) a.remiendos = (a.remiendos || 0) + 1; };
+  a.bomba.postMessage({ audio, salida: canal.port2 }, [audio, canal.port2]);
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
 }
 
 function enciendeAltavoz() {
@@ -332,6 +374,14 @@ function enciendeAltavoz() {
   if (!a) return;
   a.quietos = 0;
   a.ultimoT = 0; // un <audio> recién creado empieza en 0: si no se mueve de ahí, no suena
+  if (a.modo === "colchon") {
+    enciendeColchon(a).catch((e) => {
+      if (altavoz !== a || a.modo !== "colchon") return;
+      console.warn("Escriba: el altavoz con colchón no arranca, la pestaña va por el <audio>:", e);
+      cambiaAltavoz("audio");
+    });
+    return;
+  }
   if (a.modo === "contexto") {
     a.ctx = new AudioContext({ latencyHint: "playback" });
     a.ctx.createMediaStreamSource(a.stream).connect(a.ctx.destination);
@@ -354,14 +404,18 @@ function apagaAltavoz() {
   const a = altavoz;
   if (!a) return;
   if (a.el) { try { a.el.pause(); } catch (_) {} a.el.srcObject = null; a.el = null; }
+  if (a.bomba) { try { a.bomba.terminate(); } catch (_) {} a.bomba = null; }
+  if (a.copia) { try { a.copia.stop(); } catch (_) {} a.copia = null; }
   if (a.ctx) { try { a.ctx.close(); } catch (_) {} a.ctx = null; }
 }
 
-// Sin argumento, alterna. Devuelve la forma que queda (null sin grabación).
+// Sin argumento, pasa a la siguiente: colchón → <audio> → motor → colchón. Devuelve
+// la forma que queda (null sin grabación).
 async function cambiaAltavoz(modo) {
   if (!altavoz) return null;
   apagaAltavoz();
-  altavoz.modo = modo || (altavoz.modo === "audio" ? "contexto" : "audio");
+  const orden = colchonDisponible() ? ["colchon", "audio", "contexto"] : ["audio", "contexto"];
+  altavoz.modo = modo || orden[(orden.indexOf(altavoz.modo) + 1) % orden.length];
   enciendeAltavoz();
   return altavoz.modo;
 }
@@ -385,7 +439,7 @@ function cierraAltavoz() {
 async function vigilaAltavoz() {
   const a = altavoz;
   if (!a) return;
-  if (a.modo === "contexto") {
+  if (a.modo === "contexto" || a.modo === "colchon") {
     if (a.ctx && a.ctx.state === "suspended") a.ctx.resume().catch(() => {});
     return;
   }
@@ -666,7 +720,14 @@ async function cierraGrabacion() {
   const audio = informeAudio();
   streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
   // Para el diagnóstico de «no oigo nada»: con qué forma sonó y cuántas veces se reinició.
-  const infoAltavoz = altavoz ? { modo: altavoz.modo, reinicios: altavoz.reinicios } : null;
+  const infoAltavoz = altavoz
+    ? {
+      modo: altavoz.modo, reinicios: altavoz.reinicios,
+      // Con el colchón: huecos que se oyeron, saltos para ponerse al día y trozos que
+      // perdió Chrome y hubo que remendar (con batería, hasta uno por segundo).
+      ...(altavoz.modo === "colchon" ? { huecos: (altavoz.colchon || {}).vacios || 0, saltos: (altavoz.colchon || {}).tirados || 0, remiendos: altavoz.remiendos || 0 } : {}),
+    }
+    : null;
   cierraAltavoz();
   if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
 

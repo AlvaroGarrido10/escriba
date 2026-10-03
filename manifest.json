@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Escriba",
-  "version": "3.6.1",
+  "version": "3.7.0",
   "default_locale": "en",
   "description": "__MSG_descripcion__",
   "permissions": [

@@ -9,7 +9,7 @@
 const assert = require("assert");
 const { cargar, mensajero } = require("./load");
 const {
-  nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, nuevoAudioElemento, nuevosMedios, blobDe, nuevosAudios, espera0,
+  nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, nuevoAudioElemento, nuevoColchon, nuevosMedios, blobDe, nuevosAudios, espera0,
 } = require("./stubs");
 const comun = require("../comun.js");
 
@@ -395,6 +395,243 @@ test("el Diagnóstico también devuelve la pestaña por un <audio> y lo suelta a
   assert.ok(el, "tiene que crearse un <audio>");
   assert.ok(!vaAAltavoces(ac));
   assert.ok(el.paused && el.srcObject === null, "al acabar la prueba se suelta");
+});
+
+// ---------------------------------------------------------------------------- 3.7.0
+// Con el portátil en batería Chrome pierde trozos de la captura, y sus dos
+// reproductores de audio en directo lo convierten en microcortes (medido el
+// 03/10). El altavoz con colchón no pasa por ninguno de los dos.
+function grabadorConColchon({ fallaModulo = false, modoAltavoz } = {}) {
+  const chrome = nuevoChrome();
+  chrome.runtime.sendMessage = async (msg) => (msg.cmd === "cfg" ? { geminiKey: "K", ...(modoAltavoz ? { modoAltavoz } : {}) } : { ok: true });
+  const medios = nuevosMedios();
+  const colchon = nuevoColchon();
+  const entorno = {
+    ...entornoOffscreen(chrome, nuevoFetch([])),
+    AudioContext: nuevoAudioContext({ fallaModulo }),
+    navigator: { mediaDevices: medios.mediaDevices },
+    MediaRecorder: medios.MediaRecorder,
+    Audio: nuevoAudioElemento(),
+    MediaStreamTrackProcessor: colchon.MediaStreamTrackProcessor, Worker: colchon.Worker,
+    AudioWorkletNode: colchon.AudioWorkletNode, MessageChannel: colchon.MessageChannel,
+  };
+  return { ctx: cargar(["comun.js", "offscreen.js"], entorno), entorno, piezas: colchon._reg };
+}
+
+test("REGRESIÓN 03/10: en automático la pestaña suena por el reproductor con colchón, no por los de Chrome", async () => {
+  const { ctx, entorno, piezas } = grabadorConColchon();
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  await hasta(() => piezas.hilos.length === 1, "que arrancara la bomba");
+  assert.strictEqual(ctx.altavozActual().modo, "colchon");
+  assert.strictEqual(entorno.Audio._creados.length, 0, "sin <audio>: con la captura a trompicones tira muestras y mete huecos");
+  const [grab, salida] = entorno.AudioContext._instancias;
+  assert.ok(!vaAAltavoces(grab) && !vaAAltavoces(salida), "la pista no va directa a ningún AudioContext: ahí suena sin reserva");
+  assert.strictEqual(salida._opciones.sampleRate, 48000, "al ritmo de la captura: sin remuestrear de más");
+  assert.deepStrictEqual([...salida._modulos], ["altavoz-colchon.js"]);
+  const [nodo] = piezas.nodos;
+  assert.ok(nodo._destinos.includes(salida.destination), "el reproductor propio sí va a los altavoces");
+  assert.strictEqual(nodo.opciones.processorOptions.colchonMs, 60);
+  const [hilo] = piezas.hilos, [proc] = piezas.procesadores;
+  assert.strictEqual(hilo.url, "altavoz-bomba.js");
+  assert.strictEqual(hilo.mensajes[0].audio, proc.readable, "el audio va de la captura al hilo, sin pasar por el documento que graba");
+  assert.strictEqual(proc.track._copiaDe, ctx.altavozActual().stream.getAudioTracks()[0], "se lee una copia de la pista: la grabación no se entera");
+  assert.ok(nodo.port.mensajes[0].entrada && hilo.mensajes[0].salida, "y del hilo al sonido por un canal directo");
+});
+
+test("al parar, el reproductor con colchón se desmonta entero", async () => {
+  const { ctx, entorno, piezas } = grabadorConColchon();
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  await hasta(() => piezas.hilos.length === 1, "que arrancara la bomba");
+  const salida = entorno.AudioContext._instancias[1];
+  ctx.stop();
+  await hasta(() => piezas.hilos[0].terminado && piezas.procesadores[0].track.parada && salida.state === "closed", "que se soltaran el hilo, la copia y el motor");
+});
+
+test("si el reproductor con colchón no arranca, la pestaña suena por el <audio>: nunca se queda muda", async () => {
+  const { ctx, entorno, piezas } = grabadorConColchon({ fallaModulo: true });
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  await hasta(() => entorno.Audio._creados.length === 1, "el <audio> de reserva");
+  assert.strictEqual(ctx.altavozActual().modo, "audio");
+  assert.strictEqual(entorno.Audio._creados[0].paused, false);
+  assert.strictEqual(piezas.hilos.length, 0);
+  assert.strictEqual(entorno.AudioContext._instancias[1].state, "closed", "el motor a medio montar se cierra");
+});
+
+test("«¿No oyes la reunión?» recorre las tres formas: colchón, <audio>, motor y vuelta", async () => {
+  const { ctx, piezas } = grabadorConColchon();
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  await hasta(() => piezas.hilos.length === 1, "que arrancara la bomba");
+  assert.strictEqual(await ctx.cambiaAltavoz(), "audio");
+  assert.ok(piezas.hilos[0].terminado, "la bomba se para al cambiar");
+  assert.strictEqual(await ctx.cambiaAltavoz(), "contexto");
+  assert.strictEqual(await ctx.cambiaAltavoz(), "colchon");
+  await hasta(() => piezas.hilos.length === 2, "una bomba nueva");
+});
+
+test("con «Reproductor de Chrome» fijado en Opciones no se usa el colchón", async () => {
+  const { ctx, entorno, piezas } = grabadorConColchon({ modoAltavoz: "audio" });
+  await ctx.start({ modo: "tab_mic", streamId: "s1" });
+  assert.strictEqual(ctx.altavozActual().modo, "audio");
+  assert.strictEqual(entorno.Audio._creados.length, 1);
+  assert.strictEqual(piezas.hilos.length, 0);
+});
+
+// --- el reproductor (AudioWorklet) y la bomba (Worker), con audio de verdad ---
+function cargaColchon(opciones = {}, hzSalida = 48000) {
+  const registro = {}, mensajes = [];
+  class AudioWorkletProcessor { constructor() { this.port = { onmessage: null, postMessage: (m) => mensajes.push(m) }; } }
+  cargar("altavoz-colchon.js", { sampleRate: hzSalida, AudioWorkletProcessor, registerProcessor: (n, c) => { registro[n] = c; } });
+  const p = new registro["escriba-altavoz"]({ processorOptions: { hzEntrada: 48000, colchonMs: 80, ...opciones } });
+  const mete = (l) => p.port.onmessage({ data: { l, r: null } });
+  const saca = () => { const L = new Float32Array(128), R = new Float32Array(128); p.process([], [[L, R]]); return L; };
+  return { p, mete, saca, mensajes };
+}
+const tono = (hz, desde, n) => Float32Array.from({ length: n }, (_, i) => 0.5 * Math.sin(2 * Math.PI * hz * (desde + i) / 48000));
+
+test("colchón: calla hasta tener la reserva y luego devuelve lo que entró, muestra a muestra", () => {
+  const { mete, saca } = cargaColchon();
+  const salida = [];
+  for (let b = 0; b < 300; b++) { mete(tono(1000, b * 128, 128)); salida.push(...saca()); }
+  const reserva = 0.08 * 48000;
+  assert.ok(salida.slice(0, reserva - 128).every((v) => v === 0), "silencio mientras se llena la reserva (80 ms)");
+  const esperado = tono(1000, 0, salida.length - (reserva - 128));
+  const sonado = salida.slice(reserva - 128);
+  assert.ok(Math.abs(sonado[12]) < Math.abs(esperado[12]) * 0.1, "entra subiendo: arrancar a media onda sería un chasquido");
+  let peor = 0;
+  for (let i = 256; i < esperado.length; i++) peor = Math.max(peor, Math.abs(sonado[i] - esperado[i]));
+  assert.ok(peor < 1e-5, `pasados los 5 ms de entrada, con los dos relojes iguales el sonido sale intacto (peor diferencia ${peor})`);
+});
+
+test("colchón: si la captura va algo más rápida o más lenta que la tarjeta, estira o encoge sin cortar", () => {
+  for (const ritmo of [1.002, 0.998]) {
+    const { p, mete, saca } = cargaColchon();
+    let entrado = 0, debe = 0, peorBrinco = 0, previo = null;
+    for (let b = 0; b < 15000; b++) {             // 40 s
+      debe += 128 * ritmo;
+      const n = Math.floor(debe - entrado);
+      mete(tono(440, entrado, n));
+      entrado += n;
+      for (const v of saca()) { if (previo !== null) peorBrinco = Math.max(peorBrinco, Math.abs(v - previo)); previo = v; }
+    }
+    assert.strictEqual(p.vacios, 0, `ritmo ${ritmo}: ni un hueco`);
+    assert.strictEqual(p.tirados, 0, `ritmo ${ritmo}: ni un salto`);
+    // Un tono de 440 Hz a media escala cambia como mucho 0,029 entre dos muestras.
+    assert.ok(peorBrinco < 0.04, `ritmo ${ritmo}: la onda sale continua (mayor brinco ${peorBrinco.toFixed(4)})`);
+    const reservaMs = (p.w - p.r) / 48;
+    assert.ok(reservaMs > 5 && reservaMs < 300, `ritmo ${ritmo}: la reserva se queda en su sitio (${reservaMs.toFixed(0)} ms)`);
+  }
+});
+
+test("colchón: con la tarjeta a otro ritmo que la captura (44,1 o 96 kHz) el tono sale afinado, al mismo volumen y sin cortes", () => {
+  for (const hzSalida of [44100, 96000]) {
+    const { p, mete, saca } = cargaColchon({}, hzSalida);
+    const salida = [];
+    let entrado = 0, debe = 0;
+    for (let b = 0; b < 3000; b++) {
+      debe += 128 * 48000 / hzSalida;               // la captura sigue llegando a 48 kHz
+      const n = Math.floor(debe - entrado);
+      mete(tono(1000, entrado, n));
+      entrado += n;
+      salida.push(...saca());
+    }
+    assert.strictEqual(p.vacios, 0, `${hzSalida} Hz: ni un hueco`);
+    assert.strictEqual(p.tirados, 0, `${hzSalida} Hz: ni un salto`);
+    // La última décima de segundo se ajusta a un seno de 1000 Hz al ritmo de la
+    // tarjeta (amplitud y fase libres): lo que no encaje es distorsión o desafine.
+    const n = Math.round(hzSalida / 10), desde = salida.length - n, k = 2 * Math.PI * 1000 / hzSalida;
+    let ss = 0, cc = 0, sc = 0, ys = 0, yc = 0;
+    for (let i = 0; i < n; i++) {
+      const s = Math.sin(k * i), c = Math.cos(k * i), y = salida[desde + i];
+      ss += s * s; cc += c * c; sc += s * c; ys += y * s; yc += y * c;
+    }
+    const det = ss * cc - sc * sc, a = (ys * cc - yc * sc) / det, b = (yc * ss - ys * sc) / det;
+    let resto = 0;
+    for (let i = 0; i < n; i++) resto = Math.max(resto, Math.abs(salida[desde + i] - a * Math.sin(k * i) - b * Math.cos(k * i)));
+    assert.ok(Math.abs(Math.hypot(a, b) - 0.5) < 0.005, `${hzSalida} Hz: mismo volumen (${Math.hypot(a, b).toFixed(4)} frente a 0,5)`);
+    assert.ok(resto < 0.005, `${hzSalida} Hz: sigue siendo un tono limpio de 1000 Hz (lo que sobra: ${resto.toFixed(4)})`);
+  }
+});
+
+test("colchón: si se queda sin audio pone silencio y espera a tener reserva otra vez; un atracón lo salta", () => {
+  const { p, mete, saca } = cargaColchon();
+  for (let b = 0; b < 40; b++) { mete(tono(440, b * 128, 128)); saca(); }
+  for (let b = 0; b < 40; b++) saca();            // deja de llegar audio
+  assert.strictEqual(p.vacios, 1, "un hueco, no uno por cada bloque");
+  assert.ok(saca().every((v) => v === 0), "silencio, no ruido");
+  mete(tono(440, 0, 1000));
+  assert.ok(saca().every((v) => v === 0), "con 20 ms no arranca: volvería a quedarse sin audio enseguida");
+  mete(tono(440, 1000, 4000));
+  assert.ok(saca().some((v) => v !== 0), "con la reserva llena vuelve a sonar");
+  mete(tono(440, 5000, 48000));                   // un segundo de golpe tras un parón
+  assert.strictEqual(p.tirados, 1);
+  assert.ok(Math.abs((p.w - p.r) - 0.08 * 48000) < 1, "se pone al día en vez de ir un segundo por detrás");
+});
+
+function cargaBomba() {
+  const avisos = [];
+  const ctx = cargar("altavoz-bomba.js", { postMessage: (m) => avisos.push(m) });
+  return async (trozos) => {
+    const sal = [];
+    let i = 0;
+    const audio = { getReader: () => ({ read: async () => (i < trozos.length ? { value: trozos[i++], done: false } : { done: true }) }) };
+    await ctx.onmessage({ data: { audio, salida: { postMessage: (m) => sal.push(...m.l) } } });
+    return { muestras: sal, avisos };
+  };
+}
+// Trozos como los que entrega Chrome: 441 muestras a 48 kHz, cada uno con su hora (µs).
+function enTrozos(muestras, saltos = {}) {
+  const dura = Math.round(441 / 48000 * 1e6), trozos = [];
+  let hora = 5e6;
+  for (let p = 0, j = 0; p + 441 <= muestras.length; p += 441, j++) {
+    hora += saltos[j] || 0;
+    const datos = muestras.subarray(p, p + 441);
+    trozos.push({ numberOfFrames: 441, sampleRate: 48000, numberOfChannels: 1, timestamp: hora, duration: dura, copyTo: (d) => d.set(datos), close() {} });
+    hora += dura;
+  }
+  return trozos;
+}
+// Sonido periódico con armónicos (ciclo de 240 muestras), como una vocal sostenida.
+const vocal = (n) => Float32Array.from({ length: n }, (_, i) => 0.3 * Math.sin(2 * Math.PI * i / 240) + 0.15 * Math.sin(6 * Math.PI * i / 240 + 1));
+
+test("bomba: sin pérdidas, a los altavoces llega exactamente lo capturado", async () => {
+  const x = vocal(441 * 60);
+  const { muestras, avisos } = await cargaBomba()(enTrozos(x));
+  assert.strictEqual(muestras.length, x.length);
+  assert.ok(muestras.every((v, i) => v === x[i]), "ni una muestra cambiada");
+  assert.strictEqual(avisos.length, 0);
+});
+
+test("REGRESIÓN 03/10 (batería): el trozo que Chrome pierde se rellena y el sonido sigue donde debía, sin chasquido", async () => {
+  // Como se midió: la hora salta 9,2 ms en un trozo y el corte de verdad cae unos
+  // milisegundos dentro de ese trozo (aquí, 100 muestras).
+  const ideal = vocal(441 * 60), corte = 441 * 30 + 100;
+  const recibido = new Float32Array(ideal.length - 441);
+  recibido.set(ideal.subarray(0, corte));
+  recibido.set(ideal.subarray(corte + 441), corte);
+  const { muestras, avisos } = await cargaBomba()(enTrozos(recibido, { 30: 9213 }));
+  assert.strictEqual(avisos.length, 1, "un remiendo");
+  assert.strictEqual(muestras.length, recibido.length + 441, "se repone justo lo que faltaba: lo que suena no se adelanta");
+  let peor = 0, peorBrinco = 0;
+  for (let i = 0; i < muestras.length; i++) {
+    peor = Math.max(peor, Math.abs(muestras[i] - ideal[i]));
+    if (i) peorBrinco = Math.max(peorBrinco, Math.abs(muestras[i] - muestras[i - 1]));
+  }
+  assert.ok(peor < 0.01, `el relleno coincide con lo que se perdió (peor diferencia ${peor.toFixed(4)})`);
+  assert.ok(peorBrinco < 0.03, `sin escalones: el mayor brinco entre muestras (${peorBrinco.toFixed(4)}) es el de la propia onda`);
+  // Sin remendar, pegar los dos lados deja un escalón.
+  let sinRemendar = 0;
+  for (let i = corte - 2; i < corte + 2; i++) sinRemendar = Math.max(sinRemendar, Math.abs(recibido[i] - recibido[i - 1]));
+  assert.ok(sinRemendar > 0.2, "la prueba tiene que tener un corte que se oiga");
+});
+
+test("bomba: la holgura de las horas no se remienda, y un parón largo tampoco", async () => {
+  const x = vocal(441 * 60);
+  const holgura = await cargaBomba()(enTrozos(x, { 20: 900, 40: -700 }));
+  assert.strictEqual(holgura.avisos.length, 0);
+  assert.ok(holgura.muestras.every((v, i) => v === x[i]));
+  const paron = await cargaBomba()(enTrozos(x, { 30: 2000000 }));
+  assert.strictEqual(paron.avisos.length, 0, "dos segundos sin audio no se inventan");
+  assert.strictEqual(paron.muestras.length, x.length);
 });
 
 // ============================================================================

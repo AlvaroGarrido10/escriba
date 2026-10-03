@@ -149,12 +149,21 @@ const respGemini = (texto, finishReason = "STOP") =>
 // así se controla exactamente qué audio "oye" el medidor. Cada contexto queda
 // en `_instancias` con sus opciones y sus fuentes, para ver qué se conectó a
 // los altavoces (`destination`).
-function nuevoAudioContext() {
+// Con `fallaModulo`, el AudioWorklet no carga (un Chrome que no deja usar el
+// altavoz con colchón).
+function nuevoAudioContext({ fallaModulo = false } = {}) {
   const instancias = [];
   function AudioContext(opciones = {}) {
     const ctx = {
       _opciones: opciones,
       _fuentes: [],
+      _modulos: [],
+      audioWorklet: {
+        async addModule(url) {
+          if (fallaModulo) throw new Error("AbortError: Unable to load a worklet's module.");
+          ctx._modulos.push(url);
+        },
+      },
       sampleRate: 16000,
       state: "running",
       async resume() { ctx.state = "running"; },
@@ -208,11 +217,41 @@ function nuevoAudioElemento({ falla = false } = {}) {
   return Audio;
 }
 
+// Piezas del altavoz con colchón (3.7.0): el lector de la pista, el hilo de la
+// bomba y el nodo que suena. No mueven audio: apuntan lo que se les pide.
+function nuevoColchon() {
+  const reg = { procesadores: [], hilos: [], nodos: [] };
+  function MediaStreamTrackProcessor({ track }) {
+    const p = { track, readable: { _de: track } };
+    reg.procesadores.push(p);
+    return p;
+  }
+  function Worker(url) {
+    const w = { url, mensajes: [], terminado: false, onmessage: null, postMessage(m) { w.mensajes.push(m); }, terminate() { w.terminado = true; } };
+    reg.hilos.push(w);
+    return w;
+  }
+  function AudioWorkletNode(ctx, nombre, opciones) {
+    const n = { ...nodo(), ctx, nombre, opciones, port: { mensajes: [], onmessage: null, postMessage(m) { n.port.mensajes.push(m); } } };
+    reg.nodos.push(n);
+    return n;
+  }
+  function MessageChannel() { return { port1: { lado: 1 }, port2: { lado: 2 } }; }
+  return { MediaStreamTrackProcessor, Worker, AudioWorkletNode, MessageChannel, _reg: reg };
+}
+
 // getUserMedia y MediaRecorder mínimos para arrancar y parar una grabación.
 // Cada stream guarda las restricciones con que se pidió (`_c`).
 // Con `conAudio`, cada tramo entrega un trozo de audio al pararse, como uno real.
 function nuevosMedios({ conAudio = false } = {}) {
-  const pista = () => { const p = { parada: false, stop() { p.parada = true; } }; return p; };
+  const pista = () => {
+    const p = {
+      parada: false, stop() { p.parada = true; },
+      getSettings: () => ({ sampleRate: 48000 }),
+      clone() { const c = pista(); c._copiaDe = p; return c; },
+    };
+    return p;
+  };
   const oyentes = {};
   const mediaDevices = {
     addEventListener(tipo, f) { (oyentes[tipo] = oyentes[tipo] || []).push(f); },
@@ -284,5 +323,5 @@ function nuevosAudios(inicial = []) {
 }
 
 module.exports = {
-  almacen, nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, nuevoAudioElemento, nuevosMedios, blobDe, nuevosAudios, espera0,
+  almacen, nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, nuevoAudioElemento, nuevoColchon, nuevosMedios, blobDe, nuevosAudios, espera0,
 };

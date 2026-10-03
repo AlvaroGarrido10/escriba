@@ -200,7 +200,7 @@ $("btnAltavoz").onclick = async () => {
   $("estadoAltavoz").textContent = t("pop.altavozCambiando");
   const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "altavoz", accion: "cambiar" }).catch(() => null);
   $("estadoAltavoz").textContent = r && r.ok
-    ? t("pop.altavozAhora", t(r.modo === "contexto" ? "pop.altavozContexto" : "pop.altavozAudio"))
+    ? t("pop.altavozAhora", t({ colchon: "pop.altavozColchon", contexto: "pop.altavozContexto" }[r.modo] || "pop.altavozAudio"))
     : t("pop.altavozNoGrabando");
 };
 

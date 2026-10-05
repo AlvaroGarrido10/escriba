@@ -7,6 +7,11 @@
 const $ = (id) => document.getElementById(id);
 const aBgMsg = (cmd, extra = {}) => chrome.runtime.sendMessage({ target: "bg", cmd, ...extra });
 let sesion = {}, reunion = null, relojInt = null, nivelesInt = null, notasTimer = null, ultimoTextoLineas = -1;
+// Sin con quién transcribir (3.8) se graba igual, pero aquí no va a llegar
+// texto: el panel lo dice en vez de prometerlo. La configuración se le pide al
+// service worker, como hace el documento que graba; si no llega, se da por
+// hecho que hay clave y los textos son los de siempre.
+let sinVoz = false;
 
 $("btnBiblio").onclick = () => chrome.tabs.create({ url: "reuniones.html" });
 
@@ -23,12 +28,18 @@ $("btnBiblio").onclick = () => chrome.tabs.create({ url: "reuniones.html" });
   chrome.storage.onChanged.addListener((cambios, area) => {
     if (area === "session") refresca();
     if (area === "local" && cambios.historial) pintaReunion(cambios.historial.newValue || []);
+    // Una clave puesta o quitada en Opciones con el panel abierto: cambia lo que
+    // se dice aquí (si va a llegar texto o no).
+    if (area === "local" && [...provsQueTranscriben().map((id) => provDe(id).campoClave), "provTranscribe"].some((k) => cambios[k])) refresca();
   });
 })();
 
 async function refresca() {
   sesion = await chrome.storage.session.get({ grabando: false, t0: 0, pausado: false, pausadoDesde: 0, pausaMs: 0, reunionId: null });
   const { historial } = await chrome.storage.local.get({ historial: [] });
+  const cfg = await aBgMsg("cfg").catch(() => null);
+  // `provTranscribe` va siempre en la configuración: si falta, lo que ha llegado no lo es.
+  sinVoz = !!cfg && typeof cfg === "object" && "provTranscribe" in cfg && !proveedorVoz(cfg);
   $("sinGrabacion").hidden = !!sesion.grabando;
   $("conGrabacion").hidden = !sesion.grabando;
   $("conGrabacion").classList.toggle("pausa", !!sesion.pausado);
@@ -38,6 +49,12 @@ async function refresca() {
     ? (sesion.pausado ? icono("pausa") + escapa(t("viv.enPausaBadge")) : '<span class="punto"></span>' + escapa(t("viv.grabandoBadge")))
     : escapa(t("viv.sinGrabacion"));
   $("btnPausa").innerHTML = icono(sesion.pausado ? "play" : "pausa") + `<span>${escapa(t(sesion.pausado ? "viv.reanudar" : "viv.pausar"))}</span>`;
+  // Sin con quién transcribir: al parar se guarda, no hay «siguiente trozo de
+  // texto» que esperar, y donde iría el texto se dice por qué no lo hay.
+  $("btnParar").innerHTML = icono("parar") + `<span>${escapa(sinVoz ? t("viv.pararSinClave") : t("viv.parar"))}</span>`;
+  $("progTramo").parentElement.hidden = sinVoz;
+  const vacio = $("texto").querySelector(".vacio-t");
+  if (vacio) vacio.textContent = sinVoz ? t("viv.textoVacioSinClave") : t("viv.textoVacio");
   $("sub").textContent = sesion.pausado ? t("viv.enPausa") : "";
   clearInterval(relojInt);
   clearInterval(nivelesInt);
@@ -56,7 +73,7 @@ function pintaReloj() {
   $("reloj").textContent = formatoTiempo(s);
   const enTramo = s % DURACION_TRAMO_S;
   $("progTramo").style.width = Math.round((enTramo / DURACION_TRAMO_S) * 100) + "%";
-  if (!sesion.pausado) $("sub").textContent = t("viv.siguienteTrozo", formatoTiempo(DURACION_TRAMO_S - enTramo));
+  if (!sesion.pausado) $("sub").textContent = sinVoz ? t("viv.sinClave") : t("viv.siguienteTrozo", formatoTiempo(DURACION_TRAMO_S - enTramo));
 }
 
 // Cada 150 ms; si una respuesta tarda más, no se amontonan las peticiones.
@@ -83,7 +100,11 @@ function pintaReunion(historial) {
     u.innerHTML = "";
     if (h && ["transcribiendo", "ok", "pendiente"].includes(h.estado)) {
       const transcribiendo = h.estado === "transcribiendo";
-      u.innerHTML = avisoHtml(transcribiendo ? "" : "ok", t(transcribiendo ? "viv.transcribiendoFinal" : "viv.lista", escapa(h.titulo)), transcribiendo ? "reloj" : "ok");
+      // Grabada sin clave (3.8): ni se está transcribiendo ni está «lista»; se
+      // está guardando el audio, y después queda guardada, sin transcribir.
+      if (transcribiendo && sinVoz) u.innerHTML = avisoHtml("", t("viv.guardandoFinal", escapa(h.titulo)), "reloj");
+      else if (sinTranscribir(h)) u.innerHTML = avisoHtml("", t("viv.guardada", escapa(h.titulo)), "info");
+      else u.innerHTML = avisoHtml(transcribiendo ? "" : "ok", t(transcribiendo ? "viv.transcribiendoFinal" : "viv.lista", escapa(h.titulo)), transcribiendo ? "reloj" : "ok");
       if (!transcribiendo) {
         const b = botonUI({ texto: t("viv.abrirBiblio"), icono: "libro", clase: "btn-peq btn-primario", alPulsar: () => chrome.tabs.create({ url: "reuniones.html#" + h.id }) });
         b.style.marginTop = "8px";
@@ -112,7 +133,9 @@ function pintaReunion(historial) {
   }
 }
 
-// Las frases seguidas de la misma voz, juntas bajo su nombre.
+// Las frases seguidas de la misma voz, juntas bajo su nombre, que lleva la hora.
+// Las que llegan sin hablante (3.8: hay modelos que no los distinguen) no tienen
+// ese encabezado: su hora va delante de cada una.
 function htmlTurnos(lineas) {
   const voces = [];
   let html = "", previo;
@@ -125,7 +148,7 @@ function htmlTurnos(lineas) {
       html += `<div class="turno" style="--c:var(--voz-${Math.max(0, voces.indexOf(quien)) % 8})">` +
         (quien ? `<div class="quien"><span class="avatar">${escapa(inicialDe(quien))}</span>${escapa(quien)}${l.t !== null ? `<span class="t">${formatoTiempo(l.t)}</span>` : ""}</div>` : "");
     }
-    html += `<p>${escapa(l.texto)}</p>`;
+    html += `<p>${!quien && l.t !== null ? `<span class="t">${formatoTiempo(l.t)}</span>` : ""}${escapa(l.texto)}</p>`;
   }
   return html + (previo !== undefined ? "</div>" : "");
 }

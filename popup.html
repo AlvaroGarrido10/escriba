@@ -16,15 +16,24 @@
 </header>
 
 <main>
-  <!-- Sin clave: lo primero es configurar. -->
+  <!-- Sin clave con la que transcribir: configurar, o grabar igualmente (se guarda
+       el audio y no se transcribe). -->
   <section id="panelConfig" class="bienvenida" hidden>
     <div class="ilus"><svg class="i" aria-hidden="true"><use href="iconos.svg#llave"></use></svg></div>
     <h2 data-i18n="pop.bienvenidaTitulo">Configura Escriba en un minuto</h2>
-    <p data-i18n="pop.bienvenidaTexto">Pega tu clave gratuita de Google Gemini y permite el micrófono. Después, un clic y a grabar.</p>
+    <p data-i18n="pop.bienvenidaTexto">Pon en Opciones la clave de una IA que transcriba (la hay gratuita) y permite el micrófono: después, un clic y a grabar. Sin clave también puedes grabar: Escriba guarda el audio y no lo transcribe.</p>
     <button id="btnConfigurar" class="btn btn-primario btn-grande btn-bloque"><svg class="i" aria-hidden="true"><use href="iconos.svg#ajustes"></use></svg><span data-i18n="pop.configurarAhora">Configurar ahora</span></button>
+    <button id="btnSinClave" class="btn btn-bloque"><svg class="i" aria-hidden="true"><use href="iconos.svg#grabar"></use></svg><span data-i18n="pop.grabarSinClave">Grabar sin transcribir</span></button>
   </section>
 
   <section id="panelGrabar">
+    <!-- Se graba sin clave: que no pille por sorpresa que no habrá texto. -->
+    <div id="avisoSinClave" class="aviso" hidden>
+      <svg class="i" aria-hidden="true"><use href="iconos.svg#llave"></use></svg>
+      <div class="cuerpo"><span data-i18n="pop.sinClave">Sin clave de IA para transcribir: Escriba graba y guarda el audio, pero no lo transcribe.</span>
+        <div><button id="btnPonerClave" class="enlace" data-i18n="pop.ponerClave">Poner una clave</button></div>
+      </div>
+    </div>
     <div id="avisoMic" class="aviso atencion" hidden>
       <svg class="i" aria-hidden="true"><use href="iconos.svg#micro-no"></use></svg>
       <div class="cuerpo"><b data-i18n="pop.micNoAutorizado">El micrófono no está autorizado.</b> <span id="avisoMicTxt" data-i18n="pop.micSoloPestana">Solo se grabará la pestaña: tu voz no saldrá en la transcripción.</span>
@@ -104,6 +113,7 @@
   <button id="btnBorrarTodo" class="btn btn-fantasma btn-peq btn-icono peligro" title="Borrar todo" aria-label="Borrar todo" data-i18n-title="pop.borrarTodo" data-i18n-aria-label="pop.borrarTodo"><svg class="i" aria-hidden="true"><use href="iconos.svg#borrar"></use></svg></button>
 </footer>
 
+<script src="proveedores.js"></script>
 <script src="config.js"></script>
 <script src="comun.js"></script>
 <script src="popup.js"></script>

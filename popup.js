@@ -1,14 +1,30 @@
 // Escriba — popup: grabar, y las últimas reuniones a mano.
 //
-// Tres estados, uno cada vez (3.6): sin configurar (falta la clave), listo para
-// grabar y grabando. Lo de leer a fondo, exportar y sacar actas vive en la
-// biblioteca; aquí la transcripción se ve y se copia sin salir del panel.
+// Tres estados, uno cada vez (3.6): sin configurar, listo para grabar y
+// grabando. «Sin configurar» es que no hay con quién transcribir y tampoco se ha
+// pedido grabar sin clave (3.8: puedeGrabar, en proveedores.js). Lo de leer a
+// fondo, exportar y sacar actas vive en la biblioteca; aquí la transcripción se
+// ve y se copia sin salir del panel.
 
 const $ = (id) => document.getElementById(id);
 let timerInt = null, nivelesInt = null, ultimoIdVisto = null, sesion = null;
+// La configuración, leída al abrir. Sin con quién transcribir (3.8) se graba
+// igual: el audio se guarda y se transcribe solo el día que haya una clave. Aquí
+// cambia lo que se dice, que no puede prometer un texto que no va a llegar.
+let cfg = {};
+const sinVoz = () => !proveedorVoz(cfg);
 
 $("lnkOpc").onclick = () => chrome.runtime.openOptionsPage();
 $("btnConfigurar").onclick = () => chrome.runtime.openOptionsPage();
+$("btnPonerClave").onclick = () => chrome.runtime.openOptionsPage();
+// «Grabar sin transcribir», en la bienvenida: se recuerda (la bienvenida no
+// vuelve a salir) y se pasa al panel de grabar. No empieza a grabar todavía:
+// falta elegir qué.
+$("btnSinClave").onclick = async () => {
+  cfg.grabarSinClave = true;
+  guardarConfig({ grabarSinClave: true }).catch(() => {});
+  await muestraGrabar();
+};
 const abrirBiblioteca = (id) => chrome.tabs.create({ url: "reuniones.html" + (id ? "#" + id : "") });
 $("lnkBiblio").onclick = () => abrirBiblioteca();
 $("btnVerTodas").onclick = () => abrirBiblioteca();
@@ -91,13 +107,20 @@ function pintaAvisoMic() {
 // Repintar en cuanto la transcripción termine (aunque el popup esté abierto).
 // Se engancha desde init(), cuando ya se sabe el idioma.
 function alCambiar(cambios, area) {
-  if (area === "session" && (cambios.grabando || cambios.pausado)) { refrescaGrabacion(); return; }
+  if (area === "session" && (cambios.grabando || cambios.pausado)) {
+    // Con la bienvenida a la vista, una grabación arrancada con el atajo trae el
+    // panel de grabar: es donde está el botón de parar.
+    if ($("panelGrabar").hidden) { if (cambios.grabando && cambios.grabando.newValue) muestraGrabar(); return; }
+    refrescaGrabacion();
+    return;
+  }
   if (area !== "local" || !cambios.historial) return;
   const nuevos = cambios.historial.newValue || [];
   pintaHistorial();
   const ultimo = nuevos[0];
-  // Mientras trocea y transcribe, ir cantando por dónde va.
-  if (ultimo && ultimo.estado === "transcribiendo" && ultimo.progreso && !(sesion && sesion.grabando)) {
+  // Mientras trocea y transcribe, ir cantando por dónde va. Sin con quién
+  // transcribir no hay avance que cantar: se queda «Guardando el audio…».
+  if (ultimo && ultimo.estado === "transcribiendo" && ultimo.progreso && !(sesion && sesion.grabando) && !sinVoz()) {
     estado(t("pop.transcribiendoProg", ultimo.progreso), null, { ic: "reloj" });
   }
   // Si la última grabación acaba de terminar, se avisa con un botón para abrirla.
@@ -111,8 +134,12 @@ const ESTADOS_FINALES = ["ok", "pendiente", "error"];
 
 function avisaLista(h) {
   const caja = $("listo");
-  const tipo = h.estado === "ok" ? "ok" : h.estado === "pendiente" ? "atencion" : "error";
-  const txt = h.estado === "ok" ? t("pop.listaOk") : h.estado === "pendiente" ? t("pop.listaPendiente") : t("pop.listaError");
+  // Grabada sin clave (3.8): está guardada y no ha fallado nada, así que el aviso
+  // va en neutro, no en ámbar.
+  const guardada = sinTranscribir(h);
+  const tipo = h.estado === "ok" ? "ok" : guardada ? "" : h.estado === "pendiente" ? "atencion" : "error";
+  const txt = h.estado === "ok" ? t("pop.listaOk") : guardada ? t("pop.listaSinClave")
+    : h.estado === "pendiente" ? t("pop.listaPendiente") : t("pop.listaError");
   ponAviso(caja, tipo, `${escapa(txt)}: <b>${escapa(h.titulo)}</b>`);
   const b = botonUI({ texto: t("pop.abrirBiblio"), icono: "libro", clase: "btn-peq", alPulsar: () => abrirBiblioteca(h.id) });
   caja.querySelector(".cuerpo").appendChild(document.createElement("div")).appendChild(b);
@@ -123,6 +150,7 @@ init();
 async function init() {
   // Antes de pintar nada: el idioma elegido en Opciones (traduce el HTML).
   await cargarIdiomaUI();
+  cfg = await leerConfig();
   pintaAtajo();
   chrome.storage.onChanged.addListener(alCambiar);
   // Lo que quedó pendiente se reintenta al abrir el popup, sin esperar a la
@@ -130,24 +158,37 @@ async function init() {
   chrome.runtime.sendMessage({ target: "bg", cmd: "revisarPendientes" }).catch(() => {});
   const { historial } = await chrome.storage.local.get({ historial: [] });
   if (historial[0]) ultimoIdVisto = ESTADOS_FINALES.includes(historial[0].estado) ? historial[0].id : null;
-  // Primer uso: sin clave no se puede transcribir → llevar a la configuración.
-  // El historial se ve igual: puede haber reuniones esperando la clave.
-  const { geminiKey } = await leerConfig();
-  if (!geminiKey) {
+  // La puerta (proveedores.js: puedeGrabar). Primer uso, sin con quién
+  // transcribir y sin haber pedido grabar sin clave: la bienvenida, que lleva a
+  // la configuración. Salvo que ya se esté grabando (con el atajo): entonces hace
+  // falta el botón de parar. El historial se ve igual: puede haber reuniones
+  // esperando la clave.
+  const { grabando } = await chrome.storage.session.get({ grabando: false });
+  if (!puedeGrabar(cfg, grabando)) {
     $("panelConfig").hidden = false;
     $("panelGrabar").hidden = true;
     pintaHistorial();
     return;
   }
+  await muestraGrabar();
+  pintaHistorial();
+}
+
+// El panel de grabar, al día: el aviso de que no habrá texto si falta la clave,
+// la forma de grabar de la última vez, el permiso del micro, los participantes a
+// medio escribir y, si hay una grabación en curso, su reloj. Se llega al abrir el
+// popup o desde la bienvenida, y por los dos caminos tiene que hacerse entero.
+async function muestraGrabar() {
+  $("panelConfig").hidden = true;
+  $("panelGrabar").hidden = false;
+  $("avisoSinClave").hidden = !sinVoz();
   // La forma de grabar que se usó la última vez sale ya elegida.
-  const { modoGrabar } = await leerConfig();
-  const elegida = document.querySelector(`.modo input[value="${modoGrabar}"]`);
+  const elegida = document.querySelector(`.modo input[value="${cfg.modoGrabar}"]`);
   if (elegida) elegida.checked = true;
   await revisaMicro();
   const { participantesBorrador } = await chrome.storage.session.get({ participantesBorrador: "" });
   $("participantes").value = participantesBorrador;
   await refrescaGrabacion();
-  pintaHistorial();
 }
 
 // Qué se va a grabar. En la forma rápida, qué pestaña y si está sonando.
@@ -198,7 +239,7 @@ $("btnRec").onclick = async () => {
       $("participantes").value = "";
       chrome.storage.session.set({ participantesBorrador: "" });
       await refrescaGrabacion();
-      estado(t("pop.transcribiendoEspera"), null, { ic: "reloj" });
+      estado(sinVoz() ? t("pop.guardandoEspera") : t("pop.transcribiendoEspera"), null, { ic: "reloj" });
       pintaHistorial();
     }
   } finally {
@@ -219,7 +260,9 @@ $("btnAltavoz").onclick = async () => {
 function pintaBotonRec(grabando) {
   const b = $("btnRec");
   b.className = "btn btn-grande btn-bloque " + (grabando ? "btn-grabar" : "btn-primario");
-  b.innerHTML = icono(grabando ? "parar" : "grabar") + `<span>${escapa(t(grabando ? "pop.parar" : "pop.empezar"))}</span>`;
+  // Sin con quién transcribir, al parar no se transcribe nada: se guarda.
+  const texto = !grabando ? t("pop.empezar") : sinVoz() ? t("pop.pararSinClave") : t("pop.parar");
+  b.innerHTML = icono(grabando ? "parar" : "grabar") + `<span>${escapa(texto)}</span>`;
 }
 
 // Pinta el estado de la sesión (t0, pausado, pausadoDesde, pausaMs). El reloj
@@ -280,6 +323,12 @@ $("diagCopiar").onclick = async () => {
   await navigator.clipboard.writeText($("diag").textContent);
   toast(t("pop.copiado"), "ok");
 };
+// Las líneas del informe llevan una guía de puntos hasta la misma columna. La de
+// la conexión nombra al proveedor, que no mide siempre lo mismo: sus puntos se
+// calculan. Con «Gemini» sale la línea de siempre.
+const COLUMNA_DIAG = 28;
+const conGuia = (etiqueta) => `${etiqueta} ${".".repeat(Math.max(2, COLUMNA_DIAG - etiqueta.length - 1))} `;
+
 $("btnDiag").onclick = async () => {
   const out = $("diag");
   $("diagCaja").hidden = false;
@@ -288,17 +337,29 @@ $("btnDiag").onclick = async () => {
   const escribe = (l) => { log.push(l); out.textContent = log.join("\n"); };
   escribe(t("pop.diagTitulo") + "\n");
 
-  // 1. Configuración
-  const cfg = await leerConfig();
-  escribe(cfg.geminiKey ? t("pop.diagClaveOk", cfg.geminiKey.slice(0, 6)) : t("pop.diagClaveFalta"));
-  escribe("   " + t("pop.diagModelo", cfg.geminiModel));
+  // 1. Con quién se transcribe y con qué clave: el proveedor de voz vigente
+  // (proveedores.js; hasta la 3.7, siempre Gemini). Que no haya ninguno no es un
+  // fallo: se graba sin transcribir, y se dice así.
+  cfg = await leerConfig();
+  const prov = proveedorVoz(cfg), p = provDe(prov);
+  const clave = p ? cfg[p.campoClave] : "";
+  if (!p) escribe(t("pop.diagSinClave"));
+  else {
+    escribe(t("pop.diagClaveOk", clave.slice(0, 6)));
+    // Con Gemini el informe se queda como estaba; con otro, se dice quién es.
+    if (prov !== "gemini") escribe("   " + t("pop.diagQuien", p.nombre));
+    escribe("   " + t("pop.diagModelo", cfg[p.campoVoz] || p.voz.modelos[0]));
+  }
 
-  // 2. La clave habla con Gemini
-  if (cfg.geminiKey) {
+  // 2. La clave habla con ese proveedor: se le pide su lista de modelos (config.js).
+  if (p) {
+    const linea = conGuia(t("pop.diagConexion", p.nombre));
     try {
-      const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models", { headers: { "x-goog-api-key": cfg.geminiKey } });
-      escribe(r.ok ? t("pop.diagGeminiOk") : t("pop.diagGeminiHttp", r.status));
-    } catch (e) { escribe(t("pop.diagGeminiErr", e.message)); }
+      await listarModelos(prov, clave);
+      escribe(linea + t("pop.diagConexionOk"));
+    } catch (e) {
+      escribe(linea + (e.status ? t("pop.diagConexionHttp", e.status) : t("pop.diagConexionErr", e.message)));
+    }
   }
 
   // 3. Permiso de micrófono (origen de la extensión)
@@ -322,6 +383,9 @@ $("btnDiag").onclick = async () => {
       escribe("      " + t("pop.diagSilencioConsejo"));
       escribe(t("pop.diagNoProbada1"));
       escribe("      " + t("pop.diagNoProbada2"));
+    } else if (!p) {
+      // Sin clave no hay con quién probar la transcripción, y tampoco es un fallo.
+      escribe(t("pop.diagNoProbadaSinClave"));
     } else {
       escribe(r.transcripcion ? t("pop.diagTransOk") : t("pop.diagTransFalla"));
       if (r.transcripcion) escribe("   " + t("pop.diagTexto", r.transcripcion.slice(0, 90)));
@@ -377,8 +441,12 @@ function htmlTexto(texto) {
 
 function pildora(h) {
   if (h.estado === "error") return `<span class="pildora err">${escapa(t("pop.badgeError"))}</span>`;
+  // Grabada sin clave (3.8): ni «incompleta» ni en ámbar. Está guardada.
+  if (sinTranscribir(h)) return `<span class="pildora">${escapa(t("pop.badgeSinTranscribir"))}</span>`;
   if (h.estado === "pendiente") return `<span class="pildora pend">${escapa(t("pop.badgeIncompleta"))}</span>`;
   if (h.estado === "grabando") return `<span class="pildora rec"><span class="punto"></span>${escapa(t("pop.badgeGrabando"))}</span>`;
+  // Sin con quién transcribir, esa ronda solo deja el audio a salvo.
+  if (h.estado === "transcribiendo" && sinVoz()) return `<span class="pildora proc"><span class="punto"></span>${escapa(t("pop.badgeGuardando"))}</span>`;
   if (h.estado === "transcribiendo") return `<span class="pildora proc"><span class="punto"></span>${escapa(t("pop.badgeTranscribiendo", h.progreso || ""))}</span>`;
   return "";
 }
@@ -429,8 +497,15 @@ function tarjeta(h) {
 
   const cuerpo = document.createElement("div");
   cuerpo.className = "reu-cuerpo";
-  if (h.estado === "pendiente") {
-    cuerpo.insertAdjacentHTML("beforeend", `<div class="reu-nota">${icono("alerta")}<span>${escapa(notaPendiente(h))}</span></div>`);
+  // Grabada sin clave y sin una línea de texto todavía (3.8): no hay nada que
+  // leer ni que copiar. En vez del hueco, cómo oírla y qué falta para transcribirla.
+  const soloAudio = sinTranscribir(h) && !(h.tramos || []).some((tr) => tr && tr.estado === "ok");
+  if (soloAudio) {
+    cuerpo.insertAdjacentHTML("beforeend", `<div class="reu-nota neutra">${icono("info")}<span>${escapa(t("pop.notaSinClave"))}</span></div>`);
+  } else if (h.estado === "pendiente") {
+    // Si lo único que le falta es una clave (con parte ya transcrita), tampoco va en ámbar.
+    const neutra = sinTranscribir(h);
+    cuerpo.insertAdjacentHTML("beforeend", `<div class="reu-nota${neutra ? " neutra" : ""}">${icono(neutra ? "info" : "alerta")}<span>${escapa(notaPendiente(h))}</span></div>`);
   }
   const texto = textoDelPanel(h);
   const caja = document.createElement("div");
@@ -440,14 +515,14 @@ function tarjeta(h) {
     const hablado = textoHablado(h);
     caja.innerHTML = hablado.trim() ? htmlTexto(hablado) : `<p class="vacio-t">${escapa(t("pop.sinTexto"))}</p>`;
   }
-  cuerpo.appendChild(caja);
+  if (!soloAudio) cuerpo.appendChild(caja);
 
   const acc = document.createElement("div");
   acc.className = "reu-acc";
-  if (texto.trim() && h.estado !== "error") {
+  if (texto.trim() && h.estado !== "error" && !soloAudio) {
     acc.appendChild(botonUI({ texto: t("pop.copiar"), icono: "copiar", clase: "btn-peq btn-primario", alPulsar: async (ev) => {
       const b = ev.currentTarget; // después del await ya no existe
-      await navigator.clipboard.writeText(texto);
+      await navigator.clipboard.writeText(sinMarcaInvisible(texto));
       b.innerHTML = icono("check") + `<span>${escapa(t("pop.copiado"))}</span>`;
       setTimeout(() => { b.innerHTML = icono("copiar") + `<span>${escapa(t("pop.copiar"))}</span>`; }, 1600);
     } }));
@@ -461,7 +536,8 @@ function tarjeta(h) {
     const lista = document.createElement("div");
     lista.className = "menu-lista arriba";
     lista.hidden = true;
-    if (h.estado === "pendiente") {
+    // Lo que espera una clave que sigue sin estar no tiene nada que reintentar.
+    if (h.estado === "pendiente" && !(sinTranscribir(h) && sinVoz())) {
       lista.appendChild(itemMenu({ texto: t("pop.reintentarAhora"), icono: "reintentar", alPulsar: () => reintentar(h) }));
     }
     lista.appendChild(itemMenu({ texto: t("pop.borrar"), icono: "borrar", peligro: true, alPulsar: () => pideBorrar(confirma, h) }));
@@ -484,7 +560,7 @@ function notaPendiente(h) {
   const codigo = ((h.tramos || []).find((tr) => tr.estado === "pendiente") || {}).codigo;
   let luego = t("pop.luegoSola");
   if (re.esperaClave) {
-    luego = codigo === "sin_clave" ? t("pop.luegoSinClave") : t("pop.luegoClaveMala");
+    luego = codigo === "sin_clave" ? t("pop.luegoSinClave") : codigo === "sin_saldo" ? t("pop.luegoSinSaldo") : t("pop.luegoClaveMala");
   } else if (re.agotado) {
     luego = t("pop.luegoAgotado");
   } else if (re.proximo) {

@@ -106,11 +106,15 @@ article { max-width: 1240px; margin: 0 auto; padding: 22px 32px 0; }
 .l.destacada { background: var(--resaltado); }
 .l.sonando { background: var(--marca-suave); box-shadow: inset 3px 0 0 var(--acento); }
 .sin-voz { display: block; padding: 6px 22px; }
-.l.aviso-l, .l.mudo-l { margin: 8px 18px; padding: 8px 12px; font-size: 13px; line-height: 1.45; display: flex; gap: 8px; align-items: flex-start; }
+.l.aviso-l, .l.mudo-l, .l.guardado-l { margin: 8px 18px; padding: 8px 12px; font-size: 13px; line-height: 1.45; display: flex; gap: 8px; align-items: flex-start; }
 .l.aviso-l { background: var(--atencion-suave); color: var(--texto); border: 1px solid var(--atencion-borde); border-radius: var(--r-2); }
 .l.aviso-l .i { color: var(--atencion); margin-top: 2px; }
 .l.mudo-l { color: var(--texto-3); font-style: italic; }
 .l.mudo-l .i { margin-top: 2px; }
+/* tramo grabado sin clave: ni aviso ni silencio; audio guardado, a la espera */
+.l.guardado-l { color: var(--texto-2); border: 1px solid var(--borde); border-radius: var(--r-2); }
+.l.guardado-l .i { color: var(--texto-3); margin-top: 2px; }
+.l.aviso-l .t, .l.guardado-l .t { flex: none; margin-right: 0; }
 .transcripcion .md { padding: 8px 22px; }
 
 /* ------------------------------------------------------------ columna lateral */
@@ -176,6 +180,7 @@ article { max-width: 1240px; margin: 0 auto; padding: 22px 32px 0; }
 .plantilla span { font-size: 13px; color: var(--texto-2); line-height: 1.45; }
 .versiones { margin: 16px 0 12px; }
 .versiones:empty { display: none; }
+#avisoActa { margin: 12px 0; max-width: 860px; }
 .documento { background: var(--superficie); border: 1px solid var(--borde); border-radius: var(--r-4); box-shadow: var(--sombra-1); overflow: hidden; }
 .documento-barra { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--borde); background: var(--superficie-2); }
 .documento-barra .separa { flex: 1; }
@@ -244,7 +249,7 @@ article { max-width: 1240px; margin: 0 auto; padding: 22px 32px 0; }
 @media print {
   :root { color-scheme: light; }
   body { background: #fff; display: block; height: auto; color: #000; }
-  .barra, .panel-lista, .velo, .acciones, .pestanas, .herramientas, .lateral, .participantes, .pregunta-pie, #confirmaBorrar, .versiones, #aviso, .reproductor, .generador, #estadoActa, .plantillas, .documento-barra, .titulo-caja .lapiz { display: none !important; }
+  .barra, .panel-lista, .velo, .acciones, .pestanas, .herramientas, .lateral, .participantes, .pregunta-pie, #confirmaBorrar, .versiones, #aviso, #avisoActa, .reproductor, .generador, #estadoActa, .plantillas, .documento-barra, .titulo-caja .lapiz { display: none !important; }
   .cuerpo { display: block; }
   #vista { overflow: visible; }
   article { padding: 0; max-width: none; }

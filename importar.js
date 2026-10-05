@@ -175,8 +175,15 @@ function muestraResultado(h) {
   $("resultado").hidden = false;
   $("formulario").hidden = true;
   const caja = $("resultadoTxt");
+  // Sin clave con la que transcribir (3.8) no ha fallado nada: el audio queda
+  // guardado, a la espera. Y no hay texto que enseñar ni que copiar.
+  const guardado = sinTranscribir(h) && !h.tramos.some((tr) => tr && tr.estado === "ok");
+  $("texto").hidden = guardado;
+  $("btnCopiar").hidden = guardado;
   if (h.estado === "ok") {
     ponAviso(caja, "ok", escapa(t("imp.listaOk")));
+  } else if (guardado) {
+    ponAviso(caja, "", escapa(t("imp.pendienteSinClave")), "llave");
   } else if (h.estado === "pendiente") {
     const r = resumenTramos(h.tramos);
     ponAviso(caja, "atencion", escapa(r.total === 1 ? t("imp.pendienteUno") : t("imp.pendienteVarios", r.pendientes, r.total)), "reloj");
@@ -221,6 +228,7 @@ $("btnNuevo").onclick = () => {
 (async () => {
   // Antes de nada: el idioma elegido en Opciones (traduce el HTML).
   await cargarIdiomaUI();
-  const { geminiKey } = await leerConfig();
-  $("avisoClave").hidden = !!geminiKey;
+  // Sin con quién transcribir (proveedores.js) se importa igual: se avisa de que
+  // el audio se queda guardado hasta que haya una clave.
+  $("avisoClave").hidden = !!proveedorVoz(await leerConfig());
 })();

@@ -114,6 +114,8 @@ main { padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 14px;
 .reu-acc .menu { margin-left: auto; }
 .reu-nota { font-size: 12px; color: var(--atencion); line-height: 1.4; display: flex; gap: 6px; }
 .reu-nota .i { width: 14px; height: 14px; margin-top: 1px; }
+/* grabada sin clave: no es un aviso, es lo que hay */
+.reu-nota.neutra { color: var(--texto-2); }
 .reu .progreso { margin: 0 10px 10px; }
 .sin-reuniones { font-size: 13px; color: var(--texto-3); text-align: center; padding: 18px 10px; border: 1px dashed var(--borde-fuerte); border-radius: var(--r-3); }
 

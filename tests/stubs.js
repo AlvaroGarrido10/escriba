@@ -49,8 +49,15 @@ function almacen(inicial = {}, avisar = () => {}) {
 // Registro de lo que la extensión le ha pedido al navegador, para poder
 // afirmar sobre efectos que no dejan rastro en el almacenamiento.
 function nuevoChrome(opciones = {}) {
-  const registro = { descargas: [], borrados: [], borradosHist: [], badges: [], colores: [], offscreen: 0, alarmas: {}, notificaciones: [], pestanasActivadas: [], ventanasEnfocadas: [] };
+  const registro = { descargas: [], borrados: [], borradosHist: [], badges: [], colores: [], offscreen: 0, alarmas: {}, notificaciones: [], pestanasActivadas: [], ventanasEnfocadas: [], permisos: [] };
   let proximoIdDescarga = 1;
+  // Permisos opcionales de host (3.8). `opciones.permisos`: los orígenes que ya
+  // están concedidos (`concedidos`) y lo que contesta el usuario al diálogo de
+  // Chrome (`respuesta`: true, false, o "lanza" para una petición que Chrome
+  // rechaza, como la que llega fuera de un gesto). La respuesta se puede cambiar
+  // a mitad de test con chrome.permissions._responde(…).
+  const concedidos = new Set((opciones.permisos && opciones.permisos.concedidos) || []);
+  let respuestaPermiso = opciones.permisos && "respuesta" in opciones.permisos ? opciones.permisos.respuesta : true;
   const oyentes = { mensaje: [], instalado: [], arranque: [], cambios: [], alarma: [], comando: [], pestana: [], clicAviso: [] };
   const avisa = (area) => (cambios) => oyentes.cambios.forEach((f) => f(cambios, area));
 
@@ -113,11 +120,52 @@ function nuevoChrome(opciones = {}) {
       onUpdated: { addListener: (f) => oyentes.pestana.push(f) },
     },
     tabCapture: { async getMediaStreamId() { return "stream-de-prueba"; } },
+    // Cada petición y cada retirada quedan apuntadas en `_registro.permisos`, en
+    // orden y EN EL MOMENTO de la llamada (antes de ceder el turno): así un test
+    // ve si el permiso se pidió antes de cualquier otro `await`, que es lo que
+    // exige Chrome para darlo por hecho dentro del gesto del usuario.
+    permissions: {
+      _concedidos: concedidos,
+      _responde(r) { respuestaPermiso = r; },
+      async request(p) {
+        registro.permisos.push({ pide: [...((p && p.origins) || [])] });
+        await espera0();
+        if (respuestaPermiso === "lanza") throw new Error("This function must be called during a user gesture");
+        if (respuestaPermiso) for (const o of p.origins || []) concedidos.add(o);
+        return !!respuestaPermiso;
+      },
+      async contains(p) {
+        await espera0();
+        return ((p && p.origins) || []).every((o) => concedidos.has(o));
+      },
+      async remove(p) {
+        registro.permisos.push({ retira: [...((p && p.origins) || [])] });
+        await espera0();
+        for (const o of p.origins || []) concedidos.delete(o);
+        return true;
+      },
+    },
   };
   return chrome;
 }
 
 // --- respuestas HTTP programables ------------------------------------------
+// Lo que ve la extensión a partir de lo que programa el test: { status, cuerpo,
+// cabeceras }. Sin `status` es un 200; las cabeceras se leen sin distinguir
+// mayúsculas, como en una respuesta de verdad.
+function respuestaHttp(r) {
+  const cuerpo = typeof r.cuerpo === "string" ? r.cuerpo : JSON.stringify(r.cuerpo ?? {});
+  const status = r.status === undefined ? 200 : r.status;
+  const cabeceras = Object.fromEntries(Object.entries(r.cabeceras || {}).map(([k, v]) => [k.toLowerCase(), String(v)]));
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (nombre) => { const k = String(nombre).toLowerCase(); return k in cabeceras ? cabeceras[k] : null; } },
+    async text() { return cuerpo; },
+    async json() { return JSON.parse(cuerpo); },
+  };
+}
+
 // Cada test encola las respuestas que quiere que dé la red, en orden.
 function nuevoFetch(respuestas) {
   const llamadas = [];
@@ -127,16 +175,30 @@ function nuevoFetch(respuestas) {
     const r = cola.shift();
     if (!r) throw new Error("fetch inesperado (cola vacía): " + url);
     if (r.lanza) throw new Error(r.lanza);
-    const cuerpo = typeof r.cuerpo === "string" ? r.cuerpo : JSON.stringify(r.cuerpo ?? {});
-    return {
-      ok: r.status === undefined ? true : r.status >= 200 && r.status < 300,
-      status: r.status === undefined ? 200 : r.status,
-      async text() { return cuerpo; },
-      async json() { return JSON.parse(cuerpo); },
-    };
+    return respuestaHttp(r);
   };
   fn._llamadas = llamadas;
   fn._pendientes = () => cola.length;
+  return fn;
+}
+
+// Respuestas repartidas por destino, para cuando hay más de un proveedor en
+// juego: { "api.groq.com": [r1, r2…], "api.mistral.ai/v1/audio": […] }. Cada
+// petición gasta una respuesta de la primera clave del mapa que aparezca en su
+// URL. Lo que no esté en el mapa, o se acabe, hace fallar el test.
+function fetchPorUrl(mapa) {
+  const colas = Object.entries(mapa).map(([trozo, rs]) => [trozo, rs.slice()]);
+  const llamadas = [];
+  const fn = async (url, opts = {}) => {
+    llamadas.push({ url: String(url), metodo: opts.method || "GET", opts });
+    const cola = (colas.find(([trozo]) => String(url).includes(trozo)) || [])[1];
+    const r = cola && cola.shift();
+    if (!r) throw new Error("fetch inesperado: " + url);
+    if (r.lanza) throw new Error(r.lanza);
+    return respuestaHttp(r);
+  };
+  fn._llamadas = llamadas;
+  fn._pendientes = () => colas.reduce((n, [, cola]) => n + cola.length, 0);
   return fn;
 }
 
@@ -299,11 +361,48 @@ function nuevosMedios({ conAudio = false, compartir = "pestana" } = {}) {
 }
 
 // Blob de mentira que transporta las muestras que debe "contener".
-function blobDe(muestras, size) {
+function blobDe(muestras, size, type = "audio/webm") {
   return {
     size: size === undefined ? 1000 : size,
-    type: "audio/webm",
+    type,
     async arrayBuffer() { const b = new ArrayBuffer(8); b._muestras = muestras; return b; },
+  };
+}
+
+// El constructor `Blob` que usa la extensión (lo grabado, y el WAV al que se
+// convierte un tramo). Guarda de qué está hecho (`_partes`) para que el test
+// pueda mirar dentro; el tamaño es el de sus trozos (los de un MediaRecorder
+// simulado son { size, type }) y el tipo, el que se le pida. No se puede
+// «decodificar»: lo que hay que decodificar en un test se hace con blobDe.
+function nuevoBlob() {
+  const tam = (p) => (p && typeof p.byteLength === "number" ? p.byteLength : p && typeof p.size === "number" ? p.size : 1);
+  return function Blob(partes = [], opciones = {}) {
+    return {
+      _partes: partes,
+      size: partes.reduce((n, p) => n + tam(p), 0),
+      type: opciones.type || "",
+      async arrayBuffer() { return new ArrayBuffer(8); },
+    };
+  };
+}
+
+// FormData de mentira: los campos, en el orden en que se añaden, como
+// [nombre, valor] o, si es un fichero, [nombre, blob, nombreDelFichero]. Lo que
+// no es un fichero se guarda como texto, igual que hace el de verdad.
+function nuevoFormData() {
+  return function FormData() {
+    const campos = [];
+    return {
+      _campos: campos,
+      append(nombre, valor, fichero) {
+        campos.push(valor && typeof valor === "object"
+          ? [String(nombre), valor, fichero === undefined ? "blob" : String(fichero)]
+          : [String(nombre), String(valor)]);
+      },
+      get(nombre) { const c = campos.find(([n]) => n === nombre); return c ? c[1] : null; },
+      getAll(nombre) { return campos.filter(([n]) => n === nombre).map((c) => c[1]); },
+      has(nombre) { return campos.some(([n]) => n === nombre); },
+    };
   };
 }
 
@@ -338,5 +437,6 @@ function nuevosAudios(inicial = []) {
 }
 
 module.exports = {
-  almacen, nuevoChrome, nuevoFetch, respGemini, nuevoAudioContext, nuevoAudioElemento, nuevoColchon, nuevosMedios, blobDe, nuevosAudios, espera0,
+  almacen, nuevoChrome, nuevoFetch, fetchPorUrl, respuestaHttp, respGemini, nuevoAudioContext, nuevoAudioElemento, nuevoColchon, nuevosMedios, blobDe, nuevoBlob, nuevoFormData,
+  nuevosAudios, espera0,
 };

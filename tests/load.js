@@ -44,6 +44,16 @@ function cargar(fichero, globales = {}) {
   return contexto;
 }
 
+// El registro de proveedores (proveedores.js) tal como está en un contexto ya
+// cargado. Es un `const` de ese script, no una propiedad del contexto, así que
+// hay que pedírselo a él. Con esto un test enciende, SOLO en su contexto, una
+// capacidad que el código trae apagada (registroDe(ctx).groq.chat.activo = true):
+// lo que aún no se enseña al usuario también se prueba, y el código de la
+// extensión no lleva ningún atajo para los tests.
+function registroDe(contexto) {
+  return vm.runInContext("PROVEEDORES", contexto);
+}
+
 // Envuelve el listener de mensajes en algo que se pueda esperar con await.
 function mensajero(chrome) {
   return (msg) => new Promise((resolve, reject) => {
@@ -58,4 +68,4 @@ function mensajero(chrome) {
   });
 }
 
-module.exports = { cargar, mensajero, RAIZ };
+module.exports = { cargar, registroDe, mensajero, RAIZ };

@@ -111,14 +111,16 @@ var audios = typeof indexedDB !== "undefined" ? abrirAudios(indexedDB) : null;
 const MENSAJES_ERROR = {
   get sin_clave() { return t("com.errSinClave"); },
   get clave_invalida() { return t("com.errClaveInvalida"); },
+  get sin_saldo() { return t("com.errSinSaldo"); },
   get saturado() { return t("com.errSaturado"); },
   get red() { return t("com.errRed"); },
   get interno() { return t("com.errInterno"); },
   get otro() { return t("com.errOtro"); },
   get perdido() { return t("com.errPerdido"); },
 };
-// Estos no se arreglan esperando: hace falta que el usuario cambie la clave.
-const CODIGOS_CLAVE = ["sin_clave", "clave_invalida"];
+// Estos no se arreglan esperando: hace falta que el usuario cambie la clave o,
+// con `sin_saldo` (3.8), que recargue la cuenta de la que es.
+const CODIGOS_CLAVE = ["sin_clave", "clave_invalida", "sin_saldo"];
 const textoError = (codigo) => MENSAJES_ERROR[codigo] || MENSAJES_ERROR.otro;
 
 // --- estado de una reunión a partir de sus tramos -----------------------------
@@ -140,6 +142,21 @@ function estadoFinal(tramos) {
   const r = resumenTramos(tramos);
   if (r.pendientes) return "pendiente";
   return r.ok ? "ok" : "error";
+}
+
+// --- grabada sin clave (3.8) ----------------------------------------------------
+// Se puede grabar sin clave de ninguna IA: el audio se guarda y no se transcribe.
+// A esa reunión no le ha fallado nada, así que no se enseña como las incompletas
+// («se reintentará sola», el aviso en ámbar): es una grabación guardada, que se
+// puede escuchar y que se transcribe sola el día que haya una clave. Se reconoce
+// porque lo único que les falta a sus tramos pendientes es esa clave.
+function esperanClave(tramos) {
+  const pendientes = (tramos || []).filter((tr) => tr && !["ok", "mudo", "perdido"].includes(tr.estado));
+  return pendientes.length > 0 && pendientes.every((tr) => tr.codigo === "sin_clave");
+}
+// La reunión entera: ya cerrada (no en plena ronda) y esperando solo la clave.
+function sinTranscribir(h) {
+  return !!h && h.estado === "pendiente" && esperanClave(h.tramos);
 }
 
 const etiquetaTramo = (i) => {
@@ -176,6 +193,28 @@ const inicioTramo = (t, i) => (t && typeof t.inicioS === "number" ? t.inicioS : 
 // o una frase suelta no se toman por un hablante.
 const RE_LINEA = /^(\s*(?:\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*)?)([A-ZÁÉÍÓÚÜÑ][^:\n[\]]{0,39}?):\s?(.*)$/;
 
+// Hay modelos que transcriben sin distinguir hablantes (3.8), y sus líneas son
+// «[MM:SS] texto». Si ese texto empieza como una etiqueta («Primer punto: hay
+// que…»), RE_LINEA tomaría «Primer punto» por una persona. A esas líneas se les
+// pone delante del texto este carácter invisible (U+2060, «word joiner»), que
+// rompe el encaje sin verse; lineasTranscripcion lo quita al leer. Se queda en
+// el texto guardado a propósito: así la línea sigue protegida cada vez que se relee.
+const SIN_HABLANTE = "\u2060";
+const RE_SIN_HABLANTE = /^[\s\u2060]+/;
+function sinEtiqueta(linea) {
+  const l = String(linea || "");
+  if (!RE_LINEA.test(l)) return l;
+  const marca = RE_MARCA.exec(l);
+  const corte = marca ? marca[0].length + (l[marca[0].length] === " " ? 1 : 0) : 0;
+  return l.slice(0, corte) + SIN_HABLANTE + l.slice(corte);
+}
+// Lo que SALE de Escriba (copiar, Word, .txt, el .md que se exporta a mano) va sin
+// ese carácter: fuera ya no protege nada, y hay editores que lo pintan como un
+// recuadro. Dentro (el historial y su .md) se queda.
+function sinMarcaInvisible(texto) {
+  return String(texto || "").split(SIN_HABLANTE).join("");
+}
+
 function lineasTranscripcion(texto) {
   return String(texto || "").split("\n").filter((l) => l.trim()).map((l) => {
     const m = RE_LINEA.exec(l);
@@ -184,8 +223,8 @@ function lineasTranscripcion(texto) {
       return { t, hablante: m[5].trim(), texto: m[6].trim() };
     }
     const soloMarca = RE_MARCA.exec(l);
-    if (soloMarca) return { t: segundosDe(soloMarca), hablante: "", texto: l.slice(soloMarca[0].length).trim() };
-    return { t: null, hablante: "", texto: l.trim() };
+    if (soloMarca) return { t: segundosDe(soloMarca), hablante: "", texto: l.slice(soloMarca[0].length).replace(RE_SIN_HABLANTE, "").trim() };
+    return { t: null, hablante: "", texto: l.replace(RE_SIN_HABLANTE, "").trim() };
   });
 }
 
@@ -244,7 +283,8 @@ function construirMarkdown(h) {
     const cuantos = tramos.length === 1 ? t("com.mdPendUnico")
       : r.pendientes === 1 ? t("com.mdPendUno", r.pendientes, tramos.length)
         : t("com.mdPendVarios", r.pendientes, tramos.length);
-    md += `\n> ⏳ ${cuantos} ${t("com.mdPendTxt")}\n`;
+    // Grabada sin clave (3.8): no hay nada que reintentar hasta que se ponga una.
+    md += `\n> ⏳ ${cuantos} ${esperanClave(tramos) ? t("com.mdPendSinClave") : t("com.mdPendTxt")}\n`;
   }
   if (r.perdidos) md += `\n> ⚠️ ${t("com.mdPerdidos", r.perdidos, tramos.length)}\n`;
   if (r.mudos) md += `\n> ℹ️ ${t("com.mdMudos", r.mudos, tramos.length)}\n`;
@@ -357,6 +397,8 @@ function fechaVisible(h) {
 // --- coste estimado (3.5) ---
 // Con los precios que pone el usuario en Opciones, en € por millón de tokens:
 // { gemini: { audio, entrada, salida }, gpt: { entrada, salida }, claude: { entrada, salida } }.
+// Los proveedores que cobran la transcripción por tiempo (3.8) llevan además
+// `minuto`, en € por minuto de audio: { mistral: { minuto, entrada, salida } }.
 // Escriba no se inventa precios: cambian cada pocos meses y dependen del plan de
 // cada clave. Un precio vacío es «sin precio» (null); un 0 es la capa gratuita.
 function precioValido(v) {
@@ -365,27 +407,47 @@ function precioValido(v) {
   return /^\d+(\.\d+)?$/.test(s) ? parseFloat(s) : null;
 }
 
-// Transcribir es audio de Gemini; las actas y preguntas, texto del proveedor que
-// las hizo (va en la clave: «acta·gpt», «pregunta·claude», o «gemini» a secas en
-// las de la 3.1). Devuelve { euros (null si no se puede saber), faltan, tokens }.
+// Transcribir se le cobra a quien hizo el tramo (`tr.prov`; los tramos de antes
+// de la 3.8 no lo guardan y son de Gemini): por tokens, al precio de `audio`, o
+// por tiempo, al de `minuto`, cuando lo que da la API es la duración
+// (`uso.segundos`). Las actas y preguntas, texto del proveedor que las hizo (va
+// en la clave: «acta·gpt», «pregunta·claude», o «gemini» a secas en las de la 3.1).
+// Devuelve { euros (null si no se puede saber), faltan, tokens, segundos }.
+// Lo que no se sabe NUNCA cuenta como cero: el proveedor sale en `faltan`.
 function costeReunion(h, precios) {
   const p = precios || {};
-  let euros = 0, conPrecio = false, tokens = 0;
+  let euros = 0, conPrecio = false, tokens = 0, segundos = 0;
   const faltan = new Set();
+  // `n` unidades al precio de `tipo`, que viene por cada `por` unidades.
+  const cobra = (prov, tipo, n, por) => {
+    if (!n) return;
+    const precio = precioValido((p[prov] || {})[tipo]);
+    if (precio === null) faltan.add(prov);
+    else { euros += (n * precio) / por; conPrecio = true; }
+  };
   const suma = (prov, tipoEntrada, entrada, salida) => {
     tokens += entrada + salida;
-    for (const [n, tipo] of [[entrada, tipoEntrada], [salida, "salida"]]) {
-      if (!n) continue;
-      const precio = precioValido((p[prov] || {})[tipo]);
-      if (precio === null) faltan.add(prov);
-      else { euros += (n * precio) / 1e6; conPrecio = true; }
-    }
+    cobra(prov, tipoEntrada, entrada, 1e6);
+    cobra(prov, "salida", salida, 1e6);
   };
-  for (const t of (h && h.tramos) || []) {
-    if (t && t.uso) suma("gemini", "audio", t.uso.entrada || 0, t.uso.salida || 0);
+  // `tr` y no `t`: `t` es la función de los textos (i18n.js).
+  for (const tr of (h && h.tramos) || []) {
+    if (!tr) continue;
+    const prov = tr.prov || "gemini";
+    if (!tr.uso) {
+      // Transcrito por un proveedor que no dijo cuánto gastó: tiene un coste y no
+      // se sabe cuál. Los tramos sin `prov` (los de la 3.1 no apuntaban el uso)
+      // se quedan como estaban.
+      if (tr.prov && tr.estado === "ok") faltan.add(prov);
+    } else if (typeof tr.uso.segundos === "number") {
+      segundos += tr.uso.segundos;
+      cobra(prov, "minuto", tr.uso.segundos, 60);
+    } else {
+      suma(prov, "audio", tr.uso.entrada || 0, tr.uso.salida || 0);
+    }
   }
   for (const u of (h && h.usoIA) || []) suma(String(u.clave || "").split("·").pop(), "entrada", u.entrada || 0, u.salida || 0);
-  return { euros: tokens && conPrecio ? euros : null, faltan: [...faltan], tokens };
+  return { euros: conPrecio ? euros : null, faltan: [...faltan], tokens, segundos };
 }
 
 // Lo gastado en el mes natural de `ahora` (por defecto, el actual).
@@ -433,8 +495,9 @@ function formatoEuros(n) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     DURACION_TRAMO_S, PICO_SILENCIO, UMBRAL_VOZ, abrirAudios, MENSAJES_ERROR, CODIGOS_CLAVE, textoError, resumenTramos, estadoFinal,
+    esperanClave, sinTranscribir,
     etiquetaTramo, construirMarkdown, medirMuestras, trocear, planificarTramos, codificarWav, fechaBonita,
-    formatoTiempo, ajustarTiempos, inicioTramo, lineasTranscripcion, hablantesDe, aplicarHablantes,
+    formatoTiempo, ajustarTiempos, inicioTramo, lineasTranscripcion, hablantesDe, aplicarHablantes, SIN_HABLANTE, sinEtiqueta, sinMarcaInvisible,
     precioValido, costeReunion, costeMes, formatoEuros, plataformaReunion, fechaVisible, mapaVisible, etiquetaGenerica,
   };
 }

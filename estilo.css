@@ -273,7 +273,9 @@ input[type=checkbox], input[type=radio] { accent-color: var(--marca); width: 16p
   background: var(--info-suave); border: 1px solid var(--borde); border-radius: var(--r-2); padding: 9px 12px;
 }
 .aviso > .i { margin-top: 1px; color: var(--info); width: 17px; height: 17px; }
-.aviso .cuerpo { flex: 1; min-width: 0; }
+/* `display: block` a propósito: en la biblioteca «.cuerpo» es también la rejilla
+   de la página, y un aviso con <b> o un enlace salía partido en columnas. */
+.aviso .cuerpo { flex: 1; min-width: 0; display: block; }
 .aviso.ok { background: var(--ok-suave); border-color: var(--ok-borde); }
 .aviso.ok > .i { color: var(--ok); }
 .aviso.atencion { background: var(--atencion-suave); border-color: var(--atencion-borde); }

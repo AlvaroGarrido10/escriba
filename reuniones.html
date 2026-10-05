@@ -89,8 +89,8 @@
               <input id="buscarEn" class="campo" type="search" placeholder="Buscar en esta reunión" data-i18n-placeholder="bib.buscar_en_ph" autocomplete="off">
             </label>
             <span id="nCoinc" class="suave n-coinc"></span>
-            <button id="coincAnt" class="btn btn-peq btn-icono" title="Anterior (Mayús+Intro)" aria-label="Anterior" data-i18n-title="bib.coinc_ant_title" data-i18n-aria-label="bib.coinc_ant" hidden><svg class="i" aria-hidden="true"><use href="iconos.svg#arriba"></use></svg></button>
-            <button id="coincSig" class="btn btn-peq btn-icono" title="Siguiente (Intro)" aria-label="Siguiente" data-i18n-title="bib.coinc_sig_title" data-i18n-aria-label="bib.coinc_sig" hidden><svg class="i" aria-hidden="true"><use href="iconos.svg#abajo"></use></svg></button>
+            <button id="coincAnt" class="btn btn-peq btn-icono" title="Anterior (Mayús+Intro)" aria-label="Coincidencia anterior" data-i18n-title="bib.coinc_ant_title" data-i18n-aria-label="bib.coinc_ant" hidden><svg class="i" aria-hidden="true"><use href="iconos.svg#arriba"></use></svg></button>
+            <button id="coincSig" class="btn btn-peq btn-icono" title="Siguiente (Intro)" aria-label="Coincidencia siguiente" data-i18n-title="bib.coinc_sig_title" data-i18n-aria-label="bib.coinc_sig" hidden><svg class="i" aria-hidden="true"><use href="iconos.svg#abajo"></use></svg></button>
             <button id="btnLateral" class="btn btn-peq solo-medio"><svg class="i" aria-hidden="true"><use href="iconos.svg#panel"></use></svg><span data-i18n="bib.lateral">Voces y notas</span><span id="lateralResumen" class="suave"></span></button>
           </div>
           <div id="texto" class="transcripcion"></div>
@@ -113,6 +113,7 @@
 
         <div id="reproductor" class="reproductor" hidden>
           <svg class="i" aria-hidden="true"><use href="iconos.svg#auriculares"></use></svg>
+          <button id="btnEscuchar" class="btn btn-peq" title="Escuchar la grabación desde el principio" data-i18n-title="bib.escuchar_todo_title"><svg class="i" aria-hidden="true"><use href="iconos.svg#play"></use></svg><span data-i18n="bib.escuchar">Escuchar</span></button>
           <span id="repInfo" class="suave"></span>
           <audio id="audio" controls preload="auto"></audio>
           <select id="velocidad" class="campo" aria-label="Velocidad" data-i18n-aria-label="bib.velocidad" title="Velocidad" data-i18n-title="bib.velocidad">
@@ -132,6 +133,7 @@
         <div id="estadoActa" class="estado"></div>
         <div id="plantillasVacio" class="plantillas" hidden></div>
         <div id="actas" class="chips versiones"></div>
+        <div id="avisoActa" class="aviso atencion" hidden></div>
         <div id="documentoActa" class="documento" hidden>
           <div id="accionesActa" class="documento-barra">
             <button id="actaCopiar" class="btn btn-peq"><svg class="i" aria-hidden="true"><use href="iconos.svg#copiar"></use></svg><span data-i18n="bib.copiar">Copiar</span></button>
@@ -171,6 +173,7 @@
   </main>
 </div>
 
+<script src="proveedores.js"></script>
 <script src="config.js"></script>
 <script src="comun.js"></script>
 <script src="ia.js"></script>

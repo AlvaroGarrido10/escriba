@@ -1,9 +1,10 @@
-// Escriba — documento offscreen: SOLO graba y llama a Gemini.
+// Escriba — documento offscreen: SOLO graba y transcribe (con Gemini o, desde la
+// 3.8, con el proveedor de voz que tenga clave: ver transcribirAudio).
 // OJO: en un offscreen document NO existe chrome.storage ni chrome.downloads.
 // Todo lo que necesite almacenamiento o descargas se pide al service worker
 // (background.js) por mensajes.
 //
-// La grabación NO se manda a Gemini de una pieza: se corta en tramos de pocos
+// La grabación NO se manda al modelo de una pieza: se corta en tramos de pocos
 // minutos y cada tramo se transcribe por separado. Con la reunión entera en una
 // sola llamada el modelo se rendía a los pocos minutos (y el fallo de una
 // llamada se llevaba por delante la reunión completa).
@@ -116,7 +117,9 @@ const histCrear = (item) => aBg("histCrear", { item });
 const histActualizar = (id, cambios) => aBg("histActualizar", { id, cambios });
 const histTramo = (id, i, datos) => aBg("histTramo", { id, i, datos });
 const descargar = (url, filename) => aBg("descargar", { url, filename });
-const avisar = (ok) => { try { aBg("listo", { ok }); } catch (_) {} };
+// `sinClave`: la reunión queda grabada y sin transcribir porque no hay clave
+// (3.8). No es un fallo, y el icono no lo pinta como tal.
+const avisar = (ok, sinClave) => { try { aBg("listo", sinClave ? { ok, sinClave } : { ok }); } catch (_) {} };
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Idioma de la interfaz para lo que este documento escribe en el historial
@@ -919,13 +922,17 @@ async function transcribirTramo(id, i, total, tramo, reunion) {
     // El tramo anterior: en vivo llega ya; en una ronda, el del historial si está transcrito.
     const previo = reunion && reunion.anterior !== undefined ? reunion.anterior
       : (reunion && Array.isArray(reunion.tramos) && reunion.tramos[i - 1] && reunion.tramos[i - 1].estado === "ok" ? reunion.tramos[i - 1].texto : "");
-    const r = await transcribirGemini(blob, i + 1, total, { participantes: (reunion && reunion.participantes) || "", anterior: finalDeTramo(previo) });
+    const r = await transcribirAudio(blob, i + 1, total, { participantes: (reunion && reunion.participantes) || "", anterior: finalDeTramo(previo) });
     if (r.sinVoz) return { estado: "mudo", pico };
     // Las marcas del modelo cuentan desde el principio del tramo: se pasan a
     // tiempo de la reunión aquí, una vez, para que el .md, el visor y los
     // subtítulos no tengan que saber nada de tramos.
     const ok = { estado: "ok", texto: ajustarTiempos(r.texto, inicioTramo(tramo, i)), truncado: !!r.truncado, pico };
     if (r.uso) ok.uso = r.uso;
+    // Quién lo transcribió y con qué modelo (3.8): el coste se le cobra a él
+    // (comun.js: costeReunion), y una reunión puede acabar con tramos de dos.
+    if (r.prov) ok.prov = r.prov;
+    if (r.modelo) ok.modelo = r.modelo;
     return ok;
   } catch (e) {
     return { ...pendiente((e && e.codigo) || "otro", e), pico };
@@ -952,7 +959,7 @@ async function cierraRonda(id) {
     } catch (_) { /* best-effort: el audio sigue en IndexedDB */ }
   }
   const fin = await aBg("finRonda", { id });
-  avisar(!!(fin && fin.estado === "ok"));
+  avisar(!!(fin && fin.estado === "ok"), !!(fin && fin.sinClave));
   if (fin && fin.estado === "ok") await actaAutomatica(id);
   await aBg("podar"); // aplica el límite configurado en Opciones
 }
@@ -965,13 +972,17 @@ async function actaAutomatica(id) {
   let cfg;
   try { cfg = await leerConfig(); } catch (_) { return; }
   if (!cfg.autoActa || typeof analizarReunion !== "function") return;
-  const plantilla = cfg.autoActaPlantilla || "acta", prov = cfg.autoActaProv || "gemini";
+  // Con el proveedor elegido en Opciones; si a ese le falta la clave (quien
+  // transcribe con otra IA puede no tener la de Gemini), con el primero que la
+  // tenga. Si no la tiene ninguno se deja el elegido, y el fallo dice cuál falta.
+  const elegido = cfg.autoActaProv || "gemini";
+  const plantilla = cfg.autoActaPlantilla || "acta", prov = proveedorTexto(cfg, elegido) || elegido;
   const h = await aBg("histLeer", { id });
   if (!h || h.estado !== "ok") return;
   if ((h.analisis || {})[claveAnalisis(plantilla, prov)]) return; // ya la tiene
   try {
     const r = await analizarReunion(h, plantilla, prov, cfg);
-    await aBg("histAnalisis", { id, clave: r.clave, texto: r.texto, uso: r.uso });
+    await aBg("histAnalisis", { id, clave: r.clave, texto: r.texto, uso: r.uso, truncado: !!r.truncado });
   } catch (e) {
     console.warn("Escriba: el acta automática falló", e);
     await histActualizar(id, { errorActa: String((e && e.message) || e).slice(0, 300) }).catch(() => {});
@@ -1049,7 +1060,7 @@ async function selftest({ modo, streamId }) {
     };
     if (blob.size && !res.silencio) {
       try {
-        const r = await transcribirGemini(blob);
+        const r = await transcribirAudio(blob);
         res.transcripcion = r.sinVoz ? t("off.modeloSinVoz") : r.texto;
       } catch (e) { res.errorTranscripcion = (e && e.message) || String(e); }
     }
@@ -1060,6 +1071,25 @@ async function selftest({ modo, streamId }) {
     try { ctx.close(); } catch (_) {}
     return { ok: false, error: (e && e.message) || String(e) };
   }
+}
+
+// --- quién transcribe (3.8) ---
+// Hasta la 3.7 transcribía solo Gemini. Ahora lo hace el proveedor de voz que
+// toque (proveedores.js: el elegido en Opciones o, en automático, el primero que
+// tenga clave), y solo si su voz está encendida en el registro. Devuelve lo
+// mismo que transcribirGemini más `prov` y `modelo`: quién ha transcrito el
+// tramo y con qué modelo.
+// opciones: { participantes, anterior } (ver transcribirGemini).
+async function transcribirAudio(blob, idx = 1, total = 1, opciones) {
+  const cfg = await leerConfig();
+  const prov = proveedorVoz(cfg);
+  // Sin nadie con clave que transcriba no se pierde nada: el audio sigue
+  // guardado y se transcribe solo en cuanto se ponga una (background.js).
+  if (!prov) throw marcar(new Error(t("off.faltaClave")), { codigo: "sin_clave" });
+  const r = provDe(prov).voz.dialecto === "gemini"
+    ? await transcribirGemini(blob, idx, total, opciones)
+    : await transcribirConProveedor(prov, cfg, blob, idx, total, opciones);
+  return { ...r, prov };
 }
 
 // --- Gemini ---
@@ -1188,7 +1218,8 @@ async function generar(key, modelo, prompt, parteAudio) {
   // El modelo confirma que no hay voz: se respeta, no se reintenta.
   if (/^\s*SIN_VOZ[\s.]*$/i.test(texto)) return { texto: "", sinVoz: true };
   const u = data.usageMetadata || {};
-  return { texto, truncado: razon === "MAX_TOKENS", uso: { entrada: u.promptTokenCount || 0, salida: u.candidatesTokenCount || 0 } };
+  // `modelo`: el que ha contestado, que puede ser uno de reserva (el tramo lo apunta).
+  return { texto, truncado: razon === "MAX_TOKENS", uso: { entrada: u.promptTokenCount || 0, salida: u.candidatesTokenCount || 0 }, modelo };
 }
 
 // Audio pequeño va en el propio cuerpo; grande, por la Files API.
@@ -1224,6 +1255,451 @@ async function prepararAudio(blob, key) {
   }
   if (file.state !== "ACTIVE") throw marcar(new Error(t("off.noProcesado", file.state)), { codigo: "otro" });
   return { parte: { file_data: { mime_type: mime, file_uri: file.uri } }, fileName: file.name };
+}
+
+// --- los demás proveedores de voz (3.8) ----------------------------------------
+// OpenAI, Groq y Mistral transcriben por el mismo camino: un formulario con el
+// audio a `{base}/audio/transcriptions` y la clave en `Authorization: Bearer`.
+// Cambia qué campos lleva el formulario y cómo viene la respuesta: eso es el
+// «dialecto» de cada uno (`voz.dialecto` en proveedores.js).
+//
+// Ninguno obedece instrucciones como Gemini: no se les puede pedir que conteste
+// SIN_VOZ, ni avisarles de que el audio es un tramo suelto, ni darles los
+// asistentes para que ponga nombres (por eso `total` y `opciones.anterior` no
+// se usan aquí). Devuelven SEGMENTOS —texto y, según el modelo, cuándo empieza
+// y quién habla—, y el paso a las líneas «[MM:SS] Hablante N: texto» que
+// entiende el resto de Escriba se hace aquí, igual para todos (segmentosATexto).
+//
+// NADA de esto se ha probado con una clave real (05/10/2026): sale de la
+// documentación de cada API. Por eso estas voces están apagadas en el registro.
+async function transcribirConProveedor(id, cfg, blob, idx = 1, total = 1, opciones) {
+  const p = provDe(id);
+  const dialecto = transcribe(id) ? DIALECTOS_VOZ[p.voz.dialecto] : null;
+  // Ni un id desconocido ni una voz apagada en el registro llegan a la red.
+  if (!dialecto) throw marcar(new Error(t("ia.provDesconocido", id)), { fatal: true, codigo: "otro" });
+  if (!tieneClave(cfg, id)) throw marcar(new Error(t("ia.faltaClave", p.nombre)), { codigo: "sin_clave" });
+  const clave = String(cfg[p.campoClave]).trim();
+  // Como con Gemini: el modelo elegido y, si falla, los demás del registro.
+  const preferido = cfg[p.campoVoz] || p.voz.modelos[0];
+  const modelos = [preferido, ...p.voz.modelos.filter((m) => m !== preferido)];
+  const pistas = { terminos: terminosDe(cfg.glosario, opciones && opciones.participantes), idioma: idiomaVoz(cfg.idioma) };
+
+  let audio = blob, wavProbado = false;
+  if (dialecto.soloWav) {
+    try {
+      audio = await aWav16k(blob);
+    } catch (e) {
+      throw marcar(new Error(t("off.audioNoConvertido", p.nombre, (e && e.message) || e)), { codigo: "otro" });
+    }
+  }
+
+  let ultimo = null;
+  for (const modelo of modelos) {
+    for (let intento = 0; ;) {
+      try {
+        return { ...(await pedirVoz(p, clave, modelo, audio, idx, pistas)), modelo };
+      } catch (e) {
+        ultimo = e;
+        if (e.fatal) throw e;
+        // La red de OpenAI y Groq: reciben el webm de Chrome tal cual, y no se
+        // ha podido probar que lo acepten. Si lo rechazan, la misma petición se
+        // repite UNA vez con el tramo en WAV, que ya se queda para lo que falte.
+        if (e.audioRechazado && !wavProbado && !esWav(audio)) {
+          wavProbado = true;
+          try {
+            audio = await aWav16k(blob);
+            continue;
+          } catch (_) { /* no se pudo convertir: vale el rechazo */ }
+        }
+        if (e.reintentable && intento < ESPERAS.length) {
+          await espera(e.esperaMs || ESPERAS[intento]);
+          intento++;
+          continue;
+        }
+        break; // agotado con este modelo → probar el siguiente
+      }
+    }
+  }
+  throw ultimo || new Error(t("off.noTranscrito"));
+}
+
+// Cada dialecto: `formulario(fd, modelo, pistas)` añade sus campos (el fichero y
+// el modelo los pone pedirVoz) y `leer(d, modelo)` saca de la respuesta
+// { segmentos, whisper, truncado }, o null si no la entiende. `soloWav`: no se
+// le manda el webm de Chrome.
+// pistas: { terminos (terminosDe), idioma (idiomaVoz) }.
+const DIALECTOS_VOZ = {
+  openai: { formulario: formularioOpenai, leer: leerOpenai },
+  whisper: { formulario: formularioWhisper, leer: leerWhisper },
+  // La documentación de Mistral lista webm, pero dos terceros cuentan que el
+  // webm/Opus del navegador vuelve con un 400 «Audio input could not be decoded».
+  mistral: { soloWav: true, formulario: formularioMistral, leer: leerMistral },
+};
+
+// Una petición de transcripción: un tramo, con un modelo. Devuelve { texto,
+// truncado, uso } o { texto: "", sinVoz: true }, o lanza un error marcado.
+async function pedirVoz(p, clave, modelo, audio, idx, pistas) {
+  const dialecto = DIALECTOS_VOZ[p.voz.dialecto];
+  const fd = new FormData();
+  // El nombre con su extensión no es un adorno: Groq elige el decodificador por
+  // él (no por el tipo del fichero) y OpenAI también lo pide. Lleva el número
+  // del tramo, como la copia que se deja en Descargas.
+  fd.append("file", audio, `tramo${String(idx).padStart(2, "0")}.${esWav(audio) ? "wav" : "webm"}`);
+  fd.append("model", modelo);
+  dialecto.formulario(fd, modelo, pistas);
+
+  let res, cuerpo;
+  try {
+    // Sin Content-Type: lo pone el navegador, con el separador del formulario.
+    res = await fetch(`${p.base}/audio/transcriptions`, { method: "POST", headers: { Authorization: "Bearer " + clave }, body: fd });
+    // Como texto y no con json(): el 401 de OpenAI llega como text/plain.
+    cuerpo = await res.text();
+  } catch (e) {
+    throw marcar(new Error(t("off.sinConexionProv", p.nombre, (e && e.message) || e)), { reintentable: true, codigo: "red" });
+  }
+  if (!res.ok) throw errorVoz(p.nombre, modelo, res, cuerpo);
+
+  let d = null;
+  try { d = JSON.parse(cuerpo); } catch (_) { /* se trata abajo */ }
+  const leido = d && typeof d === "object" ? dialecto.leer(d, modelo) : null;
+  // Un 200 que no se entiende NO es un tramo sin voz: darlo por mudo borraría su audio.
+  if (!leido) throw marcar(new Error(t("off.respuestaIlegible", p.nombre, modelo)), { reintentable: true, codigo: "otro" });
+  const r = segmentosATexto(leido.segmentos, {
+    whisper: !!leido.whisper, eco: leido.whisper ? fraseContexto(pistas.idioma, pistas.terminos) : "",
+  });
+  if (r.sinVoz) return r;
+  const uso = usoDeVoz(d);
+  return { texto: r.texto, truncado: !!leido.truncado, ...(uso ? { uso } : {}) };
+}
+
+// Un fallo HTTP de un proveedor de voz, con su código (comun.js) y qué hacer con
+// él: `fatal` corta (ni reintentos ni otros modelos), `reintentable` se arregla
+// esperando y lo demás deja probar el modelo siguiente. Se decide por el código
+// HTTP y nunca por el `type` del cuerpo: el 429 de Mistral trae «rate_limited»
+// y su documentación dice otra cosa. `cuerpo` es el texto de la respuesta.
+function errorVoz(nombre, modelo, res, cuerpo) {
+  const status = res.status, detalle = detalleErrorApi(cuerpo);
+  const e = new Error(`${nombre} HTTP ${status} (${modelo})${detalle ? ": " + detalle : ""}`);
+  // Clave mala o sin permisos: cambiar de modelo no arregla nada.
+  if (status === 401 || status === 403) return marcar(e, { fatal: true, codigo: "clave_invalida" });
+  // Antes que el 429 de «vas muy deprisa»: OpenAI usa ese mismo código para
+  // decir que no queda saldo, y eso no se arregla esperando.
+  if (sinSaldo(status, cuerpo)) return marcar(e, { fatal: true, codigo: "sin_saldo" });
+  if ([408, 429, 500, 502, 503, 504, 529].includes(status)) {
+    return marcar(e, { reintentable: true, codigo: "saturado", esperaMs: esperaPedida(res, 60000) });
+  }
+  // El resto (404…) deja probar el siguiente modelo. Si lo rechazado es el audio
+  // (un 415, que es justo eso, o un 400 que habla de él), transcribirConProveedor
+  // prueba en WAV.
+  const audioRechazado = status === 415 || (status === 400 && /decod|format|audio|file/i.test(detalle || cuerpo.slice(0, 400)));
+  return marcar(e, { codigo: "otro", audioRechazado });
+}
+
+// --- formularios y respuestas de cada dialecto ---
+
+// OpenAI tiene tres modelos, y cada uno pide y devuelve una cosa:
+//   «texto»      gpt-transcribe (y lo que venga después): solo el texto.
+//   «hablantes»  gpt-4o-transcribe-diarize: segmentos con hablante y tiempos.
+//   «whisper»    whisper-1: como Groq, que sirve ese mismo modelo.
+// Los dos últimos se apagan el 26/02/2027, y OpenAI no ha anunciado ningún otro
+// con hablantes ni con marcas de tiempo.
+const formaOpenai = (modelo) => (/diarize/.test(modelo) ? "hablantes" : /^whisper/.test(modelo) ? "whisper" : "texto");
+// El de hablantes tiene 2.000 tokens de salida como mucho y, si se le acaban,
+// corta la transcripción sin avisar: rozar ese tope es haberse quedado a medias.
+const SALIDA_CASI_LLENA = 1990;
+
+function formularioOpenai(fd, modelo, pistas) {
+  const forma = formaOpenai(modelo);
+  if (forma === "whisper") return formularioWhisper(fd, modelo, pistas);
+  if (forma === "hablantes") {
+    // No admite `prompt`: a este no hay forma de pasarle el glosario.
+    fd.append("response_format", "diarized_json");
+    fd.append("chunking_strategy", "auto"); // obligatorio por encima de 30 s
+    if (pistas.idioma) fd.append("language", pistas.idioma);
+    return;
+  }
+  // Aquí el `prompt` es contexto, no instrucciones, y los nombres y el glosario
+  // van término a término. El idioma, en `languages[]`: `language` es de los
+  // modelos antiguos.
+  fd.append("prompt", fraseContexto(pistas.idioma));
+  for (const k of palabrasClave(pistas.terminos)) fd.append("keywords[]", k);
+  if (pistas.idioma) fd.append("languages[]", pistas.idioma);
+}
+
+function leerOpenai(d, modelo) {
+  const forma = formaOpenai(modelo);
+  if (forma === "whisper") return leerWhisper(d);
+  const segmentos = segmentosDe(d, (s) => ({ inicio: s.start, fin: s.end, texto: s.text, hablante: s.speaker }));
+  if (!segmentos) return null;
+  const salida = numero(d.usage && d.usage.output_tokens);
+  return { segmentos, truncado: forma === "hablantes" && salida !== null && salida >= SALIDA_CASI_LLENA };
+}
+
+// Whisper: el de Groq y el `whisper-1` de OpenAI. Da marcas de tiempo por
+// segmento y no distingue hablantes.
+function formularioWhisper(fd, modelo, pistas) {
+  fd.append("response_format", "verbose_json"); // el único formato con marcas de tiempo
+  fd.append("timestamp_granularities[]", "segment");
+  fd.append("temperature", "0");
+  // Con detección automática el campo se omite: vacío, Groq rechaza la petición.
+  if (pistas.idioma) fd.append("language", pistas.idioma);
+  fd.append("prompt", fraseContexto(pistas.idioma, pistas.terminos));
+}
+
+function leerWhisper(d) {
+  // Los campos de calidad son opcionales (el turbo de Groq ni los rellena).
+  const segmentos = segmentosDe(d, (s) => ({
+    inicio: s.start, fin: s.end, texto: s.text, hablante: "", probSilencio: s.no_speech_prob, confianza: s.avg_logprob,
+  }));
+  return segmentos && { segmentos, whisper: true };
+}
+
+// Mistral (Voxtral): hablantes y marcas de tiempo.
+function formularioMistral(fd, modelo, pistas) {
+  fd.append("diarize", "true");
+  // Sin `language`: su guía lo da por incompatible con las marcas de tiempo, así
+  // que el idioma lo detecta él. Tampoco tiene `prompt`.
+  fd.append("timestamp_granularities", "segment");
+  for (const palabra of sesgoContexto(pistas.terminos)) fd.append("context_bias", palabra);
+}
+
+function leerMistral(d) {
+  const segmentos = segmentosDe(d, (s) => ({ inicio: s.start, fin: s.end, texto: s.text, hablante: s.speaker_id }));
+  return segmentos && { segmentos };
+}
+
+// De la respuesta a segmentos crudos. Si no trae `segments` con texto pero sí
+// el `text` entero (un modelo que no da tiempos, o que esta vez no los ha
+// dado), el texto es un único segmento sin tiempo: lo transcrito no se pierde
+// nunca. null si no trae ni lo uno ni lo otro.
+function segmentosDe(d, deSegmento) {
+  const lista = (Array.isArray(d.segments) ? d.segments : []).filter((s) => s && typeof s === "object" && String(s.text || "").trim());
+  if (lista.length) return lista.map(deSegmento);
+  if (typeof d.text === "string") return [{ inicio: null, fin: null, texto: d.text, hablante: "" }];
+  return Array.isArray(d.segments) ? [] : null;
+}
+
+// Un número de verdad, o null: Groq declara `duration` como texto, y los
+// `start` de Mistral pueden venir a null. Lo que no se sabe no se vuelve un cero.
+function numero(v) {
+  const n = typeof v === "string" && v.trim() ? Number(v) : v;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+
+// Lo gastado, como lo diga la API: en segundos de audio si da la duración (es
+// por lo que cobran) o, si no, en tokens. Si no dice ninguna de las dos cosas no
+// se apunta nada: un gasto desconocido no es un gasto de cero, y el coste de la
+// reunión lo saca en «faltan» (comun.js: costeReunion).
+function usoDeVoz(d) {
+  const u = d.usage && typeof d.usage === "object" ? d.usage : {};
+  for (const v of [u.seconds, u.prompt_audio_seconds, d.duration]) {
+    const segundos = numero(v);
+    if (segundos !== null && segundos >= 0) return { segundos };
+  }
+  const entrada = numero(u.input_tokens), salida = numero(u.output_tokens);
+  return entrada !== null || salida !== null ? { entrada: entrada || 0, salida: salida || 0 } : null;
+}
+
+// --- glosario, participantes e idioma ---
+
+// Nombres y términos que conviene que el modelo escriba bien: los asistentes de
+// la reunión y el glosario de Opciones, que se escriben separados por comas o
+// saltos de línea. Sin vacíos ni repetidos, y con los nombres delante: si hay
+// que recortar, que no sean ellos los que se caigan.
+function terminosDe(glosario, participantes) {
+  const vistos = new Set(), terminos = [];
+  for (const crudo of `${participantes || ""}\n${glosario || ""}`.split(/[,\n\r]+/)) {
+    const termino = crudo.replace(/\s+/g, " ").trim();
+    if (!termino || vistos.has(termino.toLowerCase())) continue;
+    vistos.add(termino.toLowerCase());
+    terminos.push(termino);
+  }
+  return terminos;
+}
+
+// OpenAI: un término por campo `keywords[]`. Si alguno lleva «<», «>» o un salto
+// de línea rechaza la petición ENTERA, así que se quitan antes de mandarlos.
+const palabrasClave = (terminos) => terminos.map((x) => x.replace(/[<>\r\n]+/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 80);
+
+// Mistral: `context_bias` no admite espacios ni comas dentro de un término
+// («Juan Pérez» se manda como «Juan» y «Pérez»), ni más de cien.
+function sesgoContexto(terminos) {
+  const vistos = new Set(), palabras = [];
+  for (const palabra of terminos.join(" ").split(/[\s,]+/)) {
+    if (!palabra || vistos.has(palabra.toLowerCase())) continue;
+    vistos.add(palabra.toLowerCase());
+    palabras.push(palabra);
+  }
+  return palabras.slice(0, 100);
+}
+
+// El `prompt` de un modelo de voz no son instrucciones (no las sigue): es texto
+// «anterior» al audio, que le orienta en el idioma, la puntuación y cómo se
+// escriben los nombres. Va redactado como frase y en el idioma de la reunión:
+// una lista pelada de términos acaba devuelta en la transcripción. Whisper solo
+// atiende a 224 tokens, y aquí no hay con qué contarlos: se recorta por
+// caracteres, sin partir ningún término.
+const FRASES_VOZ = {
+  es: ["Reunión de trabajo.", "Nombres y términos:"],
+  en: ["Work meeting.", "Names and terms:"],
+  ca: ["Reunió de treball.", "Noms i termes:"],
+  pt: ["Reunião de trabalho.", "Nomes e termos:"],
+  fr: ["Réunion de travail.", "Noms et termes :"],
+  de: ["Arbeitsbesprechung.", "Namen und Begriffe:"],
+  it: ["Riunione di lavoro.", "Nomi e termini:"],
+};
+const TOPE_PROMPT_VOZ = 600;
+function fraseContexto(idioma, terminos) {
+  const [reunion, nombres] = FRASES_VOZ[idioma] || FRASES_VOZ.es;
+  let lista = "";
+  for (const termino of terminos || []) {
+    const mas = lista ? `${lista}, ${termino}` : termino;
+    if (`${reunion} ${nombres} ${mas}.`.length > TOPE_PROMPT_VOZ) break;
+    lista = mas;
+  }
+  return lista ? `${reunion} ${nombres} ${lista}${lista.endsWith(".") ? "" : "."}` : reunion;
+}
+
+// El idioma esperado de la reunión (Opciones) como lo piden estas API: el código
+// ISO 639-1, o nada con «auto». Un código mal formado hace que rechacen la
+// petición entera, así que lo que no lo parezca tampoco se manda.
+const idiomaVoz = (idioma) => (/^[a-z]{2}$/.test(idioma || "es") ? idioma || "es" : "");
+
+// --- de segmentos a texto ---
+// Las líneas que entiende el resto de Escriba (comun.js: RE_LINEA), con las
+// marcas contadas desde el principio del tramo, como las de Gemini:
+//   «[MM:SS] Hablante 1: texto»   si el modelo distingue hablantes
+//   «[MM:SS] texto»               si no
+// segmentos: [{ inicio, fin (segundos; null si no se sabe), texto, hablante,
+//   probSilencio, confianza }]. opciones: { whisper, eco (el `prompt` enviado) }.
+// Devuelve { texto } o, si no queda nada que escribir, { texto: "", sinVoz: true }.
+const HUECO_MISMA_LINEA_S = 2;       // menos de esto entre dos segmentos del mismo hablante: misma línea
+const TOPE_LINEA = 350;              // caracteres, más o menos, de una línea
+const TOPE_LINEA_SIN_TIEMPOS = 300;
+
+function segmentosATexto(segmentos, opciones) {
+  const o = opciones || {};
+  const validos = [];
+  for (const s of segmentos || []) {
+    const texto = String((s && s.texto) || "").replace(/\s+/g, " ").trim();
+    if (!texto) continue;
+    if (o.whisper && (noHablado(s) || esInventada(texto, o.eco))) continue;
+    const hablante = s.hablante === null || s.hablante === undefined ? "" : String(s.hablante).trim();
+    validos.push({ inicio: numero(s.inicio), fin: numero(s.fin), texto, hablante });
+  }
+  if (!validos.length) return { texto: "", sinVoz: true };
+
+  // Ni tiempos ni hablantes (gpt-transcribe): no hay intervenciones que separar.
+  // El texto va en líneas de frases enteras y la primera lleva el principio del
+  // tramo, que es lo único que se sabe: así se puede ir a ese punto del audio.
+  if (validos.every((s) => s.inicio === null && !s.hablante)) {
+    const lineas = enFrases(validos.map((s) => s.texto).join(" "), TOPE_LINEA_SIN_TIEMPOS);
+    return { texto: lineas.map((l, i) => sinEtiqueta(i ? l : `[${formatoTiempo(0)}] ${l}`)).join("\n") };
+  }
+
+  // Segmentos seguidos del mismo hablante y casi sin pausa son una misma
+  // intervención: van en una línea, hasta un tamaño que se pueda leer. Un
+  // segmento sin tiempo sigue en la línea que hubiera (no se sabe dónde cae).
+  const lineas = [], orden = [];
+  let actual = null;
+  for (const s of validos) {
+    if (s.hablante && !orden.includes(s.hablante)) orden.push(s.hablante);
+    const hueco = s.inicio === null ? 0 : actual && actual.fin !== null ? s.inicio - actual.fin : Infinity;
+    if (actual && actual.hablante === s.hablante && hueco < HUECO_MISMA_LINEA_S && actual.texto.length + 1 + s.texto.length <= TOPE_LINEA) {
+      actual.texto += " " + s.texto;
+    } else {
+      actual = { inicio: s.inicio, fin: null, hablante: s.hablante, texto: s.texto };
+      lineas.push(actual);
+    }
+    if (s.inicio !== null) actual.fin = s.fin !== null ? s.fin : s.inicio;
+  }
+
+  const hayMarcas = lineas.some((l) => l.inicio !== null);
+  return {
+    texto: lineas.map((l, i) => {
+      // Hacia abajo: al pulsar la hora, mejor empezar un poco antes que a media palabra.
+      // Sin ningún tiempo (hablantes sí, marcas no), la primera lleva el principio del tramo.
+      const marca = l.inicio !== null ? `[${formatoTiempo(Math.floor(l.inicio))}] ` : !hayMarcas && i === 0 ? `[${formatoTiempo(0)}] ` : "";
+      // Cada API nombra a los hablantes a su manera («A», «speaker_1»): se numeran
+      // por orden de aparición en el tramo, con la etiqueta de siempre.
+      if (l.hablante) return `${marca}${etiquetaGenerica(orden.indexOf(l.hablante) + 1)}: ${l.texto}`;
+      // Sin hablante, «Primer punto: …» se tomaría por alguien que se llama así.
+      return sinEtiqueta(marca + l.texto);
+    }).join("\n"),
+  };
+}
+
+// Lo que el propio Whisper daría por no hablado. Hacen falta las dos señales, y
+// solo cuenta si vienen las dos: por separado fallan demasiado.
+function noHablado(s) {
+  const silencio = numero(s.probSilencio), confianza = numero(s.confianza);
+  return silencio !== null && confianza !== null && silencio > 0.6 && confianza < -1;
+}
+
+// Frases que Whisper se inventa cuando no hay voz (silencio, ruido, música): son
+// los créditos de los vídeos subtitulados con que se entrenó. Solo se descartan
+// cuando son el segmento ENTERO: dichas dentro de una frase, son de quien habla.
+const FRASES_INVENTADAS = [
+  "gracias por ver el video", "muchas gracias por ver el video", "gracias por ver", "suscribete al canal", "suscribete",
+  "thanks for watching", "thank you for watching", "thank you so much for watching", "please subscribe",
+];
+// «Subtítulos realizados por la comunidad de Amara.org», en el idioma que sea, y
+// la dirección web con que cierra tantas transcripciones en castellano.
+const RE_INVENTADAS = /\bamara org\b|\balimmenta com\b/;
+// En minúsculas, sin tildes ni signos: «¡Gracias por ver el vídeo!» = «gracias por ver el video».
+const llano = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+function esInventada(texto, eco) {
+  const l = llano(texto);
+  if (!l) return false; // solo signos («…»): no es una de estas
+  if (FRASES_INVENTADAS.includes(l) || (l.length < 120 && RE_INVENTADAS.test(l))) return true;
+  // El `prompt` devuelto tal cual, entero o una de sus frases: es su eco, no la reunión.
+  return !!eco && [eco, ...eco.split(/(?<=[.!?])\s+/)].some((frase) => llano(frase) === l);
+}
+
+// Texto corrido → líneas de unos `tope` caracteres, cortando entre frases (o
+// entre palabras, si una frase sola ya no cabe: hay modelos que no puntúan).
+function enFrases(texto, tope) {
+  const lineas = [];
+  let actual = "";
+  const mete = (trozo) => {
+    if (actual && actual.length + 1 + trozo.length > tope) { lineas.push(actual); actual = ""; }
+    actual = actual ? `${actual} ${trozo}` : trozo;
+  };
+  for (const frase of texto.split(/(?<=[.!?…])\s+/)) {
+    if (frase.length <= tope) mete(frase);
+    else frase.split(" ").forEach(mete);
+  }
+  if (actual) lineas.push(actual);
+  return lineas;
+}
+
+// --- audio en WAV ---
+const esWav = (blob) => /wav/.test((blob && blob.type) || "");
+
+// El tramo en WAV (mono, 16 kHz, PCM de 16 bits), el formato que acepta
+// cualquier modelo. Lo importado ya viene así (importar.js) y se devuelve tal
+// cual; lo grabado es un .webm completo, que se decodifica por sí solo. Como en
+// medirExacto, con un AudioContext a 16 kHz, pero propio y cerrado al acabar: el
+// de las medidas lo cierra cada ronda al terminar, y aquí puede haber otra a medias.
+async function aWav16k(blob) {
+  if (esWav(blob)) return blob;
+  const ctx = new AudioContext({ sampleRate: 16000 });
+  try {
+    const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const canales = audio.numberOfChannels || 1;
+    let mono = audio.getChannelData(0);
+    if (canales > 1) {
+      // Lo grabado ya es mono; por si acaso, varios canales → uno, promediando.
+      mono = new Float32Array(mono.length);
+      for (let c = 0; c < canales; c++) {
+        const datos = audio.getChannelData(c);
+        for (let i = 0; i < mono.length; i++) mono[i] += datos[i] / canales;
+      }
+    }
+    return new Blob([codificarWav(mono, audio.sampleRate)], { type: "audio/wav" });
+  } finally {
+    try { await ctx.close(); } catch (_) {}
+  }
 }
 
 // --- utilidades ---

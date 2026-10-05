@@ -19,9 +19,9 @@
   <h1 data-i18n="imp.titulo">Transcribir un archivo</h1>
   <p class="sub" data-i18n="imp.sub">Para grabaciones que ya tienes en el ordenador: notas de voz, reuniones grabadas con otra herramienta o audios que no llegaron a transcribirse.</p>
 
-  <div id="avisoClave" class="aviso atencion" hidden>
+  <div id="avisoClave" class="aviso" hidden>
     <svg class="i" aria-hidden="true"><use href="iconos.svg#llave"></use></svg>
-    <div class="cuerpo" data-i18n-html="imp.avisoClaveHtml">Todavía no hay clave de Gemini. Puedes importar igual: el audio queda guardado y se transcribirá solo en cuanto la pongas en <a href="options.html" target="_blank">Opciones</a>.</div>
+    <div class="cuerpo" data-i18n-html="imp.avisoClaveHtml">No hay clave de ninguna IA que transcriba. Puedes importar igual: el audio queda guardado y se transcribirá solo en cuanto pongas una en <a href="options.html" target="_blank">Opciones</a>.</div>
   </div>
 
   <div id="zona" class="zona" tabindex="0" role="button">
@@ -60,6 +60,7 @@
   </div>
 </main>
 
+<script src="proveedores.js"></script>
 <script src="config.js"></script>
 <script src="comun.js"></script>
 <script src="importar.js"></script>

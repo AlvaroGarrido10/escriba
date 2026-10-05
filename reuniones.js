@@ -7,8 +7,10 @@
 // que esté terminando a la vez.
 
 const $ = (id) => document.getElementById(id);
-const PROVEEDORES = [["gemini", "Gemini", "geminiKey"], ["gpt", "GPT", "openaiKey"], ["claude", "Claude", "claudeKey"]];
-const nombreProv = (p) => (PROVEEDORES.find((x) => x[0] === p) || [p, p])[1];
+// Los proveedores salen del registro (proveedores.js). Aquí no puede declararse
+// otro PROVEEDORES: los scripts de una página comparten los nombres de primer
+// nivel, y repetir uno deja este fichero entero sin ejecutar.
+const nombreProv = (p) => (provDe(p) || { etiqueta: p }).etiqueta;
 // Icono de cada plantilla de acta (las plantillas viven en ia.js).
 const ICONO_PLANTILLA = { acta: "documento", resumen: "lineas", tareas: "tareas", correo: "correo", personalizada: "varita" };
 // Qué saca cada plantilla, para las tarjetas de «Acta y resúmenes» cuando aún no hay ninguna.
@@ -18,7 +20,8 @@ const DESC_PLANTILLA = {
 };
 
 let historial = [], actual = null, cfg = {}, filtro = "", actaSel = null, marcaActual = -1, generando = false, preguntando = null;
-let conAudio = new Set();   // tramos de la reunión abierta con audio conservado
+let conAudio = new Set();   // tramos de la reunión abierta que se pueden oír
+let audioConservado = false; // alguno es audio conservado para escuchar, que se puede borrar
 let sonando = null;         // { tramo, inicioS } del audio cargado en el reproductor
 
 const aBgMsg = (cmd, extra = {}) => chrome.runtime.sendMessage({ target: "bg", cmd, ...extra });
@@ -51,9 +54,16 @@ const resalta = (html, re) => (re ? html.replace(re, (m) => `<mark>${m}</mark>`)
 chrome.storage.onChanged.addListener(async (cambios, area) => {
   if (area === "local" && cambios.historial) {
     historial = cambios.historial.newValue || [];
-    if (actual) actual = historial.find((h) => h.id === actual.id) || null;
+    if (actual) {
+      actual = historial.find((h) => h.id === actual.id) || null;
+      // Borrada mientras sonaba (desde aquí, el popup u otra pestaña): se calla.
+      if (!actual) paraAudio();
+    }
     pintaLista();
     pintaVista();
+    // El audio cambia de sitio con el texto: el de un tramo recién transcrito se
+    // borra o pasa a «escucha».
+    if (actual) miraAudio();
   } else if (area === "local" || area === "sync") {
     // Cambiaron el idioma en Opciones con la biblioteca abierta: se traduce sin recargar.
     const otroIdioma = area === "sync" && !!cambios.idiomaUI;
@@ -109,6 +119,8 @@ function textoDe(h) {
 
 // Solo lo que pide atención lleva etiqueta: si todas dijeran «lista», no destacaría nada.
 function pildora(h, siempre) {
+  // Grabada sin clave (3.8): ni «incompleta» ni en ámbar. Está guardada.
+  if (sinTranscribir(h)) return `<span class="pildora">${escT(t("bib.estado_sin_transcribir"))}</span>`;
   const b = {
     ok: ["ok", t("bib.estado_ok")], error: ["err", t("bib.estado_error")],
     pendiente: ["pend", t("bib.estado_pendiente")], grabando: ["rec", t("bib.estado_grabando")],
@@ -168,7 +180,8 @@ function pintaLista() {
 }
 
 // Lo que llevas gastado este mes con tus claves. Sin precios no se adivina: se
-// ofrece ponerlos, y solo si hay alguna reunión con tokens apuntados.
+// ofrece ponerlos, y solo si hay alguna reunión con gasto apuntado (tokens o, en
+// la voz que se cobra por tiempo, segundos).
 function pintaPieLista() {
   const pie = $("pieLista");
   const m = costeMes(historial, cfg.precios);
@@ -177,7 +190,7 @@ function pintaPieLista() {
     const falta = m.faltan.length ? ` <span title="${escT(t("bib.sin_precio_title", m.faltan.map(nombreProv).join(", ")))}">${escT(t("bib.sin_precio_corto"))}</span>` : "";
     const n = m.reuniones === 1 ? t("bib.n_reunion", m.reuniones) : t("bib.n_reuniones", m.reuniones);
     pie.innerHTML = `${icono("euro")}<span title="${escT(t("bib.estimacion_title"))}">${escT(mes.charAt(0).toUpperCase() + mes.slice(1))}: ≈ ${escT(formatoEuros(m.euros))}${falta} · ${escT(n)}</span>`;
-  } else if (historial.some((h) => costeReunion(h, {}).tokens)) {
+  } else if (historial.some((h) => { const c = costeReunion(h, {}); return c.tokens || c.segundos; })) {
     pie.innerHTML = `${icono("euro")}<span>${t("bib.pon_precios_html")}</span>`;
   } else pie.innerHTML = "";
   const enlace = pie.querySelector("a");
@@ -196,6 +209,9 @@ function abrir(id, empujar) {
   $("estadoChat").innerHTML = "";
   $("confirmaBorrar").hidden = true;
   paraAudio();
+  // Lo que se podía oír era de la reunión anterior: hasta que miraAudio diga lo de esta, nada.
+  conAudio = new Set();
+  audioConservado = false;
   pintaLista();
   pintaVista(true);
   miraAudio();
@@ -205,24 +221,45 @@ function abrir(id, empujar) {
 // --- escuchar (3.4) ---
 // El audio conservado vive en IndexedDB («escucha»), por tramos. Pulsar la marca
 // de tiempo de una frase carga su tramo y salta a ese segundo.
+// Desde la 3.8 se oye también el audio que sigue pendiente de transcribir (el
+// almacén «audios»): es lo único que hay de una reunión grabada sin clave. De
+// ahí solo se lee; ese audio hace falta para transcribirla.
 async function miraAudio() {
   const id = actual && actual.id;
-  conAudio = new Set();
+  const oibles = new Set();
+  let conservado = false;
   if (id && typeof audios !== "undefined" && audios && audios.clavesEscucha) {
     try {
-      for (const [r, i] of await audios.clavesEscucha()) if (r === id) conAudio.add(i);
+      for (const [r, i] of await audios.clavesEscucha()) if (r === id) { oibles.add(i); conservado = true; }
+      // Mientras se graba no: lo que sonara aquí se colaría por el micrófono.
+      if (actual && actual.id === id && actual.estado !== "grabando") {
+        for (const [r, i] of await audios.claves()) if (r === id) oibles.add(i);
+      }
     } catch (_) { /* sin IndexedDB no hay reproductor; el resto funciona */ }
   }
   if (!actual || actual.id !== id) return;
-  $("reproductor").hidden = !conAudio.size;
+  conAudio = oibles;
+  audioConservado = conservado;
+  $("reproductor").hidden = !conAudio.size && !sonando;
+  $("quitarAudio").hidden = !audioConservado;
   if (conAudio.size) pintaRepInfo();
+  pintaAviso();
   pintaTexto();
 }
 
+// El audio de un tramo: el conservado o, si no, el que espera a transcribirse.
+async function audioDe(id, tramo) {
+  const conservado = await audios.leerEscucha(id, tramo).catch(() => null);
+  return conservado || audios.leer(id, tramo).catch(() => null);
+}
+
 function pintaRepInfo() {
+  // Una reunión sin transcribir no tiene frases que pulsar: se oye con
+  // «Escuchar» o desde la hora de cada tramo.
+  const conFrases = (actual.tramos || []).some((tr, i) => tr && tr.estado === "ok" && conAudio.has(i));
   $("repInfo").textContent = sonando
     ? t("bib.rep_tramo", sonando.tramo + 1, actual.tramos.length)
-    : t("bib.rep_pulsa");
+    : conFrases ? t("bib.rep_pulsa") : t("bib.rep_sin_frases");
 }
 
 function paraAudio() {
@@ -235,8 +272,9 @@ function paraAudio() {
 }
 
 async function suena(tramo, desdeS) {
-  const tr = (actual.tramos || [])[tramo];
-  const blob = await audios.leerEscucha(actual.id, tramo).catch(() => null);
+  const id = actual.id, tr = (actual.tramos || [])[tramo];
+  const blob = await audioDe(id, tramo);
+  if (!actual || actual.id !== id) return; // mientras se leía, se abrió otra reunión
   if (!blob) { toast(t("bib.audio_no_guardado"), "atencion"); return; }
   paraAudio();
   const a = $("audio");
@@ -263,12 +301,23 @@ $("audio").addEventListener("timeupdate", () => {
     actualL.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
 });
-// Al acabar un tramo sigue con el siguiente, como si fuera un solo audio.
+// Al acabar un tramo sigue con el siguiente que tenga audio, como si fuera uno
+// solo (de un tramo sin voz en medio no se guarda nada: se salta).
 $("audio").addEventListener("ended", () => {
-  if (!sonando) return;
-  const sig = sonando.tramo + 1;
-  if (conAudio.has(sig)) suena(sig, inicioTramo(actual.tramos[sig], sig));
+  if (!sonando || !actual) return;
+  const sig = [...conAudio].filter((i) => i > sonando.tramo).sort((a, b) => a - b)[0];
+  if (sig !== undefined) suena(sig, inicioTramo(actual.tramos[sig], sig));
 });
+// «Escuchar»: desde el primer tramo con audio. Es la forma de oír una reunión
+// grabada sin clave, que no tiene frases con su hora que pulsar (3.8).
+$("btnEscuchar").onclick = () => {
+  if (!actual) return;
+  // El reproductor sigue a la vista mientras suena algo, aunque el audio ya se
+  // haya borrado (acaba de transcribirse): entonces no queda nada que empezar.
+  if (!conAudio.size) { toast(t("bib.audio_no_guardado"), "atencion"); return; }
+  const primero = Math.min(...conAudio);
+  suena(primero, inicioTramo((actual.tramos || [])[primero], primero));
+};
 $("velocidad").addEventListener("change", () => { $("audio").playbackRate = Number($("velocidad").value) || 1; });
 $("quitarAudio").onclick = async () => {
   if (!actual) return;
@@ -303,7 +352,8 @@ function pintaVista(nueva) {
   ].filter(Boolean).join("");
 
   pintaAviso();
-  $("btnReintentar").hidden = h.estado !== "pendiente";
+  // Lo que espera una clave que sigue sin estar no tiene nada que reintentar.
+  $("btnReintentar").hidden = h.estado !== "pendiente" || (sinTranscribir(h) && !proveedorVoz(cfg));
   const nActas = Object.keys(h.analisis || {}).length, nChat = (h.chat || []).length;
   $("nActas").hidden = !nActas; $("nActas").textContent = nActas;
   $("nChat").hidden = !nChat; $("nChat").textContent = nChat;
@@ -324,7 +374,14 @@ function sumaTokens(h) {
 function pintaAviso() {
   const h = actual, a = $("aviso");
   a.hidden = true;
-  if (h.estado === "pendiente") {
+  if (sinTranscribir(h)) {
+    // Grabada sin clave (3.8): no ha fallado nada. Se dice qué es, qué hace falta
+    // para transcribirla y cómo oírla mientras tanto; en neutro, no en ámbar.
+    const oir = conAudio.size ? t("bib.aviso_escuchar") : (h.filesAudio || []).length ? t("bib.aviso_audio_descargas") : "";
+    ponAviso(a, "", t("bib.aviso_sin_clave_html") + (oir ? " " + escT(oir) : ""), "llave");
+    const enlace = a.querySelector("a");
+    if (enlace) enlace.onclick = (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); };
+  } else if (h.estado === "pendiente") {
     const r = resumenTramos(h.tramos);
     ponAviso(a, "atencion", escT(t("bib.aviso_pendiente", r.pendientes, r.total)), "reloj");
   } else if (h.estado === "grabando") {
@@ -425,7 +482,10 @@ function lineasDeVista(h) {
       if (tr.truncado) out.push({ tipo: "aviso", texto: t("bib.tramo_truncado", cab) });
     } else if (tr.estado === "mudo") out.push({ tipo: "mudo", texto: t("bib.tramo_mudo", cab) });
     else if (tr.estado === "perdido") out.push({ tipo: "aviso", texto: `${cab}: ${textoError("perdido")}` });
-    else out.push({ tipo: "aviso", texto: t("bib.tramo_pendiente", cab, tr.error || "") });
+    // Lo pendiente lleva su tramo y dónde empieza: si su audio sigue guardado, se
+    // puede oír desde ahí (3.8). El que solo espera una clave no es un aviso.
+    else if (tr.codigo === "sin_clave") out.push({ tipo: "guardado", texto: t("bib.tramo_sin_clave", cab), tramo: i, t: inicioTramo(tr, i) });
+    else out.push({ tipo: "aviso", texto: t("bib.tramo_pendiente", cab, tr.error || ""), tramo: i, t: inicioTramo(tr, i) });
   });
   return out;
 }
@@ -447,9 +507,15 @@ function pintaTexto() {
   const cierra = () => { if (turno) { html += turno + "</div></div>"; turno = null; } };
   let quienPrevio = undefined;
   for (const l of lineasDeVista(h)) {
-    if (l.tipo === "aviso" || l.tipo === "mudo") {
+    if (l.tipo === "aviso" || l.tipo === "mudo" || l.tipo === "guardado") {
       cierra(); quienPrevio = undefined;
-      html += `<div class="l ${l.tipo === "aviso" ? "aviso-l" : "mudo-l"}">${icono(l.tipo === "aviso" ? "alerta" : "micro-no")}<span>${escT(l.texto)}</span></div>`;
+      // Un tramo sin transcribir cuyo audio sigue guardado se oye desde su hora,
+      // igual que una frase.
+      const oible = typeof l.tramo === "number" && conAudio.has(l.tramo);
+      html += `<div class="l ${l.tipo === "aviso" ? "aviso-l" : l.tipo === "mudo" ? "mudo-l" : "guardado-l"}"${oible ? ` data-t="${l.t}" data-tramo="${l.tramo}"` : ""}>` +
+        icono(l.tipo === "aviso" ? "alerta" : l.tipo === "mudo" ? "micro-no" : "archivo-audio") +
+        (oible ? `<span class="t play" title="${escT(t("bib.escuchar_title"))}">${formatoTiempo(l.t)}</span>` : "") +
+        `<span>${escT(l.texto)}</span></div>`;
       continue;
     }
     const escuchable = l.t !== null && typeof l.tramo === "number" && conAudio.has(l.tramo);
@@ -582,7 +648,8 @@ conMenu($("btnExportar"), $("menuExportar"));
 conMenu($("btnMas"), $("menuMas"));
 $("menuExportar").querySelectorAll("button").forEach((b) => {
   b.addEventListener("click", () => {
-    const h = actual, md = mdTranscripcion(h), base = "reunion_" + baseFichero(h);
+    // Lo que sale de Escriba va sin el carácter invisible de las líneas sin hablante (comun.js).
+    const h = actual, md = sinMarcaInvisible(mdTranscripcion(h)), base = "reunion_" + baseFichero(h);
     const cuerpo = md.replace(/^# .*\n+/, "");
     if (b.dataset.fmt === "docx") descargar(docx(h.titulo || t("com.reunion"), cuerpo), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", base + ".docx");
     else if (b.dataset.fmt === "md") descargar(md, "text/markdown;charset=utf-8", base + ".md");
@@ -602,7 +669,7 @@ function imprimir(clase) {
 }
 
 $("btnCopiar").onclick = async () => {
-  await navigator.clipboard.writeText(textoPlano(mdTranscripcion(actual)));
+  await navigator.clipboard.writeText(textoPlano(sinMarcaInvisible(mdTranscripcion(actual))));
   toast(t("bib.transcripcion_copiada"), "ok");
 };
 
@@ -634,10 +701,13 @@ function pintaSelectores() {
   plant.value = previa || cfg.autoActaPlantilla || "acta";
   for (const id of ["provActa", "provChat"]) {
     const sel = $(id), prev = sel.value;
-    sel.innerHTML = PROVEEDORES.map(([k, n, clave]) =>
-      `<option value="${k}"${cfg[clave] ? "" : " disabled"}>${n}${cfg[clave] ? "" : ` (${escT(t("bib.sin_clave"))})`}</option>`).join("");
-    const conClave = PROVEEDORES.filter(([, , c]) => cfg[c]).map(([k]) => k);
-    sel.value = conClave.includes(prev) ? prev : (conClave.includes(cfg.autoActaProv) ? cfg.autoActaProv : conClave[0] || "gemini");
+    sel.innerHTML = provsQueRedactan().map((k) =>
+      `<option value="${k}"${tieneClave(cfg, k) ? "" : " disabled"}>${escT(nombreProv(k))}${tieneClave(cfg, k) ? "" : ` (${escT(t("bib.sin_clave"))})`}</option>`).join("");
+    // Elegido: el que ya lo estaba, o el del acta automática, o el primero con
+    // clave. Sin ninguna clave, el primero de la lista: al pedirle algo, el error
+    // dice cuál falta.
+    const conClave = provsQueRedactan().filter((k) => tieneClave(cfg, k));
+    sel.value = conClave.includes(prev) ? prev : (conClave.includes(cfg.autoActaProv) ? cfg.autoActaProv : conClave[0] || provsQueRedactan()[0]);
   }
   if (actual) pintaActas();
 }
@@ -660,7 +730,14 @@ function pintaActas() {
   if (!actaSel && claves.length) actaSel = claves[claves.length - 1];
   const hayTexto = ["ok", "pendiente"].includes(h.estado) && textoDe(h).trim();
   $("btnGenerar").disabled = !hayTexto || generando;
-  if (!hayTexto && !$("estadoActa").textContent && h.estado === "error") ponEstado($("estadoActa"), t("bib.acta_sin_transcripcion"), "atencion");
+  // También en la que sigue sin una línea de texto (grabada sin clave): si no, las
+  // plantillas salen apagadas sin decir por qué. Y se quita en cuanto la tiene.
+  if (!hayTexto && !$("estadoActa").textContent && ["error", "pendiente"].includes(h.estado)) ponEstado($("estadoActa"), t("bib.acta_sin_transcripcion"), "atencion");
+  else if (hayTexto && $("estadoActa").textContent === t("bib.acta_sin_transcripcion")) $("estadoActa").innerHTML = "";
+  // El modelo cortó esta acta por su límite de longitud (3.8): se avisa siempre
+  // que se lea, no solo al generarla. Lo apunta el service worker (histAnalisis).
+  if (actaSel && !generando && (h.cortadas || []).includes(actaSel)) ponAviso($("avisoActa"), "atencion", escT(t("bib.acta_cortada")));
+  else $("avisoActa").hidden = true;
 
   // Sin actas todavía: las plantillas como tarjetas, que dicen qué saca cada una.
   const vacio = $("plantillasVacio");
@@ -694,13 +771,16 @@ async function generar() {
   pintaActas();
   try {
     const r = await analizarReunion(h, plantilla, prov, cfg, { alEstado: (txt) => ponEstado($("estadoActa"), sinEmoji(txt)) });
-    const g = await aBgMsg("histAnalisis", { id: h.id, clave: r.clave, texto: r.texto, uso: r.uso });
+    // `truncado`: el modelo la cortó por su límite de longitud. Se guarda con el
+    // acta para avisarlo cada vez que se lea (pintaActas).
+    const g = await aBgMsg("histAnalisis", { id: h.id, clave: r.clave, texto: r.texto, uso: r.uso, truncado: !!r.truncado });
     actaSel = r.clave;
     if (g && g.ok) {
       ponEstado($("estadoActa"), t("bib.acta_guardada"), "ok");
     } else {
       // Ya está hecho y pagado: se enseña aunque no se haya podido guardar.
-      actual = { ...h, analisis: { ...(h.analisis || {}), [r.clave]: r.texto } };
+      const cortadas = (h.cortadas || []).filter((k) => k !== r.clave).concat(r.truncado ? [r.clave] : []);
+      actual = { ...h, analisis: { ...(h.analisis || {}), [r.clave]: r.texto }, cortadas };
       ponEstado($("estadoActa"), t("bib.acta_no_guardada", (g && g.error) || t("bib.no_se_pudo_guardar")), "atencion");
     }
   } catch (e) {
@@ -740,7 +820,9 @@ function pintaChat() {
   const chat = actual.chat || [];
   let html = chat.map((m) => {
     const hora = m.fecha ? new Date(m.fecha).toLocaleTimeString(LOCALE_UI(), { hour: "2-digit", minute: "2-digit" }) : "";
-    return `<div class="burbuja p">${escT(m.p)}</div><div class="burbuja r"><div class="md">${mdAHtml(m.r)}</div><div class="quien">${icono("chispas")}${escT(nombreProv(m.prov))}${hora ? " · " + hora : ""}</div></div>`;
+    // `truncado` (3.8): el modelo cortó la respuesta por su límite de longitud.
+    const cortada = m.truncado ? " · " + escT(t("bib.respuesta_cortada")) : "";
+    return `<div class="burbuja p">${escT(m.p)}</div><div class="burbuja r"><div class="md">${mdAHtml(m.r)}</div><div class="quien">${icono("chispas")}${escT(nombreProv(m.prov))}${hora ? " · " + hora : ""}${cortada}</div></div>`;
   }).join("");
   // La pregunta en curso, con los puntos de «pensando», mientras llega la respuesta.
   if (preguntando && preguntando.id === actual.id) {
@@ -759,6 +841,9 @@ $("formPregunta").onsubmit = async (e) => {
   e.preventDefault();
   const q = $("pregunta").value.trim();
   if (!q || !actual || preguntando) return;
+  // Sin una línea de transcripción (grabada sin clave, o todavía en marcha) no hay
+  // a qué preguntar: se dice, en vez de gastar una llamada o de pedir una clave para nada.
+  if (!textoDe(actual).trim()) { ponEstado($("estadoChat"), t("bib.chat_sin_transcripcion"), "atencion"); return; }
   const h = actual, prov = $("provChat").value, boton = $("btnPreguntar");
   boton.disabled = true;
   preguntando = { id: h.id, q };
@@ -768,9 +853,10 @@ $("formPregunta").onsubmit = async (e) => {
   try {
     const r = await preguntarReunion(h, q, prov, cfg, { alEstado: (txt) => ponEstado($("estadoChat"), sinEmoji(txt)) });
     preguntando = null;
-    const g = await aBgMsg("histChat", { id: h.id, mensaje: { p: q, r: r.texto, prov, uso: r.uso } });
+    const cortada = r.truncado ? { truncado: true } : {};
+    const g = await aBgMsg("histChat", { id: h.id, mensaje: { p: q, r: r.texto, prov, uso: r.uso, ...cortada } });
     if (!g || !g.ok) {
-      actual = { ...h, chat: [...(h.chat || []), { p: q, r: r.texto, prov, fecha: Date.now() }] };
+      actual = { ...h, chat: [...(h.chat || []), { p: q, r: r.texto, prov, fecha: Date.now(), ...cortada }] };
       pintaChat();
       ponEstado($("estadoChat"), (g && g.error) || t("bib.chat_no_guardada"), "atencion");
     } else {

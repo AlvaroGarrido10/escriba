@@ -2,7 +2,7 @@
 // El popup manda órdenes; la grabación/transcripción vive en un documento
 // offscreen (sobrevive aunque el popup se cierre). Estado en storage.session.
 
-importScripts("i18n.js", "config.js", "comun.js");
+importScripts("i18n.js", "proveedores.js", "config.js", "comun.js");
 // Idioma de la interfaz para avisos, errores y el .md. Se vuelve a leer cuando
 // cambia en Opciones (chrome.storage.onChanged, más abajo).
 cargarIdiomaUI();
@@ -86,11 +86,15 @@ chrome.alarms.onAlarm.addListener((a) => {
 });
 
 // En cuanto el usuario guarda una clave nueva, lo que esperaba por ella se
-// reintenta sin que tenga que hacer nada más.
+// reintenta sin que tenga que hacer nada más. Vale la clave de cualquiera de los
+// que transcriben, y también elegir otro en Opciones («Quién transcribe»): lo
+// que cuenta es que, después del cambio, haya con quién transcribir.
 chrome.storage.onChanged.addListener((cambios, area) => {
   if (area === "sync" && cambios.idiomaUI) cargarIdiomaUI();
-  const c = area === "local" && cambios.geminiKey;
-  if (c && c.newValue && c.newValue !== c.oldValue) conClaveNueva().catch(() => {});
+  if (area !== "local") return;
+  const campos = [...provsQueTranscriben().map((id) => provDe(id).campoClave), "provTranscribe"];
+  if (!campos.some((k) => cambios[k] && cambios[k].newValue !== cambios[k].oldValue)) return;
+  leerConfig().then((cfg) => (proveedorVoz(cfg) ? conClaveNueva() : null)).catch(() => {});
 });
 
 // TODAS las escrituras del historial pasan por esta cola. `storage.local` no
@@ -174,9 +178,17 @@ async function finRonda(id) {
   h.transcript = md;
   h.estado = estado;
   h.progreso = "";
+  // Cerrada con retraso (esperaba una clave o un reintento): se apunta cuándo,
+  // para que la limpieza no se la lleve antes de que nadie la haya visto (podar).
+  // También si acaba en «error»: el aviso y su copia de audio en Descargas son
+  // entonces lo único que queda de ella.
+  if (estado !== "pendiente" && h.reintento) h.puestaAlDia = Date.now();
   h.reintento = await planificaReintento(h, estado);
   const g = await guardarHistorial(historial);
-  return g.ok ? { ok: true, estado } : g;
+  if (!g.ok) return g;
+  // `sinClave`: grabada sin clave (3.8). No está transcrita, pero tampoco ha
+  // fallado nada, y quien avisa del final (offscreen.js) tiene que distinguirlo.
+  return estado === "pendiente" && esperanClave(h.tramos) ? { ok: true, estado, sinClave: true } : { ok: true, estado };
 }
 
 // Campos que la biblioteca y el panel en vivo pueden cambiar con «histEditar».
@@ -286,7 +298,14 @@ async function planificaReintento(h, estado) {
   const codigos = h.tramos.filter((t) => t.estado === "pendiente").map((t) => t.codigo);
   // Esperar no arregla una clave: se reintenta cuando el usuario guarde otra.
   if (codigos.length && codigos.every((c) => CODIGOS_CLAVE.includes(c))) {
-    return { n, esperaClave: true, proximo: null, ultimo: ahora };
+    // Salvo que la clave haya llegado mientras se cerraba esta ronda (se guardó
+    // con la reunión aún «transcribiendo»): el aviso de «clave nueva» ya pasó y
+    // nadie la relanzaría. Entonces sigue por los reintentos normales.
+    // (Con una clave RECHAZADA que se cambia en ese mismo hueco no se puede
+    // saber si la de ahora es otra: esa reunión se relanza al abrir el popup,
+    // en revisarPendientes.)
+    const yaHayClave = codigos.every((c) => c === "sin_clave") && !!proveedorVoz(await leerConfig());
+    if (!yaHayClave) return { n, esperaClave: true, proximo: null, ultimo: ahora };
   }
   if (n >= ESPERAS_REINTENTO_MIN.length) return { n, agotado: true, proximo: null, ultimo: ahora };
   const min = ESPERAS_REINTENTO_MIN[n];
@@ -326,13 +345,15 @@ async function conClaveNueva() {
 async function revisarPendientes() {
   await recuperar();
   const historial = await leerHistorial();
-  const { geminiKey } = await leerConfig();
+  // Lo que espera una clave solo se relanza si ya hay con quién transcribir
+  // (proveedores.js): la de Gemini o la de cualquier otro que tenga la voz encendida.
+  const hayQuienTranscriba = !!proveedorVoz(await leerConfig());
   const ahora = Date.now();
   for (const h of historial) {
     if (h.estado !== "pendiente") continue;
     const r = h.reintento || {};
     const hace = r.ultimo ? ahora - r.ultimo : Infinity;
-    if (r.esperaClave ? (geminiKey && hace > 60000) : (!r.agotado && hace > 2 * 60000)) await lanzar(h.id);
+    if (r.esperaClave ? (hayQuienTranscriba && hace > 60000) : (!r.agotado && hace > 2 * 60000)) await lanzar(h.id);
   }
 }
 
@@ -472,11 +493,18 @@ async function borrar(idsHist, conAudio) {
 // Aplica el límite configurado: deja las N más recientes y borra el resto.
 // Nunca poda una reunión que aún se está grabando o transcribiendo, o que
 // espera un reintento: se perdería su audio antes de tener el texto.
+// Tampoco la que se cerró con retraso hace poco (3.8): quien graba sin clave
+// junta más reuniones que el límite, y al poner la clave se transcriben todas de
+// golpe. Sin este margen las más antiguas se borrarían en ese mismo momento,
+// recién transcritas y sin que nadie las hubiera leído. El tope del historial
+// (histCrear) respeta el mismo margen.
+const DIAS_SIN_PODAR = 7;
+const recienPuestaAlDia = (h) => typeof h.puestaAlDia === "number" && Date.now() - h.puestaAlDia < DIAS_SIN_PODAR * 86400000;
 async function podar() {
   const { limite } = await leerConfig(); // config.js decide en qué almacén vive
   if (!limite) return { ok: true, entradas: 0, ficheros: 0 }; // 0 = guardarlas todas
   const historial = await leerHistorial();
-  const sobran = historial.slice(limite).filter((h) => !ESTADOS_ACTIVOS.includes(h.estado));
+  const sobran = historial.slice(limite).filter((h) => !ESTADOS_ACTIVOS.includes(h.estado) && !recienPuestaAlDia(h));
   if (!sobran.length) return { ok: true, entradas: 0, ficheros: 0 };
   // El audio de respaldo SÍ se va al podar: si no, la carpeta crece sin freno.
   return borrar(sobran.map((h) => h.id), true);
@@ -572,8 +600,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(s);
 
       } else if (msg.cmd === "listo") {
-        chrome.action.setBadgeText({ text: msg.ok ? "✓" : "!" });
-        chrome.action.setBadgeBackgroundColor({ color: msg.ok ? "#2e7d32" : "#c0392b" });
+        // Grabada sin clave (3.8): el «!» en rojo diría que algo ha fallado, y no.
+        // Lleva la marca de hecho, en el color de la casa y no en verde: guardada
+        // está; transcrita, no.
+        chrome.action.setBadgeText({ text: msg.ok || msg.sinClave ? "✓" : "!" });
+        chrome.action.setBadgeBackgroundColor({ color: msg.ok ? "#2e7d32" : msg.sinClave ? "#5d2a42" : "#c0392b" });
         setTimeout(() => chrome.action.setBadgeText({ text: "" }), 60000);
         sendResponse({ ok: true });
 
@@ -597,9 +628,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Tope duro aunque el usuario elija «guardarlas todas»: storage.local
           // no es infinito. Lo que se cae por aquí se borra también del disco,
           // para no dejar ficheros huérfanos que ya nadie puede listar.
-          const sobran = historial.slice(TOPE_HISTORIAL); // su audio interno también se borra
-          const g = await guardarHistorial(historial.slice(0, TOPE_HISTORIAL));
-          if (sobran.length) await borraFicherosDe(sobran, true);
+          // Pero nunca una reunión que sigue sin transcribir (3.8: quien graba
+          // sin clave puede juntar más de cien): su audio es lo único que hay
+          // de ella. Ni la que se acaba de poner al día, por lo mismo que en
+          // podar. Esas se quedan aunque la lista pase del tope.
+          const sobran = historial.slice(TOPE_HISTORIAL).filter((h) => !ESTADOS_ACTIVOS.includes(h.estado) && !recienPuestaAlDia(h));
+          const fuera = new Set(sobran.map((h) => h.id));
+          const g = await guardarHistorial(historial.filter((h) => !fuera.has(h.id)));
+          if (sobran.length) await borraFicherosDe(sobran, true); // su audio interno también se borra
           return g;
         }));
 
@@ -662,6 +698,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // guardadas solo por proveedor, se conservan tal cual.
           const clave = msg.clave || msg.prov;
           historial[i].analisis = { ...(historial[i].analisis || {}), [clave]: msg.texto };
+          // Las que el modelo cortó por su límite de longitud (3.8), para que la
+          // biblioteca lo avise al leerlas. Rehacer un acta y que salga entera la quita.
+          const cortadas = (historial[i].cortadas || []).filter((k) => k !== clave);
+          if (msg.truncado) cortadas.push(clave);
+          if (cortadas.length) historial[i].cortadas = cortadas; else delete historial[i].cortadas;
           if (msg.uso) historial[i].usoIA = [...(historial[i].usoIA || []), { clave, ...msg.uso, fecha: Date.now() }];
           const g = await guardarHistorial(historial);
           return g.ok ? { ok: true, item: historial[i] } : g;

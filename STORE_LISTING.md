@@ -1,4 +1,4 @@
-# Ficha de Chrome Web Store (3.6.1)
+# Ficha de Chrome Web Store (3.7.0)
 
 Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marcado con **(tú)** solo puede hacerlo el titular de la cuenta.
 
@@ -12,9 +12,9 @@ Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marca
 
 ## 1. Paquete
 
-- Fichero: `tienda/Escriba_3.6.1_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
+- Fichero: `tienda/Escriba_3.7.0_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
 - No uses `Escriba_*_para_instalar.zip`: lleva una carpeta dentro y la tienda lo rechaza.
-- Panel: **Nuevo elemento** → subir el zip.
+- Panel: la primera vez, **Nuevo elemento** → subir el zip. Para una versión nueva: el elemento → **Paquete** → **Subir nuevo paquete**, y después **Enviar a revisión**.
 
 ## 2. Ficha de la tienda («Store listing»)
 
@@ -112,7 +112,7 @@ Record meetings in Chrome (tab audio and/or microphone) and transcribe and summa
 
 | Permiso | Justificación |
 |---|---|
-| `tabCapture` | Captures the audio of the meeting tab only when the user clicks Record (icon or keyboard shortcut). Core feature. |
+| `tabCapture` | Captures the audio of the meeting tab only when the user clicks Record (icon or keyboard shortcut) in the one-click «Quick» mode. Core feature. The default mode uses Chrome's own «Choose what to share» dialog (getDisplayMedia), which needs no manifest permission; only the audio is used and the picture is discarded at once. |
 | `activeTab` | Identifies the tab the user is on when they start recording, so the right tab is captured and its title is shown. |
 | `offscreen` | Recording runs in an offscreen document so it keeps going when the popup closes. Chrome requires one to use MediaRecorder from an extension. |
 | `downloads` | Saves the transcript (.md) and, when a segment fails, its backup audio to the user's Downloads/reuniones folder. |

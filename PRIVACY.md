@@ -1,12 +1,13 @@
 # Política de privacidad — Escriba
 
-**Última actualización: 02/10/2026 (versión 3.6.1)**
+**Última actualización: 05/10/2026 (versión 3.7.0)**
 
 Escriba es una extensión de Chrome que graba reuniones y las transcribe/analiza usando servicios de IA con las claves API del propio usuario.
 
 ## Qué datos se tratan y dónde
 
-- **Audio de la reunión** (pestaña y/o micrófono): se graba localmente en tu navegador. Al parar la grabación, el audio se envía **directamente desde tu navegador a la API de Google Gemini** usando **tu propia clave API**, con el único fin de generar la transcripción. La extensión no tiene servidores propios: el audio no pasa por ningún sistema del desarrollador.
+- **Lo que compartes al grabar** (forma «Pestaña + micro»): Chrome te enseña su ventana de «elegir qué compartir» y tú decides qué pestaña o pantalla. Escriba usa **solo el sonido**. La imagen que Chrome entrega junto a él se descarta en el mismo instante: nunca se graba, se guarda ni se envía.
+- **Audio de la reunión** (pestaña o pantalla compartida, y/o micrófono): se graba localmente en tu navegador. Al parar la grabación, el audio se envía **directamente desde tu navegador a la API de Google Gemini** usando **tu propia clave API**, con el único fin de generar la transcripción. La extensión no tiene servidores propios: el audio no pasa por ningún sistema del desarrollador.
 - **Audio pendiente de transcribir**: mientras se graba, y hasta que su transcripción está guardada, cada tramo de audio se conserva en el almacenamiento interno del navegador (IndexedDB de la extensión), **solo en tu equipo**. Sirve para reintentar si la transcripción falla o para recuperar la grabación si Chrome se cierra. Se borra solo en cuanto el tramo está transcrito, y siempre que borras esa reunión del historial.
 - **Audio conservado para escuchar** (opcional, desactivado por defecto): si activas «Conservar el audio» en Opciones, el audio de cada reunión ya transcrita se guarda en el almacenamiento interno del navegador, **solo en tu equipo**, para poder escucharlo desde la biblioteca. Se borra al borrar la reunión, al podarse el historial o con el botón de la papelera junto al reproductor («Borrar el audio»).
 - **Participantes, notas y momentos marcados**: lo que escribes se guarda con la reunión, en tu navegador. Si pides una transcripción o un acta, se envía junto al audio o al texto al proveedor que elijas, para que ponga bien los nombres y tenga en cuenta tus notas.
@@ -28,7 +29,8 @@ El uso de las APIs de Google Gemini, OpenAI y Anthropic está sujeto a las polí
 
 ## Permisos de la extensión
 
-- `tabCapture`: capturar el audio de la pestaña de la reunión (Meet, Teams web…), solo cuando tú inicias una grabación.
+- Compartir pestaña o pantalla (la ventana de Chrome de «elegir qué compartir»; no es un permiso fijo, lo concedes cada vez): recibir el sonido de la reunión sin silenciarla, solo cuando tú inicias una grabación y eliges qué compartir.
+- `tabCapture`: en la forma «Rápido», capturar con un clic el audio de la pestaña de la reunión (Meet, Teams web…), solo cuando tú inicias una grabación.
 - Micrófono: grabar tu voz o reuniones presenciales, solo cuando tú inicias una grabación.
 - `downloads`: guardar la transcripción (.md) y el audio en tu carpeta de Descargas.
 - `storage` y `unlimitedStorage`: guardar tu configuración, tu historial y el audio pendiente de transcribir, localmente.

@@ -16,11 +16,17 @@ ESCRIBA — instalar en 2 minutos
      ("Create API key" -> copiar) y pégala. Se valida sola (se pone en verde).
    - Pulsa "Permitir micrófono" y acepta.
 
-YA ESTÁ. Para grabar una reunión, elige modo:
-   - "Pestaña + micro": lo normal para Meet/Teams. Ponte EN esa pestaña, clic al
-     icono y "Empezar a grabar". Un solo clic, pero graba ESA pestaña: si te
-     equivocas de ventana, no coge nada.
+YA ESTÁ. Para grabar una reunión, elige cómo:
+   - "Pestaña + micro": lo normal para Meet/Teams/YouTube. Clic al icono y
+     "Empezar a grabar": Chrome te pregunta qué compartir. Elige la pestaña de la
+     reunión (sale la primera de la lista) y pulsa "Compartir con audio". El
+     sonido se sigue oyendo tal cual. También vale "Toda la pantalla" con el audio
+     del sistema (Teams de escritorio...). Una ventana suelta no trae sonido.
+   - "Rápido": un clic, sin preguntar; graba la pestaña que suena. Chrome la
+     silencia y Escriba te devuelve su sonido: con el portátil sin enchufar puede
+     oírse con cortes.
    - "Solo micro": reuniones presenciales.
+   - Para parar: el botón de Escriba o "Dejar de compartir" en la barra de Chrome.
    - Al terminar: "Parar y transcribir". La grabación se trocea en tramos de 5 min
      y se transcriben uno a uno: verás el avance ("3/12 tramos"). Una reunión de
      una hora tarda un par de minutos. Al acabar tienes la transcripción en el
@@ -40,11 +46,10 @@ YA ESTÁ. Para grabar una reunión, elige modo:
      Atajos: Alt+Shift+G empieza/para, Alt+Shift+M marca un momento.
    - Si en 2 minutos no entra voz, Escriba te avisa (pestaña equivocada, micro
      silenciado...).
-   - ¿No oyes bien la reunión mientras grabas? Al capturar la pestaña, Chrome la
-     silencia y Escriba te devuelve su sonido. Abre el panel y pulsa "¿No oyes la
-     reunión? Prueba la otra forma": cambia al momento y se recuerda. Si aun así no,
-     mira el volumen de Windows y la salida de sonido (icono del altavoz, abajo a la
-     derecha).
+   - ¿Oyes la reunión con cortes mientras grabas? Solo pasa en "Rápido" (Chrome
+     silencia la pestaña y Escriba te devuelve su sonido). Graba con "Pestaña +
+     micro", que no toca el sonido. En "Rápido" también puedes abrir el panel y
+     pulsar "¿No oyes la reunión? Prueba la otra forma": cambia al momento.
    - Opcional, en Opciones: "Aviso al entrar en una reunión" (Meet, Teams, Zoom
      web, kMeet...) para que no se te olvide grabar, y "Coste estimado" con lo que
      te cobra tu proveedor: la biblioteca te dirá cuánto costó cada reunión.

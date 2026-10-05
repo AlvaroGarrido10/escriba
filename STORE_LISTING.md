@@ -1,4 +1,4 @@
-# Ficha de Chrome Web Store (3.7.0)
+# Ficha de Chrome Web Store (3.8.0)
 
 Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marcado con **(tú)** solo puede hacerlo el titular de la cuenta.
 
@@ -12,7 +12,7 @@ Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marca
 
 ## 1. Paquete
 
-- Fichero: `tienda/Escriba_3.7.0_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
+- Fichero: `tienda/Escriba_3.8.0_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
 - No uses `Escriba_*_para_instalar.zip`: lleva una carpeta dentro y la tienda lo rechaza.
 - Panel: la primera vez, **Nuevo elemento** → subir el zip. Para una versión nueva: el elemento → **Paquete** → **Subir nuevo paquete**, y después **Enviar a revisión**.
 
@@ -29,6 +29,9 @@ Escriba records your meetings in Chrome and gives you the full transcript — an
 
 NO SUBSCRIPTION, NO ACCOUNT
 There are no paid plans and no sign-up. You use your own free Google Gemini API key (and optionally OpenAI or Anthropic for minutes and questions). Your audio goes straight from your browser to the AI you choose — no servers in between.
+
+NO KEY YET? RECORD ANYWAY
+You can record without any API key. Escriba keeps the audio on your computer, sends nothing to anyone and lets you listen to it in the library. Add your Gemini key whenever you like and the meeting is transcribed on its own.
 
 ANY KIND OF MEETING
 • Online (Google Meet, Teams on the web, Zoom on the web…): records the tab audio and your microphone together.
@@ -60,6 +63,9 @@ Escriba graba tus reuniones desde Chrome y te da la transcripción completa — 
 
 SIN SUSCRIPCIÓN NI CUENTA
 No hay planes de pago ni registro. Usas tu propia clave gratuita de Google Gemini (y, si quieres, OpenAI o Anthropic para actas y preguntas). Tu audio va directo de tu navegador a la IA que tú eliges, sin servidores intermedios.
+
+¿AÚN SIN CLAVE? GRABA IGUAL
+Puedes grabar sin ninguna clave de API. Escriba guarda el audio en tu equipo, no envía nada a nadie y te deja escucharlo desde la biblioteca. Pon tu clave de Gemini cuando quieras y la reunión se transcribe sola.
 
 PARA TODO TIPO DE REUNIONES
 • Online (Google Meet, Teams web, Zoom web…): graba el audio de la pestaña y tu micrófono a la vez.
@@ -115,13 +121,13 @@ Record meetings in Chrome (tab audio and/or microphone) and transcribe and summa
 | `tabCapture` | Captures the audio of the meeting tab only when the user clicks Record (icon or keyboard shortcut) in the one-click «Quick» mode. Core feature. The default mode uses Chrome's own «Choose what to share» dialog (getDisplayMedia), which needs no manifest permission; only the audio is used and the picture is discarded at once. |
 | `activeTab` | Identifies the tab the user is on when they start recording, so the right tab is captured and its title is shown. |
 | `offscreen` | Recording runs in an offscreen document so it keeps going when the popup closes. Chrome requires one to use MediaRecorder from an extension. |
-| `downloads` | Saves the transcript (.md) and, when a segment fails, its backup audio to the user's Downloads/reuniones folder. |
+| `downloads` | Saves the transcript (.md) and, when a segment fails or the user records without an API key, its backup audio to the user's Downloads/reuniones folder. |
 | `storage` | Saves the settings (the user's own API keys, glossary, language) and the local meeting history. |
 | `unlimitedStorage` | Keeps the audio of segments not yet transcribed (and, if the user turns it on, the audio to listen back) in the extension's local IndexedDB, so long meetings are not lost. |
 | `alarms` | Retries automatically, after a few minutes, a transcription that failed because the AI service was busy or the network was down. |
 | `notifications` | Warns the user if no voice has come in for two minutes while recording and, only if the user turns it on, reminds them to record when they join a meeting. |
 | `sidePanel` | The «Live» side panel, which the user opens to see the incoming text, the audio levels and take notes. |
-| Permisos de host (`generativelanguage.googleapis.com`, `api.openai.com`, `api.anthropic.com`) | Direct calls to the AI APIs with the user's own keys, to transcribe and to create minutes. No other hosts. |
+| Permisos de host (`generativelanguage.googleapis.com`, `api.openai.com`, `api.anthropic.com`) | Direct calls to the AI APIs with the user's own keys, to transcribe and to create minutes. No other host is granted at install. |
 | Permisos de host opcionales (Meet, Teams, Zoom, kMeet, Jitsi) | Only if the user turns on «Alert when you join a meeting». They are requested at that moment and removed when it is turned off. Only the tab address is checked; page content is never read. |
 
 **Código remoto:** No, no uso código remoto. Todo el JavaScript va en el paquete.

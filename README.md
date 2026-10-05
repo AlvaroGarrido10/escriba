@@ -7,7 +7,7 @@
 
 ![Escriba grabando una reunión](https://alvarogarrido10.github.io/escriba/img/es_1_grabar.png)
 
-Extensión de Chrome (Manifest V3) que graba reuniones y las transcribe con IA. Sin servidor, sin cuenta y sin suscripción: cada usuario pone su propia clave de API (BYOK) y el audio va de su navegador al modelo, sin intermediarios.
+Extensión de Chrome (Manifest V3) que graba reuniones y las transcribe con IA. Sin servidor, sin cuenta y sin suscripción: cada usuario pone su propia clave de API (BYOK) y el audio va de su navegador al modelo, sin intermediarios. Y sin clave también graba: guarda el audio en tu equipo y lo transcribe el día que pongas la clave.
 
 - **Reuniones online** (Meet, Teams web…): graba el audio de la pestaña **y** el micrófono a la vez.
 - **Reuniones presenciales**: graba solo con el micrófono.
@@ -25,6 +25,7 @@ Extensión de Chrome (Manifest V3) que graba reuniones y las transcribe con IA. 
 - **La transcripción, en el propio panel** (3.5.2): la última sale abierta con «Copiar»; las anteriores se abren con un clic. La biblioteca sigue a un clic.
 - **Interfaz nueva** (3.6): modo oscuro (automático, claro u oscuro), iconos propios en lugar de emojis, un popup que enseña solo lo que toca en cada momento (y los niveles de audio mientras grabas), la transcripción agrupada por quién habla, Opciones por apartados y todas las pantallas adaptadas a ventanas estrechas. Contraste WCAG AA comprobado por la suite.
 - **La reunión se oye tal cual mientras grabas** (3.7): tres formas de grabar. «Pestaña + micro» (la de fábrica) abre la ventana de Chrome de elegir qué compartir y no toca el sonido: lo que oyes es el original, en cualquier equipo, y sirve también para toda la pantalla con el audio del sistema. «Rápido» graba con un clic la pestaña que suena; ahí Chrome la silencia y Escriba te devuelve su sonido con un reproductor propio que guarda reserva y rellena lo que se pierde, pero con el portátil sin enchufar Chrome pierde trozos y puede oírse con cortes. «Solo micro», para reuniones presenciales.
+- **Grabar sin clave** (3.8): sin ninguna clave de IA, «Grabar sin transcribir» graba igual. El audio se queda en tu equipo (con copia en `Descargas\reuniones\audio_<fecha>\`) y no se envía nada a nadie; la reunión sale como «sin transcribir», se escucha desde la biblioteca y, en cuanto guardas una clave que transcriba (hoy, la de Gemini), se transcribe sola. Además, las claves de OpenAI y Anthropic pasan en Opciones al apartado «Claves de IA», cada una en su tarjeta, y se comprueban al pulsar «Guardar»; la biblioteca avisa si el modelo cortó un acta por longitud; y una cuenta sin saldo se dice tal cual, en vez de reintentar en balde.
 - Idioma configurable, incluida la detección automática para reuniones que mezclan idiomas.
 
 ## Cómo está construido
@@ -40,6 +41,9 @@ reuniones.js┘  historial (única vía de escritura),  │
                                                          y audio conservado para escuchar
 ia.js       plantillas, Gemini/GPT/Claude, preguntas (lo usan la biblioteca y el offscreen)
 exportar.js Word (.docx sin librerías), SRT, texto y HTML seguro
+proveedores.js (3.8)
+            registro de las IA: quién transcribe y quién redacta, con qué clave, dirección
+            y modelos, y un interruptor por capacidad. Lo cargan todas las piezas
 ```
 
 Un mismo motor (`transcribirReunion`) transcribe los tramos pendientes de una reunión, venga de una grabación, de un reintento o de un archivo importado.
@@ -72,6 +76,10 @@ Al arrancar Chrome, una reunión que se quedó en «grabando» se transcribe con
 - **Word de verdad sin librerías.** Un .docx es un zip de cinco XML. Se escribe sin comprimir (método «store») con un CRC32 propio. La suite lo vuelve a leer y lo valida.
 - **Todo lo que viene del modelo se escapa** antes de pintarse: un acta o una respuesta con `<script>` se ve como texto.
 
+**6. Solo se enseña lo probado con una clave real (3.8).** Hasta la 3.7 los proveedores eran tres nombres escritos a mano en cada fichero, y sin clave de Gemini el panel ni enseñaba el botón de grabar. Ahora hay un registro (`proveedores.js`) del que salen las tarjetas de Opciones, los desplegables y la elección de quién transcribe y quién redacta. Cada capacidad de cada proveedor lleva un interruptor (`voz.activo`, `chat.activo`), porque sin una clave de verdad no se puede garantizar que una API acepte el audio que manda Chrome ni medir cómo transcribe. Una capacidad apagada no existe para el usuario: no sale en ninguna pantalla, no se le pide permiso ni se le envía nada. Encendido está lo que ya funcionaba: Gemini para transcribir y redactar, y OpenAI y Anthropic para actas y preguntas, cuyas peticiones salen idénticas a las de la 3.7 (lo fija un test). Lo demás que trae el registro sigue apagado hasta que alguien lo pruebe de punta a punta: cómo se enciende está en [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Grabar sin clave no es otro camino.** Es el de «falta la clave» de la 3.1, que ya guardaba el audio y esperaba: los tramos quedan pendientes con `sin_clave` y se transcriben solos al guardar una. Lo que cambia es que deja de sonar a fallo (textos, color e icono) y que el reproductor de la biblioteca toca también el audio pendiente.
+- **Sin saldo no es «vas muy deprisa».** OpenAI y Anthropic usan el mismo 429 para las dos cosas. Se distinguen leyendo el cuerpo del error, y lo primero no se reintenta: esperar no lo arregla.
+
 ## Validación
 
 Los tests corren en Node contra un navegador simulado: se carga el código real de la extensión con `vm.runInContext` y se le inyectan stubs de `chrome`, `MediaRecorder`, `AudioContext` y `fetch`. Sin build, sin dependencias.
@@ -80,7 +88,7 @@ Los tests corren en Node contra un navegador simulado: se carga el código real 
 npm test
 ```
 
-Cubren el ciclo de grabación y troceado, la cola de escritura del historial, la política de reintentos y modelos de reserva, la clasificación de silencio, la migración de claves de `sync` a `local` y, desde la 3.1, el motor completo con el *service worker* y el offscreen hablándose: reintentos programados, espera de clave, recuperación de grabaciones cortadas, limpieza de audio huérfano y el markdown que se rehace al completar un hueco. Desde la 3.2 – 3.4, además: marcas de tiempo, hablantes, Word/SRT/HTML, plantillas y las tres APIs de IA, acta automática, transcripción en vivo, pausa con reloj simulado, marcadores, aviso de silencio, atajo y audio conservado (103 casos).
+Cubren el ciclo de grabación y troceado, la cola de escritura del historial, la política de reintentos y modelos de reserva, la clasificación de silencio, la migración de claves de `sync` a `local` y, desde la 3.1, el motor completo con el *service worker* y el offscreen hablándose: reintentos programados, espera de clave, recuperación de grabaciones cortadas, limpieza de audio huérfano y el markdown que se rehace al completar un hueco. Desde la 3.2 – 3.4, además: marcas de tiempo, hablantes, Word/SRT/HTML, plantillas y las tres APIs de IA, acta automática, transcripción en vivo, pausa con reloj simulado, marcadores, aviso de silencio, atajo y audio conservado (103 casos). Desde la 3.8: el registro y sus interruptores (lo apagado se enciende solo dentro del test, con respuestas simuladas), que las peticiones de acta salgan idénticas a las de la 3.7.0, que todo host al que se llama esté en el manifest, y grabar sin clave de punta a punta, hasta que se transcribe sola al guardar una (274 casos en total, con lo que salió de la revisión: nada sin transcribir ni recién transcrito se borra solo, la clave que llega al cerrar una ronda y quitar la clave).
 
 Pruebas de extremo a extremo en Chromium real con la extensión cargada y Gemini de verdad (3.1):
 
@@ -123,7 +131,10 @@ Pruebas en pantalla de la 3.2 – 3.4 (30/09/2026), en Chromium con la extensió
    - Pega la clave. Se valida sola y se pone en verde.
    - Pulsa **Permitir micrófono** y acepta. *(Un documento offscreen no puede pedir el permiso de micrófono por sí mismo; hay que concederlo desde esta página.)*
 3. Opcional: rellena el **glosario** con nombres propios y jerga de tu dominio, para que el modelo respete la ortografía exacta. Viene vacío.
-4. Opcional: claves de OpenAI y Anthropic, si quieres analizar con GPT o Claude además de con Gemini.
+4. Opcional: en **Claves de IA**, las de OpenAI y Anthropic, si quieres sacar actas y hacer preguntas con GPT o Claude además de con Gemini. Cada una se comprueba y se guarda con su botón «Guardar».
+5. Para dejar de usar la clave de Gemini: **Quitar la clave de este equipo**, debajo de su campo. Sin clave, Escriba sigue grabando y guarda el audio.
+
+¿Sin clave? Sáltate el paso 1: en el panel, **Grabar sin transcribir**. Escriba guarda el audio y lo transcribe cuando pongas la de Gemini.
 
 ## Uso
 
@@ -131,7 +142,7 @@ Pruebas en pantalla de la 3.2 – 3.4 (30/09/2026), en Chromium con la extensió
 2. **Empezar a grabar.** Puedes cerrar el popup: el badge REC indica que sigue grabando.
    Opcional: escribe los **participantes** («Marcos, Ana»); ayudan a poner nombre a cada voz y al acta.
 3. Mientras grabas, el popup enseña el reloj y el nivel de cada fuente. **Pausar**, **Marcar** un momento (o Alt+Shift+M) y **En vivo** para abrir el panel lateral con el texto que va llegando, los niveles y tus notas.
-4. **Parar y transcribir** (o Alt+Shift+G). Como los tramos se transcriben mientras grabas, al parar solo falta el último.
+4. **Parar y transcribir** (o Alt+Shift+G). Como los tramos se transcriben mientras grabas, al parar solo falta el último. Sin clave, el botón dice **Parar y guardar**.
 5. La reunión se abre en la **biblioteca** («Reuniones»): léela, pon nombre a cada voz, exporta a Word o PDF, saca el acta con la plantilla que quieras o pregúntale lo que necesites.
 
 Para un audio que ya tienes: **Transcribir un archivo** en el panel, arrástralo y pulsa Transcribir. Varios archivos a la vez se tratan como partes seguidas de la misma reunión.
@@ -139,9 +150,10 @@ Para un audio que ya tienes: **Transcribir un archivo** en el panel, arrástralo
 ## Preguntas rápidas
 
 - **¿Cuánto cuesta?** Nada por la extensión. La capa gratuita de Gemini cubre reuniones diarias de sobra.
-- **¿Dónde va mi audio?** De tu Chrome a la API del proveedor cuya clave hayas puesto. No hay servidor intermedio: no existe backend que pueda verlo. Ver [PRIVACY.md](PRIVACY.md).
+- **¿Puedo grabar sin clave?** Sí: «Grabar sin transcribir». El audio se queda en tu equipo, lo escuchas desde la biblioteca y, cuando guardes la clave de Gemini, la reunión se transcribe sola.
+- **¿Dónde va mi audio?** De tu Chrome a la API de Gemini, con tu clave, para transcribirlo. A OpenAI y a Anthropic solo les llega el texto, cuando les pides un acta o una pregunta. Sin clave, a ningún sitio. No hay servidor intermedio: no existe backend que pueda verlo. Ver [PRIVACY.md](PRIVACY.md).
 - **¿Se corta si cambio de pestaña?** No. La grabación vive en el documento offscreen.
-- **¿Se guarda el audio?** Solo el de lo pendiente de transcribir, salvo que actives «Conservar el audio» en Opciones para poder escucharlo desde la biblioteca. Siempre en tu navegador, y se borra con la reunión.
+- **¿Se guarda el audio?** En tu navegador, solo el de lo pendiente de transcribir (si grabas sin clave, todo lo es hasta que pongas una), salvo que actives «Conservar el audio» en Opciones para poder escucharlo desde la biblioteca; se borra con la reunión. De lo que queda pendiente al terminar hay además una copia en `Descargas/reuniones/audio_<fecha>/`, que sigue ahí después de transcribirse: se va al borrar la reunión con su audio de respaldo o cuando la limpieza automática se lleva la reunión.
 - **¿Por qué me avisa de que no oye nada?** Si en dos minutos no entra voz por ninguna fuente, Escriba avisa: suele ser la pestaña equivocada o el micro silenciado. Se quita en cuanto vuelve la voz.
 - **La transcripción falló.** No hagas nada: la reunión sale como «incompleta» en el historial, dice por qué y cuándo lo reintentará. Si el problema era la clave, se reintenta al guardar una nueva. También tienes «🔄 Reintentar ahora», y una copia del audio en `Descargas/reuniones/audio_<fecha>/`.
 

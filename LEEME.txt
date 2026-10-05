@@ -15,6 +15,8 @@ ESCRIBA — instalar en 2 minutos
    - Consigue tu clave GRATIS en https://aistudio.google.com/apikey
      ("Create API key" -> copiar) y pégala. Se valida sola (se pone en verde).
    - Pulsa "Permitir micrófono" y acepta.
+   - ¿No quieres poner clave todavía? Puedes grabar igual: mira "SIN CLAVE", más
+     abajo.
 
 YA ESTÁ. Para grabar una reunión, elige cómo:
    - "Pestaña + micro": lo normal para Meet/Teams/YouTube. Clic al icono y
@@ -56,6 +58,16 @@ YA ESTÁ. Para grabar una reunión, elige cómo:
      Con "Cargar precios de referencia" se rellenan solos con los precios de
      lista (compruébalos: cambian cada pocos meses).
 
+SIN CLAVE (desde la 3.8)
+   - Si no has puesto ninguna clave, el panel te ofrece "Grabar sin transcribir".
+     Se graba igual que siempre; al terminar, el botón dice "Parar y guardar".
+   - El audio se queda en tu equipo: dentro de Escriba y, además, una copia en
+     Descargas/reuniones/audio_<fecha>. No se envía nada a nadie.
+   - La reunión sale como "sin transcribir". Ábrela en la biblioteca y pulsa
+     "Escuchar" para oírla.
+   - El día que pongas en Opciones la clave del paso 3 (la gratuita de Google),
+     se transcribe sola.
+
 EN EL PROPIO PANEL
    - La última transcripción sale ya abierta, con "Copiar": la copias sin ir a
      ningún sitio. Las anteriores se abren pulsando en ellas.
@@ -68,6 +80,10 @@ BIBLIOTECA ("Reuniones" arriba en el panel, o "Abrir" en cada reunión)
    - Exportar: Word, PDF, texto o subtítulos.
    - "Acta y resúmenes": acta completa, resumen breve, tareas y responsables,
      correo de seguimiento o tu propia plantilla, con Gemini, GPT o Claude.
+     Para dejar de usar la clave de Gemini: Opciones > Empezar > "Quitar la
+     clave de este equipo". Sin clave, Escriba sigue grabando y guarda el audio.
+     Las claves de GPT (OpenAI) y de Claude (Anthropic) son opcionales y se
+     ponen en Opciones > "Claves de IA", cada una con su botón "Guardar".
    - "Preguntar": pregúntale lo que quieras a la reunión.
    - Si en Opciones activas "Conservar el audio", pulsas una frase y la oyes.
 
@@ -76,13 +92,17 @@ archivo (mp3, m4a, wav, webm, mp4...) y listo. Si eliges varios, se tratan como
 partes seguidas de la misma reunión.
 
 Cada persona usa su propia clave (gratis). Tu audio va solo a Google, no hay servidores
-por medio.
+por medio. Si grabas sin clave, no va a ningún sitio: se queda en tu equipo.
 
 LIMPIEZA
    - En Opciones eliges cuántas transcripciones conservar (por defecto las 10
      últimas). Al terminar cada reunión, las más viejas se borran solas, tanto del
-     historial como de Descargas/reuniones. También puedes decir "guardarlas todas".
-     Una reunión incompleta nunca se borra sola: espera a que se complete.
+     historial como de Descargas/reuniones. También puedes decir "guardarlas todas"
+     (se guardan hasta 100; a partir de ahí, las más viejas ya terminadas se borran).
+     Una reunión incompleta nunca se borra sola: espera a que se complete. Una
+     grabada sin clave tampoco: espera a que pongas la clave. Y las que se
+     transcriben con retraso (porque esperaban la clave) se conservan una semana
+     antes de contar para el límite, para que te dé tiempo a leerlas.
    - En el panel: "⋯" > "Borrar" en cada reunión, o la papelera de abajo para
      borrarlas todas.
      Siempre pregunta antes, y si esa reunión tenía audio de respaldo guardado te

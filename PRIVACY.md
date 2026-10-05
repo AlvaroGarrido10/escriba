@@ -1,6 +1,6 @@
 # Política de privacidad — Escriba
 
-**Última actualización: 05/10/2026 (versión 3.8.0)**
+**Última actualización: 05/10/2026 (versión 3.8.1)**
 
 Escriba es una extensión de Chrome que graba reuniones y las transcribe/analiza usando servicios de IA con las claves API del propio usuario. También graba sin ninguna clave: entonces guarda el audio en tu equipo y no envía nada a nadie.
 

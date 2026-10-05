@@ -121,10 +121,12 @@ function textoDe(h) {
 function pildora(h, siempre) {
   // Grabada sin clave (3.8): ni «incompleta» ni en ámbar. Está guardada.
   if (sinTranscribir(h)) return `<span class="pildora">${escT(t("bib.estado_sin_transcribir"))}</span>`;
+  // Sin con quién transcribir, lo que se está haciendo al cerrar es guardar el audio (3.8.1).
+  const enCurso = proveedorVoz(cfg || {}) ? t("bib.estado_transcribiendo", h.progreso || "") : t("bib.estado_guardando");
   const b = {
     ok: ["ok", t("bib.estado_ok")], error: ["err", t("bib.estado_error")],
     pendiente: ["pend", t("bib.estado_pendiente")], grabando: ["rec", t("bib.estado_grabando")],
-  }[h.estado] || ["proc", t("bib.estado_transcribiendo", h.progreso || "")];
+  }[h.estado] || ["proc", enCurso];
   if (h.estado === "ok" && !siempre) return "";
   const punto = b[0] === "rec" || b[0] === "proc" ? '<span class="punto"></span>' : "";
   return `<span class="pildora ${b[0]}">${punto}${escT(b[1])}</span>`;
@@ -387,7 +389,7 @@ function pintaAviso() {
   } else if (h.estado === "grabando") {
     ponAviso(a, "error", escT(t("bib.aviso_grabando")), "grabar");
   } else if (h.estado === "transcribiendo") {
-    ponAviso(a, "", escT(t("bib.aviso_transcribiendo", h.progreso || "")), "reloj");
+    ponAviso(a, "", escT(proveedorVoz(cfg || {}) ? t("bib.aviso_transcribiendo", h.progreso || "") : t("bib.aviso_guardando")), "reloj");
   } else if (h.errorActa) {
     ponAviso(a, "atencion", escT(t("bib.aviso_error_acta", h.errorActa)));
   }

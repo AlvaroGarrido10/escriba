@@ -1,4 +1,4 @@
-# Ficha de Chrome Web Store (3.8.0)
+# Ficha de Chrome Web Store (3.8.1)
 
 Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marcado con **(tú)** solo puede hacerlo el titular de la cuenta.
 
@@ -12,7 +12,7 @@ Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marca
 
 ## 1. Paquete
 
-- Fichero: `tienda/Escriba_3.8.0_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
+- Fichero: `tienda/Escriba_3.8.1_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
 - No uses `Escriba_*_para_instalar.zip`: lleva una carpeta dentro y la tienda lo rechaza.
 - Panel: la primera vez, **Nuevo elemento** → subir el zip. Para una versión nueva: el elemento → **Paquete** → **Subir nuevo paquete**, y después **Enviar a revisión**.
 

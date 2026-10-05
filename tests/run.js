@@ -4419,7 +4419,7 @@ test("popup.js, importar.js y el panel en vivo no miran la clave de Gemini: preg
   assert.match(popup, /if \(!puedeGrabar\(cfg, grabando\)\)/, "la puerta");
   assert.doesNotMatch(popup, /\bfetch\(/, "la conexión del Diagnóstico se prueba con listarModelos (config.js), sin direcciones escritas");
   assert.match(popup, /await listarModelos\(prov, clave\)/);
-  assert.match(leeExt("importar.js"), /\$\("avisoClave"\)\.hidden = !!proveedorVoz\(/);
+  assert.match(leeExt("importar.js"), /sinVoz = !proveedorVoz\(await leerConfig\(\)\);\s+\$\("avisoClave"\)\.hidden = !sinVoz;/, "el aviso de importar sale de lo que diga el registro");
   assert.match(leeExt("vivo.js"), /!proveedorVoz\(cfg\)/);
   // Y ninguna de esas páginas trae escrito el nombre de una IA.
   for (const f of ["popup.html", "importar.html", "vivo.html", "reuniones.html"]) assert.doesNotMatch(leeExt(f), /Gemini|Google|OpenAI|Anthropic|Claude|GPT/, f);
@@ -4835,6 +4835,17 @@ test("biblioteca: un aviso con negrita o enlace no se parte en columnas, y borra
   assert.match(leeExt("reuniones.js"), /if \(!actual\) paraAudio\(\);/);
   assert.match(leeExt("options.css"), /\.tarjeta\.prov \{/, "la tarjeta, no la celda «.prov» de la rejilla de precios");
   assert.ok(!/^\.prov \{/m.test(leeExt("options.css")));
+});
+
+test("3.8.1: sin clave, mientras se guarda el audio no se dice «Transcribiendo…» en la biblioteca ni al importar", () => {
+  const bib = leeExt("reuniones.js"), imp = leeExt("importar.js");
+  assert.match(bib, /proveedorVoz\(cfg \|\| \{\}\) \? t\("bib\.estado_transcribiendo", h\.progreso \|\| ""\) : t\("bib\.estado_guardando"\)/, "la etiqueta de la lista");
+  assert.match(bib, /proveedorVoz\(cfg \|\| \{\}\) \? t\("bib\.aviso_transcribiendo", h\.progreso \|\| ""\) : t\("bib\.aviso_guardando"\)/, "el aviso de la reunión abierta");
+  assert.match(imp, /sinVoz = !proveedorVoz\(await leerConfig\(\)\);/, "se mira si hay con quién transcribir");
+  assert.match(imp, /await miraVoz\(\);\s+pintaProgreso\(sinVoz \? t\("imp\.guardando"\) : t\("imp\.transcribiendo"\), 0\);/, "al empezar a importar");
+  assert.match(imp, /if \(sinVoz\) pintaProgreso\(t\("imp\.guardando"\), 0\);/, "y mientras dura");
+  assert.match(imp, /if \(!cambios\.historial\) \{ miraVoz\(\); return; \}/, "y se vuelve a mirar si cambian las claves");
+  for (const idioma of ["es", "en"]) for (const k of ["bib.estado_guardando", "bib.aviso_guardando", "imp.guardando"]) assert.ok(i18n.TEXTOS[idioma][k], idioma + ": " + k);
 });
 
 // ============================================================================

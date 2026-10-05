@@ -83,7 +83,9 @@ $("btnTranscribir").onclick = async () => {
       },
     });
     if (!r || !r.ok) throw new Error((r && r.error) || t("imp.noGuardado"));
-    pintaProgreso(t("imp.transcribiendo"), 0);
+    // Sin con quién transcribir no se transcribe nada: se guarda el audio (3.8.1).
+    await miraVoz();
+    pintaProgreso(sinVoz ? t("imp.guardando") : t("imp.transcribiendo"), 0);
     await chrome.runtime.sendMessage({ target: "bg", cmd: "transcribir", id });
   } catch (e) {
     // Lo guardado a medias no sirve de nada sin su entrada en el historial.
@@ -155,13 +157,24 @@ function aMono(audio) {
 }
 
 // --- seguimiento --------------------------------------------------------------
+// Sin con quién transcribir (proveedores.js) se importa igual: se avisa de que el
+// audio se queda guardado hasta que haya una clave, y mientras se guarda no se
+// dice «Transcribiendo…».
+let sinVoz = false;
+async function miraVoz() {
+  sinVoz = !proveedorVoz(await leerConfig());
+  $("avisoClave").hidden = !sinVoz;
+}
 chrome.storage.onChanged.addListener((cambios, area) => {
-  if (area !== "local" || !cambios.historial || !idActual) return;
+  // Una clave puesta o quitada con esta página abierta cambia lo que se está haciendo.
+  if (!cambios.historial) { miraVoz(); return; }
+  if (area !== "local" || !idActual) return;
   const h = (cambios.historial.newValue || []).find((x) => x.id === idActual);
   if (!h) return;
   if (h.estado === "transcribiendo") {
     const r = resumenTramos(h.tramos);
-    pintaProgreso(t("imp.transcribiendoTramos", r.total - r.pendientes, r.total), r.total ? (r.total - r.pendientes) / r.total : 0);
+    if (sinVoz) pintaProgreso(t("imp.guardando"), 0);
+    else pintaProgreso(t("imp.transcribiendoTramos", r.total - r.pendientes, r.total), r.total ? (r.total - r.pendientes) / r.total : 0);
   } else if (["ok", "pendiente", "error"].includes(h.estado) && h.transcript) {
     muestraResultado(h);
   }
@@ -228,7 +241,5 @@ $("btnNuevo").onclick = () => {
 (async () => {
   // Antes de nada: el idioma elegido en Opciones (traduce el HTML).
   await cargarIdiomaUI();
-  // Sin con quién transcribir (proveedores.js) se importa igual: se avisa de que
-  // el audio se queda guardado hasta que haya una clave.
-  $("avisoClave").hidden = !!proveedorVoz(await leerConfig());
+  await miraVoz();
 })();

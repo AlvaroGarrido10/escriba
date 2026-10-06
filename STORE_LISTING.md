@@ -97,10 +97,10 @@ En `tienda/`, una serie por idioma (`en_*` para la ficha en inglés, `es_*` para
 | Campo | Fichero |
 |---|---|
 | Icono de la tienda (128×128) | `icon128.png`, en la raíz del repo |
-| Capturas (1280×800, de 1 a 5) | `*_1_grabar.png`, `*_2_transcripcion.png`, `*_3_acta.png`, `*_4_preguntar.png`, `*_5_oscuro.png` |
+| Capturas (1280×800, de 1 a 5) | `*_1_grabar.png`, `*_2_transcripcion.png`, `*_3_acta.png`, `*_4_preguntar.png` (en modo oscuro), `*_5_sin_clave.png` |
 | Mosaico promocional pequeño (440×280) | `*_mosaico_440x280.png` |
 
-Las capturas son de la extensión real (3.6.1) con datos de ejemplo. Las saca `tienda.js` (scratchpad de la sesión del 02/10).
+Las capturas son de la extensión real (3.8.1) con datos de ejemplo, sacadas el 06/10/2026 en un Chromium sin ventana y sin red. En el panel, las `en_*` son las capturas globales (las ven también el catalán y el euskera, que no tienen propias) y las `es_*` son las localizadas del español. El mosaico no cambia.
 
 ### Enlaces
 

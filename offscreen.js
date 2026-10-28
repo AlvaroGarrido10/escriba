@@ -712,13 +712,15 @@ function tramoCerrado(id, idx, entrada, medida) {
   }).catch((e) => console.warn("Escriba: transcripción en vivo", e));
 }
 
+// Sin pestaña (Solo micro), el título sale de los participantes: «Reunión» a
+// secas no dice nada en una lista de veinte.
+const tituloSinPestana = () => (participantes ? t("off.reunionCon", participantes) : t("off.reunionPresencial"));
+
 function entradaNueva() {
   const f = fechaBonita(reunionActual);
   return {
-    // Sin pestaña (Solo micro), el título sale de los participantes: «Reunión» a
-    // secas no dice nada en una lista de veinte.
     id: reunionActual, fecha: f.legible, origen: "grabacion",
-    titulo: tabTitle || (participantes ? t("off.reunionCon", participantes) : t("off.reunionPresencial")),
+    titulo: tabTitle || tituloSinPestana(),
     estado: "grabando", progreso: "", transcript: "", analisis: {}, tramos: [], meta: { fichero: f.fichero },
     participantes,
   };
@@ -782,6 +784,10 @@ async function cierraGrabacion() {
   if (avisadoSilencio) { avisadoSilencio = false; aBg("silencio", { hay: false }).catch(() => {}); }
   medidores.forEach((m) => clearInterval(m.timer));
   const audio = informeAudio();
+  // La pestaña no mandó nada en toda la grabación: lo grabado salió del micro, y
+  // el título de esa pestaña como origen engaña (26/10: una llamada grabada con
+  // el micro y el correo delante quedó como «Correo»).
+  const pestanaMuda = medidores.some((m) => m.nombre === "pestaña" && m.pico < PICO_SILENCIO);
   streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
   // Para el diagnóstico de «no oigo nada»: con qué forma sonó y cuántas veces se reinició.
   const infoAltavoz = altavoz
@@ -840,8 +846,11 @@ async function cierraGrabacion() {
   }));
   for (let i = 0; i < lista.length; i++) if (lista[i].estado === "mudo" && !hechos[i]) await olvidaAudio(id, i);
   const r = resumenTramos(lista);
+  // Solo si el título sigue siendo el de la pestaña: uno puesto a mano se respeta.
+  const titulo = pestanaMuda && (!existe || existe.titulo === tabTitle) ? tituloSinPestana() : null;
   await histActualizar(id, {
     estado: "transcribiendo", meta, tramos: lista, progreso: t("com.progresoTramos", r.total - r.pendientes, r.total),
+    ...(titulo ? { titulo } : {}),
   });
   return id;
 }

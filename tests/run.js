@@ -1698,6 +1698,70 @@ test("una grabación de «Solo micro» toma el título de los participantes", as
   assert.strictEqual(s2.historial()[0].titulo, "Reunión presencial");
 });
 
+// Cada medidor con un nivel fijo, en el orden en que se crean (la pestaña antes
+// que el micro), y sus lecturas de cada segundo a mano: aquí setInterval no corre.
+function conNiveles(s, niveles) {
+  const AC = s.off.AudioContext;
+  let n = 0;
+  s.off.AudioContext = function (opciones) {
+    const ctx = new AC(opciones);
+    const crea = ctx.createAnalyser;
+    ctx.createAnalyser = () => {
+      const nivel = niveles[n++] || 0;
+      return { ...crea(), getFloatTimeDomainData(b) { b.fill(nivel); } };
+    };
+    return ctx;
+  };
+  const lecturas = [];
+  s.off.setInterval = (fn, ms) => { if (ms === 1000) lecturas.push(fn); return 0; };
+  return () => lecturas.forEach((f) => f());
+}
+
+async function grabaYPara(s, inicio, { antesDeParar } = {}) {
+  await s.off.start(inicio);
+  const id = s.historial()[0].id;
+  if (antesDeParar) await antesDeParar(id);
+  s.off.stop();
+  await hasta(() => s.entrada(id).estado === "ok", "que terminara");
+  return s.entrada(id);
+}
+
+test("REGRESIÓN 26/10: si de la pestaña no llega sonido en toda la grabación, el origen no es su título", async () => {
+  // Una llamada de teléfono grabada con el micro y el correo delante quedó como «Correo».
+  const s = sistemaGrabando({ fetch: fetchPorTramo({ 1: [respGemini("[00:01] Hablante 1: hola")] }) });
+  const lee = conNiveles(s, [0, 0.2]); // pestaña muda, micro con voz
+  const h = await grabaYPara(s, { modo: "orig_mic", tabTitle: "Recibidos - Gmail" }, {
+    antesDeParar: async (id) => {
+      assert.strictEqual(s.entrada(id).titulo, "Recibidos - Gmail", "mientras se graba aún no se sabe");
+      lee(); lee();
+    },
+  });
+  assert.strictEqual(h.titulo, "Reunión presencial", "lo mismo que con «Solo micro»");
+
+  const p = sistemaGrabando({ fetch: fetchPorTramo({ 1: [respGemini("[00:01] Hablante 1: hola")] }) });
+  const leeP = conNiveles(p, [0, 0.2]);
+  const hp = await grabaYPara(p, { modo: "orig_mic", tabTitle: "Recibidos - Gmail", participantes: "Marcos" }, { antesDeParar: async () => leeP() });
+  assert.strictEqual(hp.titulo, "Reunión con Marcos");
+});
+
+test("el título de la pestaña se queda si de ella llegó sonido, o si se cambió a mano mientras se grababa", async () => {
+  const s = sistemaGrabando({ fetch: fetchPorTramo({ 1: [respGemini("[00:01] Hablante 1: hola")] }) });
+  const lee = conNiveles(s, [0.2, 0.2]);
+  const h = await grabaYPara(s, { modo: "orig_mic", tabTitle: "Reunión de equipo - Meet" }, { antesDeParar: async () => lee() });
+  assert.strictEqual(h.titulo, "Reunión de equipo - Meet");
+
+  const m = sistemaGrabando({ fetch: fetchPorTramo({ 1: [respGemini("[00:01] Hablante 1: hola")] }) });
+  const leeM = conNiveles(m, [0, 0.2]);
+  const hm = await grabaYPara(m, { modo: "orig_mic", tabTitle: "Recibidos - Gmail" }, {
+    antesDeParar: async (id) => {
+      leeM();
+      const r = await m.enviar({ target: "bg", cmd: "histEditar", id, cambios: { titulo: "Llamada con Marcos" } });
+      assert.strictEqual(r.ok, true, JSON.stringify(r));
+    },
+  });
+  assert.strictEqual(hm.titulo, "Llamada con Marcos", "lo puesto a mano no se pisa");
+});
+
 // ============================================================================
 // 3.4 — escuchar la reunión (docs/2026-09-30-plan-mejoras.md, tanda C)
 // ============================================================================

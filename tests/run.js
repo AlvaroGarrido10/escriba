@@ -924,6 +924,15 @@ test("codificarWav produce un WAV PCM 16 bits mono válido", () => {
   assert.strictEqual(v.getInt16(44 + 6, true), 32767, "lo que se sale de rango se recorta, no da la vuelta");
 });
 
+test("3.9: un WAV montado por trozos (cabecera + PCM de cada tramo) es igual que el hecho de una vez", () => {
+  // «Descargar el audio» junta los tramos así para no tener una reunión larga entera en memoria.
+  const a = new Float32Array([0, 0.5, -0.25]), b = new Float32Array([1, -1]);
+  const junto = new Float32Array([...a, ...b]);
+  const trozos = [comun.cabeceraWav(junto.length, 24000), comun.pcm16(a).buffer, comun.pcm16(b).buffer];
+  const montado = Buffer.concat(trozos.map((x) => Buffer.from(x)));
+  assert.ok(montado.equals(Buffer.from(comun.codificarWav(junto, 24000))));
+});
+
 // ============================================================================
 // Sistema completo: service worker + documento offscreen hablándose, con el
 // mismo almacén de audio. Es lo que pasa de verdad en Chrome.

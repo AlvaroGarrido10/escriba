@@ -329,6 +329,61 @@ $("quitarAudio").onclick = async () => {
   miraAudio();
 };
 
+// «Descargar el audio» (3.9): la grabación entera en un solo .wav, para quien usa
+// Escriba de grabadora y quiere el fichero. No guarda nada nuevo: lee el audio que
+// ya hay en el navegador. Va tramo a tramo, así una reunión larga no tiene que
+// caber entera en memoria; un tramo sin voz entre dos que sí tienen audio (de ese
+// no se guarda nada) queda como silencio, para que el fichero dure lo que duró la
+// grabación y sus horas coincidan con las de la transcripción.
+const HZ_DESCARGA = 24000; // voz clara a la mitad de tamaño que a 48 kHz: unos 170 MB por hora
+let preparandoAudio = false;
+async function audioEnWav(h, tramos) {
+  const ctx = new AudioContext({ sampleRate: HZ_DESCARGA });
+  const datos = [];
+  let n = 0;
+  try {
+    for (let i = tramos[0]; i <= tramos[tramos.length - 1]; i++) {
+      const blob = tramos.includes(i) ? await audioDe(h.id, i) : null;
+      let pcm;
+      if (blob) {
+        const a = await ctx.decodeAudioData(await blob.arrayBuffer());
+        pcm = pcm16(mezclaMono(a));
+      } else {
+        const tr = h.tramos || [];
+        pcm = new Int16Array(Math.round(Math.max(0, inicioTramo(tr[i + 1], i + 1) - inicioTramo(tr[i], i)) * HZ_DESCARGA));
+      }
+      datos.push(pcm);
+      n += pcm.length;
+    }
+  } finally {
+    ctx.close().catch(() => {});
+  }
+  return new Blob([cabeceraWav(n, HZ_DESCARGA), ...datos], { type: "audio/wav" });
+}
+function mezclaMono(a) {
+  if (a.numberOfChannels === 1) return a.getChannelData(0);
+  const m = new Float32Array(a.length);
+  for (let c = 0; c < a.numberOfChannels; c++) {
+    const d = a.getChannelData(c);
+    for (let i = 0; i < m.length; i++) m[i] += d[i] / a.numberOfChannels;
+  }
+  return m;
+}
+$("descargarAudio").onclick = async () => {
+  if (!actual || preparandoAudio) return;
+  const h = actual, tramos = [...conAudio].sort((a, b) => a - b);
+  if (!tramos.length) { toast(t("bib.audio_no_guardado"), "atencion"); return; }
+  preparandoAudio = true;
+  toast(t("bib.audio_preparando"), "proc");
+  try {
+    descargar(await audioEnWav(h, tramos), "audio/wav", "reunion_" + baseFichero(h) + ".wav");
+  } catch (e) {
+    toast(t("bib.audio_no_descargado", (e && e.message) || String(e)), "error");
+  } finally {
+    preparandoAudio = false;
+  }
+};
+
 // ---------------------------------------------------------------------------------
 // una reunión
 function pintaVista(nueva) {

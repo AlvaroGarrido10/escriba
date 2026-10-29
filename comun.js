@@ -361,19 +361,33 @@ function planificarTramos(archivos) {
 // WAV PCM 16 bits mono. Es el formato que cualquier modelo acepta y no hace
 // falta ningún codificador: la página de importar lo genera sin librerías.
 function codificarWav(muestras, sampleRate) {
-  const n = muestras.length;
-  const buf = new ArrayBuffer(44 + n * 2);
+  const buf = new ArrayBuffer(44 + muestras.length * 2);
+  new Uint8Array(buf).set(new Uint8Array(cabeceraWav(muestras.length, sampleRate)));
+  new Int16Array(buf, 44).set(pcm16(muestras));
+  return buf;
+}
+
+// Los 44 bytes de cabecera de un WAV PCM 16 bits mono de `n` muestras. Aparte,
+// para montar un WAV largo por trozos sin tenerlo entero en un solo búfer.
+function cabeceraWav(n, sampleRate) {
+  const buf = new ArrayBuffer(44);
   const v = new DataView(buf);
   const txt = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
   txt(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); txt(8, "WAVE");
   txt(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
   v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
   txt(36, "data"); v.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) {
-    const s = Math.max(-1, Math.min(1, muestras[i]));
-    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
   return buf;
+}
+
+// Muestras en coma flotante (-1..1) a enteros de 16 bits.
+function pcm16(muestras) {
+  const out = new Int16Array(muestras.length);
+  for (let i = 0; i < muestras.length; i++) {
+    const s = Math.max(-1, Math.min(1, muestras[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return out;
 }
 
 function fechaBonita(ts) {
@@ -496,7 +510,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     DURACION_TRAMO_S, PICO_SILENCIO, UMBRAL_VOZ, abrirAudios, MENSAJES_ERROR, CODIGOS_CLAVE, textoError, resumenTramos, estadoFinal,
     esperanClave, sinTranscribir,
-    etiquetaTramo, construirMarkdown, medirMuestras, trocear, planificarTramos, codificarWav, fechaBonita,
+    etiquetaTramo, construirMarkdown, medirMuestras, trocear, planificarTramos, codificarWav, cabeceraWav, pcm16, fechaBonita,
     formatoTiempo, ajustarTiempos, inicioTramo, lineasTranscripcion, hablantesDe, aplicarHablantes, SIN_HABLANTE, sinEtiqueta, sinMarcaInvisible,
     precioValido, costeReunion, costeMes, formatoEuros, plataformaReunion, fechaVisible, mapaVisible, etiquetaGenerica,
   };

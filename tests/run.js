@@ -4922,6 +4922,162 @@ test("3.8.1: sin clave, mientras se guarda el audio no se dice «Transcribiendo�
 });
 
 // ============================================================================
+// 3.9 — volver a transcribir (docs/2026-10-29-plan-volver-a-transcribir.md)
+// ============================================================================
+grupo("3.9 · volver a transcribir con el audio conservado");
+
+// Una reunión ya transcrita, con nombres, notas y un acta: lo que el usuario ya
+// tiene y no se puede llevar por delante.
+const transcrita = (id, textos, extra = {}) => reunion(id, textos.length, {
+  estado: "ok", hablantes: { "Hablante 1": "Ana" }, notas: "mis notas", analisis: { "acta·gemini": "el acta" },
+  tramos: textos.map((texto, i) => ({ estado: "ok", texto, pico: 0.3, etiqueta: comun.etiquetaTramo(i) })),
+  ...extra,
+});
+const conEscucha = async (s, id, idxs) => { for (const i of idxs) await s.audios.guardarEscucha(id, i, blobDe(null, 1000)); };
+const rondaAcabada = (s, id) => () => {
+  const h = s.entrada(id);
+  return h && h.estado === "ok" && h.tramos.every((tr) => !tr.rehacer);
+};
+
+test("vuelve a mandar el audio conservado y cambia el texto de cada tramo por el nuevo; el audio se queda", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("nuevo uno")], 2: [respGemini("nuevo dos")] });
+  const s = sistema({ local: { historial: [transcrita(130, ["viejo uno", "viejo dos"])] }, sync: { conservarAudio: true }, fetch: f });
+  await conEscucha(s, 130, [0, 1]);
+  const r = await s.enviar({ target: "bg", cmd: "retranscribir", id: 130 });
+  assert.ok(r && r.ok, r && r.error);
+  await hasta(rondaAcabada(s, 130), "que acabara la ronda");
+  const h = s.entrada(130);
+  assert.deepStrictEqual(h.tramos.map((tr) => tr.texto), ["nuevo uno", "nuevo dos"]);
+  assert.match(h.transcript, /nuevo uno[\s\S]*nuevo dos/, "el .md se rehace con el texto nuevo");
+  assert.doesNotMatch(h.transcript, /viejo/);
+  assert.strictEqual(f._llamadas.length, 2);
+  assert.deepStrictEqual((await s.audios.clavesEscucha()).map((k) => k[1]).sort(), [0, 1], "el audio conservado sigue ahí");
+  assert.strictEqual(s.audios._datos.size, 0, "y no deja audio «pendiente» suelto");
+  assert.deepStrictEqual(h.hablantes, { "Hablante 1": "Ana" });
+  assert.strictEqual(h.notas, "mis notas");
+  assert.deepStrictEqual(h.analisis, { "acta·gemini": "el acta" }, "las actas ya pagadas no se tocan");
+  assert.ok(h.tramos.every((tr) => !("rehacer" in tr) && !("errorRehacer" in tr)), "sin marcas sueltas");
+  assert.deepStrictEqual(Object.keys(s.chrome._registro.alarmas), []);
+  await hasta(() => s.chrome._registro.badges.length, "el aviso del icono");
+  assert.strictEqual(s.chrome._registro.badges[s.chrome._registro.badges.length - 1], "✓");
+});
+
+test("si la IA falla al volver a transcribir, el tramo se queda con su texto y se apunta por qué", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("nuevo uno")], 2: saturadoSiempre() });
+  const s = sistema({ local: { historial: [transcrita(131, ["viejo uno", "viejo dos"])] }, fetch: f });
+  await conEscucha(s, 131, [0, 1]);
+  await s.enviar({ target: "bg", cmd: "retranscribir", id: 131 });
+  await hasta(rondaAcabada(s, 131), "que acabara la ronda");
+  const h = s.entrada(131);
+  assert.strictEqual(h.estado, "ok", "no pasa a «pendiente»: no le falta nada");
+  assert.deepStrictEqual(h.tramos.map((tr) => tr.texto), ["nuevo uno", "viejo dos"], "lo que no sale no borra lo que había");
+  assert.strictEqual(h.tramos[1].errorRehacer, "saturado");
+  assert.strictEqual(h.tramos[0].errorRehacer, undefined);
+  assert.match(h.transcript, /viejo dos/);
+  assert.deepStrictEqual(Object.keys(s.chrome._registro.alarmas), [], "no se programan reintentos: el usuario decide si prueba otra vez");
+  assert.strictEqual(s.audios._escucha.size, 2);
+  assert.strictEqual(s.audios._datos.size, 0);
+  assert.ok(!s.chrome._registro.descargas.some((d) => /audio_/.test(d.filename)), "no hay copia de seguridad que hacer: el audio no corre peligro");
+  await hasta(() => s.chrome._registro.badges.length, "el aviso del icono");
+  assert.strictEqual(s.chrome._registro.badges[s.chrome._registro.badges.length - 1], "!", "el icono no dice «lista» si no ha salido");
+});
+
+test("si esta vez la IA no oye voz, tampoco se borra el texto", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("SIN_VOZ")] });
+  const s = sistema({ local: { historial: [transcrita(132, ["lo que se dijo"])] }, fetch: f });
+  await conEscucha(s, 132, [0]);
+  await s.enviar({ target: "bg", cmd: "retranscribir", id: 132 });
+  await hasta(rondaAcabada(s, 132), "que acabara la ronda");
+  const tr = s.entrada(132).tramos[0];
+  assert.strictEqual(tr.estado, "ok");
+  assert.strictEqual(tr.texto, "lo que se dijo");
+  assert.strictEqual(tr.errorRehacer, "sin_voz");
+});
+
+test("solo se rehacen los tramos que tienen audio conservado; los demás no se tocan", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("nuevo uno")], 3: [respGemini("nuevo tres")] });
+  const s = sistema({ local: { historial: [transcrita(133, ["viejo uno", "viejo dos", "viejo tres"])] }, fetch: f });
+  await conEscucha(s, 133, [0, 2]);
+  const r = await s.enviar({ target: "bg", cmd: "retranscribir", id: 133 });
+  assert.strictEqual(r.n, 2, "dice cuántos tramos van a la IA");
+  await hasta(rondaAcabada(s, 133), "que acabara la ronda");
+  assert.deepStrictEqual(s.entrada(133).tramos.map((tr) => tr.texto), ["nuevo uno", "viejo dos", "nuevo tres"]);
+  assert.deepStrictEqual(f._llamadas.map((l) => l.idx).sort(), [1, 3]);
+});
+
+test("un intento fallido anterior se olvida al volver a probar", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("ahora sí")] });
+  const vieja = transcrita(134, ["viejo"]);
+  vieja.tramos[0].errorRehacer = "saturado";
+  const s = sistema({ local: { historial: [vieja] }, fetch: f });
+  await conEscucha(s, 134, [0]);
+  await s.enviar({ target: "bg", cmd: "retranscribir", id: 134 });
+  await hasta(rondaAcabada(s, 134), "que acabara la ronda");
+  const tr = s.entrada(134).tramos[0];
+  assert.strictEqual(tr.texto, "ahora sí");
+  assert.ok(!("errorRehacer" in tr));
+});
+
+test("sin audio conservado, sin clave o con la reunión ocupada no se hace nada, y se dice por qué", async () => {
+  const f = fetchPorTramo({});
+  const casos = [
+    { que: "sin audio", h: transcrita(135, ["texto"]), escucha: [], local: {}, error: "bg.sinAudioConservado" },
+    { que: "sin clave", h: transcrita(136, ["texto"]), escucha: [0], local: { geminiKey: "" }, error: "off.faltaClave" },
+    { que: "transcribiéndose", h: transcrita(137, ["texto"], { estado: "transcribiendo" }), escucha: [0], local: {}, error: "bg.retranscribirOcupada" },
+    { que: "pendiente", h: transcrita(138, ["texto"], { estado: "pendiente" }), escucha: [0], local: {}, error: "bg.retranscribirOcupada" },
+  ];
+  for (const c of casos) {
+    const s = sistema({ local: { historial: [c.h], ...c.local }, fetch: f });
+    await conEscucha(s, c.h.id, c.escucha);
+    const antes = JSON.stringify(s.entrada(c.h.id));
+    const r = await s.enviar({ target: "bg", cmd: "retranscribir", id: c.h.id });
+    assert.strictEqual(r.ok, false, c.que);
+    assert.strictEqual(r.error, i18n.TEXTOS.es[c.error], c.que);
+    for (let i = 0; i < 20; i++) await espera0();
+    assert.strictEqual(JSON.stringify(s.entrada(c.h.id)), antes, c.que + ": el historial no cambia");
+  }
+  assert.strictEqual(f._llamadas.length, 0);
+});
+
+test("si Chrome se cierra a mitad, al volver se termina lo que faltaba sin perder texto", async () => {
+  const f = fetchPorTramo({ 2: [respGemini("nuevo dos")] });
+  // Como queda la entrada si la ronda muere después de rehacer el primer tramo.
+  const cortada = transcrita(139, ["nuevo uno", "viejo dos"], { estado: "transcribiendo" });
+  cortada.tramos[1].rehacer = true;
+  const s = sistema({ local: { historial: [cortada] }, fetch: f });
+  await conEscucha(s, 139, [0, 1]);
+  await s.enviar({ target: "bg", cmd: "revisarPendientes" });
+  await hasta(rondaAcabada(s, 139), "que se terminara la ronda");
+  assert.deepStrictEqual(s.entrada(139).tramos.map((tr) => tr.texto), ["nuevo uno", "nuevo dos"]);
+  assert.strictEqual(f._llamadas.length, 1);
+});
+
+test("biblioteca: «Volver a transcribir» está en «Más acciones», solo con audio conservado, y pregunta antes", () => {
+  const html = leeExt("reuniones.html"), js = leeExt("reuniones.js");
+  assert.match(html, /<div id="menuMas"[\s\S]*id="btnRetranscribir" hidden[^>]*>[\s\S]*?data-i18n="bib\.retranscribir"[\s\S]*id="btnBorrar"/);
+  assert.match(js, /\$\("btnRetranscribir"\)\.hidden = !puedeRetranscribir\(\);/);
+  assert.match(js, /const puedeRetranscribir = \(\) => !!actual && actual\.estado === "ok" && audioConservado;/);
+  assert.match(js, /\$\("btnRetranscribir"\)\.onclick = async \(\) => \{[\s\S]*?await confirmar\(/);
+  assert.match(js, /aBgMsg\("retranscribir", \{ id: h\.id \}\)/);
+  for (const idioma of ["es", "en"]) {
+    for (const k of ["bib.retranscribir", "bib.retranscribir_pregunta_html", "bib.si_retranscribir", "bib.retranscribiendo",
+      "bib.aviso_rehacer_1", "bib.aviso_rehacer_n", "bib.rehacer_clave", "bib.rehacer_luego", "bib.rehacer_sin_audio", "bib.rehacer_sin_voz",
+      "bg.sinAudioConservado", "bg.retranscribirOcupada"]) assert.ok(i18n.TEXTOS[idioma][k], idioma + ": " + k);
+  }
+});
+
+test("biblioteca: el aviso de un intento fallido dice cuántos tramos y qué hacer, sin inventar reintentos", () => {
+  const js = leeExt("reuniones.js");
+  assert.match(js, /else if \(fallosRehacer\(h\)\.length\) \{/);
+  // Los motivos no prometen que Escriba lo reintente sola: aquí no lo hace.
+  for (const idioma of ["es", "en"]) {
+    for (const k of ["bib.aviso_rehacer_1", "bib.aviso_rehacer_n", "bib.rehacer_clave", "bib.rehacer_luego", "bib.rehacer_sin_audio", "bib.rehacer_sin_voz"]) {
+      assert.doesNotMatch(i18n.TEXTOS[idioma][k], /reintentar[áa] sola|retry on its own/i, idioma + ": " + k);
+    }
+  }
+});
+
+// ============================================================================
 (async function main() {
   let ok = 0, fallos = 0;
   for (const c of casos) {

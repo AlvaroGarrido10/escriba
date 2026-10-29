@@ -37,6 +37,8 @@ Qué recibe cada proveedor depende de la clave que hayas guardado:
 
 El uso de las APIs de Google Gemini, OpenAI y Anthropic está sujeto a las políticas de privacidad de esos proveedores. Tú eliges qué proveedor usar y con qué clave.
 
+Ojo con la clave gratuita de Google Gemini. Según los términos de Google (actualizados el 28 de abril de 2026), en el nivel gratuito Google usa lo que se le envía para mejorar sus productos, y lo pueden leer revisores humanos. No pasa con los usuarios de la UE (y el resto del Espacio Económico Europeo), el Reino Unido y Suiza, ni con las claves de un proyecto con la facturación activada. El nivel gratuito tiene además unos límites de uso que pone Google; si se agotan, Escriba guarda el audio y lo vuelve a intentar más tarde.
+
 ## Permisos de la extensión
 
 - Compartir pestaña o pantalla (la ventana de Chrome de «elegir qué compartir»; no es un permiso fijo, lo concedes cada vez): recibir el sonido de la reunión sin silenciarla, solo cuando tú inicias una grabación y eliges qué compartir.

@@ -154,8 +154,9 @@ function grupoDeFecha(h) {
 }
 
 // Pregunta antes de algo irreversible (borrar). Pinta la caja en `donde` y
-// devuelve una promesa: { si: true, casilla: bool } o { si: false }.
-function confirmar(donde, { html, casilla, si, no }) {
+// devuelve una promesa: { si: true, casilla: bool } o { si: false }. El botón del
+// sí es el de borrar salvo que se diga otro (`icono`, `clase`).
+function confirmar(donde, { html, casilla, si, no, icono: ic = "borrar", clase = "btn-peq btn-peligro lleno" }) {
   return new Promise((resolver) => {
     donde.innerHTML = "";
     const caja = document.createElement("div");
@@ -166,7 +167,7 @@ function confirmar(donde, { html, casilla, si, no }) {
     fila.className = "botones";
     const fin = (r) => { donde.innerHTML = ""; donde.hidden = true; resolver(r); };
     fila.append(
-      botonUI({ texto: si, icono: "borrar", clase: "btn-peq btn-peligro lleno", alPulsar: () => {
+      botonUI({ texto: si, icono: ic, clase, alPulsar: () => {
         const cb = caja.querySelector("input[type=checkbox]");
         fin({ si: true, casilla: !!(cb && cb.checked) });
       } }),

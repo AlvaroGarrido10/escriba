@@ -30,6 +30,9 @@ Escriba records your meetings in Chrome and gives you the full transcript — an
 NO SUBSCRIPTION, NO ACCOUNT
 There are no paid plans and no sign-up. You use your own free Google Gemini API key (and optionally OpenAI or Anthropic for minutes and questions). Your audio goes straight from your browser to the AI you choose — no servers in between.
 
+ABOUT THE FREE GOOGLE KEY
+The free Gemini key has usage limits set by Google, which you can check in Google AI Studio; if you run out, Escriba keeps the audio and tries again later. On the free tier, Google may use what you send to improve its products, and human reviewers may read it — except in the EU (and the rest of the European Economic Area), the UK and Switzerland. If that matters to you, use a key from a Google project with billing enabled.
+
 NO KEY YET? RECORD ANYWAY
 You can record without any API key. Escriba keeps the audio on your computer, sends nothing to anyone and lets you listen to it in the library. Add your Gemini key whenever you like and the meeting is transcribed on its own.
 
@@ -45,7 +48,7 @@ NOTHING GETS LOST
 If Google is busy, the network drops or the key fails, the meeting isn't lost: the audio stays in your browser and Escriba retries on its own. If Chrome closes mid-meeting, it recovers what was recorded.
 
 YOUR MEETING LIBRARY
-Search across all your meetings, read each one grouped by speaker with timestamps, name each voice with one click and export to Word, PDF, text or subtitles. Optionally, listen back: click a line and that moment plays.
+Search across all your meetings, read each one grouped by speaker with timestamps, name each voice with one click and export to Word, PDF, text or subtitles. Optionally, listen back: click a line and that moment plays — and if a transcript comes out wrong, transcribe it again from that saved audio.
 
 MINUTES AND QUESTIONS WITH 3 AIs
 Full minutes, short summary, tasks with owner and deadline, a ready-to-send follow-up email or your own template — with Gemini, GPT or Claude. Ask the meeting anything: it answers citing the minute. Minutes can be generated automatically when the transcript is ready.
@@ -64,6 +67,9 @@ Escriba graba tus reuniones desde Chrome y te da la transcripción completa — 
 SIN SUSCRIPCIÓN NI CUENTA
 No hay planes de pago ni registro. Usas tu propia clave gratuita de Google Gemini (y, si quieres, OpenAI o Anthropic para actas y preguntas). Tu audio va directo de tu navegador a la IA que tú eliges, sin servidores intermedios.
 
+SOBRE LA CLAVE GRATUITA DE GOOGLE
+La clave gratuita de Gemini tiene unos límites de uso que pone Google y que puedes consultar en Google AI Studio; si se agotan, Escriba guarda el audio y lo vuelve a intentar más tarde. Con la clave gratuita, Google puede usar lo que le envías para mejorar sus productos, y lo pueden leer revisores humanos, salvo en la UE (y el resto del Espacio Económico Europeo), el Reino Unido y Suiza. Si eso te importa, usa una clave de un proyecto de Google con la facturación activada.
+
 ¿AÚN SIN CLAVE? GRABA IGUAL
 Puedes grabar sin ninguna clave de API. Escriba guarda el audio en tu equipo, no envía nada a nadie y te deja escucharlo desde la biblioteca. Pon tu clave de Gemini cuando quieras y la reunión se transcribe sola.
 
@@ -79,7 +85,7 @@ NO SE PIERDE NADA
 Si Google está saturado, se cae la red o la clave falla, la reunión no se pierde: el audio queda en tu navegador y Escriba lo reintenta sola. Si Chrome se cierra a mitad de reunión, recupera lo grabado.
 
 TU BIBLIOTECA DE REUNIONES
-Busca en todas tus reuniones, lee cada una agrupada por quién habla y con marcas de tiempo, pon nombre a cada voz con un clic y exporta a Word, PDF, texto o subtítulos. Si quieres, escúchala: pulsas una frase y suena ese momento.
+Busca en todas tus reuniones, lee cada una agrupada por quién habla y con marcas de tiempo, pon nombre a cada voz con un clic y exporta a Word, PDF, texto o subtítulos. Si quieres, escúchala: pulsas una frase y suena ese momento. Y si una transcripción sale mal, vuelve a transcribirla con ese audio guardado.
 
 ACTAS Y PREGUNTAS CON 3 IAs
 Acta completa, resumen breve, tareas con responsable y plazo, correo de seguimiento listo para enviar o tu propia plantilla, con Gemini, GPT o Claude. Pregúntale a la reunión lo que quieras: responde citando el minuto. El acta puede generarse sola al terminar.

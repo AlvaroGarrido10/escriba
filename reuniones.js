@@ -23,6 +23,8 @@ let historial = [], actual = null, cfg = {}, filtro = "", actaSel = null, marcaA
 let conAudio = new Set();   // tramos de la reunión abierta que se pueden oír
 let audioConservado = false; // alguno es audio conservado para escuchar, que se puede borrar
 let sonando = null;         // { tramo, inicioS } del audio cargado en el reproductor
+// «Volver a transcribir» (3.9): con texto, y con audio conservado que mandar otra vez.
+const puedeRetranscribir = () => !!actual && actual.estado === "ok" && audioConservado;
 
 const aBgMsg = (cmd, extra = {}) => chrome.runtime.sendMessage({ target: "bg", cmd, ...extra });
 const escT = escapa;
@@ -244,6 +246,7 @@ async function miraAudio() {
   audioConservado = conservado;
   $("reproductor").hidden = !conAudio.size && !sonando;
   $("quitarAudio").hidden = !audioConservado;
+  $("btnRetranscribir").hidden = !puedeRetranscribir();
   if (conAudio.size) pintaRepInfo();
   pintaAviso();
   pintaTexto();
@@ -411,6 +414,7 @@ function pintaVista(nueva) {
   pintaAviso();
   // Lo que espera una clave que sigue sin estar no tiene nada que reintentar.
   $("btnReintentar").hidden = h.estado !== "pendiente" || (sinTranscribir(h) && !proveedorVoz(cfg));
+  $("btnRetranscribir").hidden = !puedeRetranscribir();
   const nActas = Object.keys(h.analisis || {}).length, nChat = (h.chat || []).length;
   $("nActas").hidden = !nActas; $("nActas").textContent = nActas;
   $("nChat").hidden = !nChat; $("nChat").textContent = nChat;
@@ -445,9 +449,23 @@ function pintaAviso() {
     ponAviso(a, "error", escT(t("bib.aviso_grabando")), "grabar");
   } else if (h.estado === "transcribiendo") {
     ponAviso(a, "", escT(proveedorVoz(cfg || {}) ? t("bib.aviso_transcribiendo", h.progreso || "") : t("bib.aviso_guardando")), "reloj");
+  } else if (fallosRehacer(h).length) {
+    const f = fallosRehacer(h);
+    ponAviso(a, "atencion", escT(f.length === 1 ? t("bib.aviso_rehacer_1", motivoRehacer(f)) : t("bib.aviso_rehacer_n", f.length, motivoRehacer(f))), "reintentar");
   } else if (h.errorActa) {
     ponAviso(a, "atencion", escT(t("bib.aviso_error_acta", h.errorActa)));
   }
+}
+
+// Tramos a los que «Volver a transcribir» no les salió (siguen con su texto de
+// antes), y qué puede hacer el usuario. Aquí no hay reintentos automáticos.
+const fallosRehacer = (h) => (h.tramos || []).filter((tr) => tr && tr.errorRehacer);
+function motivoRehacer(fallos) {
+  const c = fallos.map((tr) => tr.errorRehacer);
+  if (c.some((x) => CODIGOS_CLAVE.includes(x))) return t("bib.rehacer_clave");
+  if (c.every((x) => x === "perdido")) return t("bib.rehacer_sin_audio");
+  if (c.every((x) => x === "sin_voz")) return t("bib.rehacer_sin_voz");
+  return t("bib.rehacer_luego");
 }
 
 // --- hablantes ---
@@ -734,6 +752,22 @@ $("btnReintentar").onclick = async () => {
   const r = await aBgMsg("reintentar", { id: actual.id });
   if (r && r.ok) toast(t("bib.reintentando"));
   else toast((r && r.error) || t("bib.no_se_pudo_reintentar"), "error");
+};
+
+// «Volver a transcribir» (3.9): el audio conservado vuelve a la IA y el texto de
+// cada tramo se cambia por el nuevo cuando llega. Se pregunta antes: el texto de
+// ahora se sustituye, y es otra transcripción que hace la IA.
+$("btnRetranscribir").onclick = async () => {
+  const h = actual;
+  if (!h) return;
+  const r = await confirmar($("confirmaBorrar"), {
+    html: t("bib.retranscribir_pregunta_html"), si: t("bib.si_retranscribir"), no: t("bib.cancelar"),
+    icono: "reintentar", clase: "btn-peq btn-primario",
+  });
+  if (!r.si) return;
+  const res = await aBgMsg("retranscribir", { id: h.id });
+  if (res && res.ok) toast(t("bib.retranscribiendo"), "proc");
+  else toast((res && res.error) || t("bib.no_se_pudo_retranscribir"), "error");
 };
 
 // Borrar es irreversible: se pregunta siempre, y el audio de respaldo aparte.

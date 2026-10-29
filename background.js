@@ -188,7 +188,10 @@ async function finRonda(id) {
   if (!g.ok) return g;
   // `sinClave`: grabada sin clave (3.8). No está transcrita, pero tampoco ha
   // fallado nada, y quien avisa del final (offscreen.js) tiene que distinguirlo.
-  return estado === "pendiente" && esperanClave(h.tramos) ? { ok: true, estado, sinClave: true } : { ok: true, estado };
+  if (estado === "pendiente" && esperanClave(h.tramos)) return { ok: true, estado, sinClave: true };
+  // `rehacerFallido`: «Volver a transcribir» (3.9) no sacó algún tramo. La reunión
+  // sigue «ok» con su texto de antes, pero el icono no debe decir que está lista.
+  return h.tramos.some((tr) => tr && tr.errorRehacer) ? { ok: true, estado, rehacerFallido: true } : { ok: true, estado };
 }
 
 // Campos que la biblioteca y el panel en vivo pueden cambiar con «histEditar».
@@ -326,6 +329,35 @@ async function reintentar(id) {
     return guardarHistorial(historial);
   });
   return r.ok ? lanzar(id) : r;
+}
+
+// «Volver a transcribir» (3.9): el audio conservado de una reunión ya transcrita
+// vuelve a la IA. Aquí solo se marcan sus tramos (`rehacer`); la ronda es la de
+// siempre (offscreen.js) y cada tramo guarda su texto hasta que llega el nuevo.
+// Solo una reunión «ok»: a la pendiente le toca «Reintentar ahora», y una ronda
+// en marcha no ve las marcas que se pongan a mitad.
+async function retranscribir(id) {
+  if (!proveedorVoz(await leerConfig())) return { ok: false, error: t("off.faltaClave") };
+  let conservados = new Set();
+  try {
+    if (audios && audios.clavesEscucha) conservados = new Set((await audios.clavesEscucha()).filter((k) => k[0] === id).map((k) => k[1]));
+  } catch (_) { /* sin IndexedDB no hay audio que mandar */ }
+  const r = await enCola(async () => {
+    const historial = await leerHistorial();
+    const h = historial.find((x) => x.id === id);
+    if (!h) return { ok: false, error: t("bg.reunionNoEsta") };
+    if (h.estado !== "ok" || !Array.isArray(h.tramos)) return { ok: false, error: t("bg.retranscribirOcupada") };
+    const marcar = h.tramos.map((tr, i) => (tr && tr.estado === "ok" && conservados.has(i) ? i : -1)).filter((i) => i >= 0);
+    if (!marcar.length) return { ok: false, error: t("bg.sinAudioConservado") };
+    for (const i of marcar) { h.tramos[i].rehacer = true; delete h.tramos[i].errorRehacer; }
+    h.estado = "transcribiendo"; // ya, para que la biblioteca lo diga y el botón no se pulse dos veces
+    h.progreso = t("com.progresoTramos", h.tramos.length - marcar.length, h.tramos.length);
+    const g = await guardarHistorial(historial);
+    return g.ok ? { ok: true, n: marcar.length } : g;
+  });
+  if (!r.ok) return r;
+  const l = await lanzar(id);
+  return l && l.ok ? r : l;
 }
 
 async function conClaveNueva() {
@@ -652,10 +684,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (!Array.isArray(h.tramos)) h.tramos = [];
           const tr = { ...(h.tramos[msg.i] || {}), ...msg.datos }; // no `t`: es la función de los textos
           if (tr.estado !== "pendiente") { delete tr.codigo; delete tr.error; delete tr.detalle; }
+          // Volver a transcribir (3.9): la marca se quita al acabar el tramo, y el
+          // motivo de un intento fallido solo se queda si lo hay.
+          if (!tr.rehacer) delete tr.rehacer;
+          if (!tr.errorRehacer) delete tr.errorRehacer;
           h.tramos[msg.i] = tr;
           if (typeof msg.datos.dlAudio === "number") h.filesAudio = [...(h.filesAudio || []), msg.datos.dlAudio];
           const r = resumenTramos(h.tramos);
-          h.progreso = t("com.progresoTramos", r.total - r.pendientes, r.total);
+          const porRehacer = h.tramos.filter((x) => x && x.rehacer).length;
+          h.progreso = t("com.progresoTramos", r.total - r.pendientes - porRehacer, r.total);
           return guardarHistorial(historial);
         }));
 
@@ -667,6 +704,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       } else if (msg.cmd === "reintentar") {
         sendResponse(await reintentar(msg.id));
+
+      } else if (msg.cmd === "retranscribir") {
+        sendResponse(await retranscribir(msg.id));
 
       } else if (msg.cmd === "claveNueva") {
         await conClaveNueva();

@@ -874,7 +874,9 @@ async function ronda(id) {
   const h = await aBg("histLeer", { id });
   if (!h || !Array.isArray(h.tramos)) return;
   const total = h.tramos.length;
-  const cola = h.tramos.map((t, i) => (t.estado === "pendiente" ? i : -1)).filter((i) => i >= 0);
+  // `rehacer`: «Volver a transcribir» (3.9), un tramo ya transcrito que vuelve a
+  // la IA con su audio conservado.
+  const cola = h.tramos.map((t, i) => (t.estado === "pendiente" || t.rehacer ? i : -1)).filter((i) => i >= 0);
   if (cola.length) await histActualizar(id, { estado: "transcribiendo" });
   const cfgRonda = cola.length ? await leerConfig().catch(() => null) : null;
   await ponIdioma(cfgRonda); // los errores de los tramos se guardan ya escritos
@@ -885,12 +887,21 @@ async function ronda(id) {
   const trabajador = async () => {
     while (cola.length && !borrada) {
       const i = cola.shift();
+      const rehacer = !!h.tramos[i].rehacer;
       const res = parar ? { ...parar } : await transcribirTramo(id, i, total, h.tramos[i], h);
       if (!parar && res.estado === "pendiente" && CODIGOS_CLAVE.includes(res.codigo)) {
         parar = { estado: "pendiente", codigo: res.codigo, error: res.error, detalle: res.detalle };
       }
-      const g = await histTramo(id, i, res);
+      // Al rehacer, el texto que había solo se cambia por uno nuevo. Si esta vez
+      // no sale (o la IA no oye voz), se queda el de antes y se apunta por qué; no
+      // hay reintentos automáticos: el audio está a salvo y no corre prisa.
+      const datos = !rehacer ? res
+        : res.estado === "ok" ? { ...res, rehacer: false }
+        : { rehacer: false, errorRehacer: res.estado === "mudo" ? "sin_voz" : res.estado === "perdido" ? "perdido" : res.codigo || "otro" };
+      const g = await histTramo(id, i, datos);
       if (g && g.borrada) { borrada = true; break; }
+      // El audio conservado de un tramo rehecho ya está donde tiene que estar.
+      if (rehacer) continue;
       // El audio se borra DESPUÉS de que el texto esté guardado: al revés, un
       // fallo entre medias perdería las dos cosas.
       if (g && g.ok && res.estado === "ok") await conservaAudio(id, i, cfgRonda);
@@ -914,7 +925,8 @@ async function transcribirTramo(id, i, total, tramo, reunion) {
   });
   let blob;
   try {
-    blob = await leeAudio(id, i);
+    // Al rehacer un tramo (3.9) su audio es el conservado para escuchar.
+    blob = tramo && tramo.rehacer ? (audios && audios.leerEscucha ? await audios.leerEscucha(id, i) : null) : await leeAudio(id, i);
   } catch (e) {
     return pendiente("interno", e); // IndexedDB no responde: el audio puede seguir ahí
   }
@@ -968,7 +980,7 @@ async function cierraRonda(id) {
     } catch (_) { /* best-effort: el audio sigue en IndexedDB */ }
   }
   const fin = await aBg("finRonda", { id });
-  avisar(!!(fin && fin.estado === "ok"), !!(fin && fin.sinClave));
+  avisar(!!(fin && fin.estado === "ok" && !fin.rehacerFallido), !!(fin && fin.sinClave));
   if (fin && fin.estado === "ok") await actaAutomatica(id);
   await aBg("podar"); // aplica el límite configurado en Opciones
 }

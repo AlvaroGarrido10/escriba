@@ -30,12 +30,12 @@ const CFG_LOCAL = {
 };
 // Preferencias sin datos sensibles: se sincronizan entre equipos.
 const CFG_SYNC = {
-  limite: 10,
+  limite: 20,
   idioma: "es",                // "auto" o un código: es, en, ca, pt, fr, de, it
   autoActa: false,             // generar el acta sola al terminar la transcripción
   autoActaProv: "gemini",
   autoActaPlantilla: "acta",
-  conservarAudio: false,       // guardar el audio para escucharlo en la biblioteca
+  conservarAudio: true,        // guardar el audio para escucharlo en la biblioteca y poder volver a transcribirla (3.9: encendido de fábrica)
   precios: {},                 // € por millón de tokens, los que ponga el usuario (comun.js: costeReunion)
   avisoReunion: false,         // avisar al entrar en una reunión (pide permiso para ORIGENES_REUNION)
   idiomaUI: "auto",            // idioma de la interfaz: "auto" (el de Chrome), "es" o "en" (i18n.js)

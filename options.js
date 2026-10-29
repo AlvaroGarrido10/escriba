@@ -499,12 +499,12 @@ $("btnAtajos").onclick = () => chrome.tabs.create({ url: "chrome://extensions/sh
   const { limite } = await leerConfig();
   $("retenTodo").checked = limite === 0;
   $("retenN").checked = limite !== 0;
-  $("limite").value = limite || 10;
+  $("limite").value = limite || 20;
 })();
 
 function guardaRetencion() {
   const todo = $("retenTodo").checked;
-  const n = Math.max(1, Math.min(100, parseInt($("limite").value, 10) || 10)); // el historial no pasa de 100 terminadas (background.js: TOPE_HISTORIAL)
+  const n = Math.max(1, Math.min(100, parseInt($("limite").value, 10) || 20)); // el historial no pasa de 100 terminadas (background.js: TOPE_HISTORIAL)
   $("limite").value = n;
   guardarConfig({ limite: todo ? 0 : n });
   pinta("e4", () => (todo ? t("opc.retenTodoGuardado") : t("opc.retenNGuardado", n)), true);

@@ -12,7 +12,7 @@ Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marca
 
 ## 1. Paquete
 
-- Fichero: `tienda/Escriba_3.8.1_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
+- Fichero: `tienda/Escriba_3.9.0_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
 - No uses `Escriba_*_para_instalar.zip`: lleva una carpeta dentro y la tienda lo rechaza.
 - Panel: la primera vez, **Nuevo elemento** → subir el zip. Para una versión nueva: el elemento → **Paquete** → **Subir nuevo paquete**, y después **Enviar a revisión**.
 
@@ -48,7 +48,7 @@ NOTHING GETS LOST
 If Google is busy, the network drops or the key fails, the meeting isn't lost: the audio stays in your browser and Escriba retries on its own. If Chrome closes mid-meeting, it recovers what was recorded.
 
 YOUR MEETING LIBRARY
-Search across all your meetings, read each one grouped by speaker with timestamps, name each voice with one click and export to Word, PDF, text or subtitles. Optionally, listen back: click a line and that moment plays — and if a transcript comes out wrong, transcribe it again from that saved audio.
+Search across all your meetings, read each one grouped by speaker with timestamps, name each voice with one click and export to Word, PDF, text or subtitles. Listen back too: click a line and that moment plays. And if a transcript comes out wrong, transcribe it again from that saved audio.
 
 MINUTES AND QUESTIONS WITH 3 AIs
 Full minutes, short summary, tasks with owner and deadline, a ready-to-send follow-up email or your own template — with Gemini, GPT or Claude. Ask the meeting anything: it answers citing the minute. Minutes can be generated automatically when the transcript is ready.
@@ -85,7 +85,7 @@ NO SE PIERDE NADA
 Si Google está saturado, se cae la red o la clave falla, la reunión no se pierde: el audio queda en tu navegador y Escriba lo reintenta sola. Si Chrome se cierra a mitad de reunión, recupera lo grabado.
 
 TU BIBLIOTECA DE REUNIONES
-Busca en todas tus reuniones, lee cada una agrupada por quién habla y con marcas de tiempo, pon nombre a cada voz con un clic y exporta a Word, PDF, texto o subtítulos. Si quieres, escúchala: pulsas una frase y suena ese momento. Y si una transcripción sale mal, vuelve a transcribirla con ese audio guardado.
+Busca en todas tus reuniones, lee cada una agrupada por quién habla y con marcas de tiempo, pon nombre a cada voz con un clic y exporta a Word, PDF, texto o subtítulos. Y escúchala: pulsas una frase y suena ese momento. Si una transcripción sale mal, vuelve a transcribirla con ese audio guardado.
 
 ACTAS Y PREGUNTAS CON 3 IAs
 Acta completa, resumen breve, tareas con responsable y plazo, correo de seguimiento listo para enviar o tu propia plantilla, con Gemini, GPT o Claude. Pregúntale a la reunión lo que quieras: responde citando el minuto. El acta puede generarse sola al terminar.

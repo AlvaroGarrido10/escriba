@@ -1785,9 +1785,9 @@ test("con «conservar el audio», cada tramo transcrito pasa al almacén de escu
   assert.deepStrictEqual([...(await s.audios.clavesEscucha()).map((k) => k[1])].sort(), [0, 1], "pero queda una copia para escucharla");
 });
 
-test("sin esa opción no se conserva nada", async () => {
+test("con esa opción apagada no se conserva nada", async () => {
   const f = fetchPorTramo({ 1: [respGemini("uno")] });
-  const s = sistema({ local: { historial: [reunion(91, 1)] }, audios: audioDe(91, 1), fetch: f });
+  const s = sistema({ local: { historial: [reunion(91, 1)] }, sync: { conservarAudio: false }, audios: audioDe(91, 1), fetch: f });
   await s.off.transcribirReunion(91);
   assert.strictEqual(s.audios._escucha.size, 0);
 });
@@ -5075,6 +5075,30 @@ test("biblioteca: el aviso de un intento fallido dice cuántos tramos y qué hac
       assert.doesNotMatch(i18n.TEXTOS[idioma][k], /reintentar[áa] sola|retry on its own/i, idioma + ": " + k);
     }
   }
+});
+
+test("3.9: por defecto se conserva el audio y el historial guarda las 20 últimas", async () => {
+  const chrome = nuevoChrome();
+  global.chrome = chrome;
+  delete require.cache[require.resolve("../config.js")];
+  const d = await require("../config.js").leerConfig();
+  assert.strictEqual(d.conservarAudio, true, "sin tocar Opciones, se puede escuchar y volver a transcribir");
+  assert.strictEqual(d.limite, 20);
+  // Opciones enseña lo mismo que se aplica.
+  assert.match(leeExt("options.html"), /id="limite" class="campo" min="1" max="100" value="20"/);
+  assert.doesNotMatch(leeExt("options.js"), /\|\| 10\b/, "ningún 10 de antes como valor de reserva");
+  // Y podar, sin nada configurado, deja 20.
+  const hist = Array.from({ length: 25 }, (_, i) => entradaHist(300 + i));
+  const { enviar, chrome: c2 } = bg({ local: { historial: hist } });
+  await enviar({ target: "bg", cmd: "podar" });
+  assert.strictEqual(c2.storage.local._volcado().historial.length, 20);
+});
+
+test("3.9: sin tocar Opciones, una reunión transcrita guarda su audio para escucharla", async () => {
+  const f = fetchPorTramo({ 1: [respGemini("uno")] });
+  const s = sistema({ local: { historial: [reunion(140, 1)] }, audios: audioDe(140, 1), fetch: f });
+  await s.off.transcribirReunion(140);
+  assert.strictEqual(s.audios._escucha.size, 1);
 });
 
 // ============================================================================

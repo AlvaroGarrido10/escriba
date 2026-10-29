@@ -33,8 +33,8 @@ There are no paid plans and no sign-up. You use your own free Google Gemini API 
 ABOUT THE FREE GOOGLE KEY
 The free Gemini key has usage limits set by Google, which you can check in Google AI Studio; if you run out, Escriba keeps the audio and tries again later. On the free tier, Google may use what you send to improve its products, and human reviewers may read it — except in the EU (and the rest of the European Economic Area), the UK and Switzerland. If that matters to you, use a key from a Google project with billing enabled.
 
-NO KEY YET? RECORD ANYWAY
-You can record without any API key. Escriba keeps the audio on your computer, sends nothing to anyone and lets you listen to it in the library. Add your Gemini key whenever you like and the meeting is transcribed on its own.
+ALSO A SIMPLE VOICE RECORDER
+Don't need a transcript? Use Escriba as a recorder, with no API key: record your microphone (or a tab plus your microphone), listen back in the library and download the recording as a single .wav file. No program to install, no account — nothing leaves your computer. Add your free Gemini key whenever you like and the recording is transcribed on its own.
 
 ANY KIND OF MEETING
 • Online (Google Meet, Teams on the web, Zoom on the web…): records the tab audio and your microphone together.
@@ -70,8 +70,8 @@ No hay planes de pago ni registro. Usas tu propia clave gratuita de Google Gemin
 SOBRE LA CLAVE GRATUITA DE GOOGLE
 La clave gratuita de Gemini tiene unos límites de uso que pone Google y que puedes consultar en Google AI Studio; si se agotan, Escriba guarda el audio y lo vuelve a intentar más tarde. Con la clave gratuita, Google puede usar lo que le envías para mejorar sus productos, y lo pueden leer revisores humanos, salvo en la UE (y el resto del Espacio Económico Europeo), el Reino Unido y Suiza. Si eso te importa, usa una clave de un proyecto de Google con la facturación activada.
 
-¿AÚN SIN CLAVE? GRABA IGUAL
-Puedes grabar sin ninguna clave de API. Escriba guarda el audio en tu equipo, no envía nada a nadie y te deja escucharlo desde la biblioteca. Pon tu clave de Gemini cuando quieras y la reunión se transcribe sola.
+TAMBIÉN, UNA GRABADORA SENCILLA
+¿No necesitas la transcripción? Usa Escriba como grabadora, sin ninguna clave: graba el micrófono (o una pestaña con el micrófono), escúchalo en la biblioteca y descarga la grabación en un solo fichero .wav. Sin instalar ningún programa ni crear cuentas: nada sale de tu ordenador. Pon tu clave gratuita de Gemini cuando quieras y la grabación se transcribe sola.
 
 PARA TODO TIPO DE REUNIONES
 • Online (Google Meet, Teams web, Zoom web…): graba el audio de la pestaña y tu micrófono a la vez.

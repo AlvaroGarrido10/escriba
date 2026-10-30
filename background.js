@@ -245,7 +245,7 @@ async function alternarGrabacion() {
   const s = await chrome.storage.session.get({ grabando: false, ultimoModo: "", participantesBorrador: "" });
   if (s.grabando) return parar();
   // La última forma usada en esta sesión de Chrome; si no, la elegida en el popup.
-  const modo = s.ultimoModo || (await leerConfig()).modoGrabar || "orig_mic";
+  const modo = s.ultimoModo || (await leerConfig()).modoGrabar || "tab_mic";
   return empezar({ modo, participantes: s.participantesBorrador });
 }
 

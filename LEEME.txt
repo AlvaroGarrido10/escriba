@@ -19,14 +19,15 @@ ESCRIBA — instalar en 2 minutos
      abajo.
 
 YA ESTÁ. Para grabar una reunión, elige cómo:
-   - "Pestaña + micro": lo normal para Meet/Teams/YouTube. Clic al icono y
-     "Empezar a grabar": Chrome te pregunta qué compartir. Elige la pestaña de la
+   - "Rápido" (la que sale elegida): un clic, sin preguntar y sin la barra de
+     "Compartiendo"; graba la pestaña que suena (Meet/Teams/YouTube) con tu micro.
+     Chrome la silencia y Escriba te devuelve su sonido: con el portátil sin
+     enchufar puede oírse con cortes.
+   - "Pestaña + micro": Chrome te pregunta qué compartir. Elige la pestaña de la
      reunión (sale la primera de la lista) y pulsa "Compartir con audio". El
-     sonido se sigue oyendo tal cual. También vale "Toda la pantalla" con el audio
+     sonido se sigue oyendo tal cual, pero Chrome enseña su barra de
+     "Compartiendo" mientras grabas. También vale "Toda la pantalla" con el audio
      del sistema (Teams de escritorio...). Una ventana suelta no trae sonido.
-   - "Rápido": un clic, sin preguntar; graba la pestaña que suena. Chrome la
-     silencia y Escriba te devuelve su sonido: con el portátil sin enchufar puede
-     oírse con cortes.
    - "Solo micro": reuniones presenciales.
    - Para parar: el botón de Escriba o "Dejar de compartir" en la barra de Chrome.
    - Al terminar: "Parar y transcribir". La grabación se trocea en tramos de 5 min

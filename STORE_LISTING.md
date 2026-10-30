@@ -124,7 +124,7 @@ Record meetings in Chrome (tab audio and/or microphone) and transcribe and summa
 
 | Permiso | Justificación |
 |---|---|
-| `tabCapture` | Captures the audio of the meeting tab only when the user clicks Record (icon or keyboard shortcut) in the one-click «Quick» mode. Core feature. The default mode uses Chrome's own «Choose what to share» dialog (getDisplayMedia), which needs no manifest permission; only the audio is used and the picture is discarded at once. |
+| `tabCapture` | Captures the audio of the meeting tab only when the user clicks Record (icon or keyboard shortcut) in the one-click «Quick» mode, which is the default. Core feature. The alternative «Tab + mic» mode uses Chrome's own «Choose what to share» dialog (getDisplayMedia), which needs no manifest permission; only the audio is used and the picture is discarded at once. |
 | `activeTab` | Identifies the tab the user is on when they start recording, so the right tab is captured and its title is shown. |
 | `offscreen` | Recording runs in an offscreen document so it keeps going when the popup closes. Chrome requires one to use MediaRecorder from an extension. |
 | `downloads` | Saves the transcript (.md) and, when a segment fails or the user records without an API key, its backup audio to the user's Downloads/reuniones folder. |

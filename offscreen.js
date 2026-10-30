@@ -152,10 +152,12 @@ async function leerConfig() {
 
 // --- grabación ---
 // Tres formas (`modo`):
-//  "orig_mic" (3.7, la principal): Chrome enseña su ventana de «elegir qué
-//    compartir» y entrega el sonido de la pestaña (o de todo el equipo) SIN
-//    silenciarla. Lo que se oye es el sonido original, sin pasar por aquí.
-//  "tab_mic" (la rápida): la pestaña que suena, con un clic y sin preguntar. A
+//  "orig_mic" (3.7): Chrome enseña su ventana de «elegir qué compartir» y
+//    entrega el sonido de la pestaña (o de todo el equipo) SIN silenciarla. Lo
+//    que se oye es el sonido original, sin pasar por aquí. A cambio, mientras
+//    graba, Chrome enseña su barra de «Compartiendo esta pestaña».
+//  "tab_mic" (la rápida, la de fábrica): la pestaña que suena, con un clic, sin
+//    preguntar y sin barra. A
 //    cambio Chrome la silencia y hay que devolver su sonido (abreAltavoz), y esa
 //    captura pierde trozos cuando el equipo ahorra energía: con batería se oye
 //    con cortes y no hay forma de evitarlo desde una extensión.

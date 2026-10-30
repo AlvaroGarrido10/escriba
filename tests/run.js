@@ -547,12 +547,18 @@ test("«Dejar de compartir» en la barra de Chrome cierra la grabación como el 
   await hasta(() => s.historial()[0] && s.historial()[0].estado === "ok", "y que se transcribiera lo grabado");
 });
 
-test("el atajo de teclado graba con la forma elegida en el popup; de fábrica, «Pestaña + micro»", async () => {
+test("el atajo de teclado graba con la forma elegida en el popup; de fábrica, «Rápido»", async () => {
   const s = sistemaGrabando();
+  s.chrome.tabs.query = async () => [{ id: 3, url: "https://meet.google.com/abc", title: "Meet", audible: true }];
   s.chrome._oyentes.comando.forEach((f) => f("grabar"));
   await hasta(() => s.chrome.storage.session._volcado().grabando === true, "que empezara a grabar");
-  assert.strictEqual(s.chrome.storage.session._volcado().ultimoModo, "orig_mic");
-  assert.strictEqual(s.medios.mediaDevices._compartidos.length, 1);
+  assert.strictEqual(s.chrome.storage.session._volcado().ultimoModo, "tab_mic");
+  assert.strictEqual(s.medios.mediaDevices._compartidos.length, 0, "sin la ventana de compartir de Chrome");
+  const o = sistemaGrabando({ sync: { modoGrabar: "orig_mic" } });
+  o.chrome._oyentes.comando.forEach((f) => f("grabar"));
+  await hasta(() => o.chrome.storage.session._volcado().grabando === true, "que empezara a grabar");
+  assert.strictEqual(o.chrome.storage.session._volcado().ultimoModo, "orig_mic");
+  assert.strictEqual(o.medios.mediaDevices._compartidos.length, 1);
   const m = sistemaGrabando({ sync: { modoGrabar: "mic" } });
   m.chrome._oyentes.comando.forEach((f) => f("grabar"));
   await hasta(() => m.chrome.storage.session._volcado().grabando === true, "que empezara a grabar");
@@ -2306,6 +2312,13 @@ test("tema: «claro» y «oscuro» se marcan en <html> y se recuerdan; cualquier
   const cfg = require("../config.js");
   assert.strictEqual(cfg.CFG_SYNC.tema, "auto", "se sincroniza: no es un secreto");
   assert.ok(!("tema" in cfg.CFG_LOCAL));
+});
+
+test("la forma de grabar marcada en popup.html es la de fábrica de config.js", () => {
+  const cfg = require("../config.js");
+  assert.strictEqual(cfg.CFG_SYNC.modoGrabar, "tab_mic");
+  const marcadas = [...leeExt("popup.html").matchAll(/name="modo" value="(\w+)" checked/g)].map((m) => m[1]);
+  assert.deepStrictEqual(marcadas, [cfg.CFG_SYNC.modoGrabar]);
 });
 
 test("fechas de la lista: hoy, ayer, esta semana y por meses; y la inicial de cada voz", () => {

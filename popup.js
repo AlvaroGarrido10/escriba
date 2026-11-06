@@ -108,6 +108,7 @@ function pintaAvisoMic() {
 // Se engancha desde init(), cuando ya se sabe el idioma.
 function alCambiar(cambios, area) {
   if (area === "session" && (cambios.grabando || cambios.pausado)) {
+    if (cambios.grabando) pintaValoracion();
     // Con la bienvenida a la vista, una grabación arrancada con el atajo trae el
     // panel de grabar: es donde está el botón de parar.
     if ($("panelGrabar").hidden) { if (cambios.grabando && cambios.grabando.newValue) muestraGrabar(); return; }
@@ -127,6 +128,7 @@ function alCambiar(cambios, area) {
   if (ultimo && ESTADOS_FINALES.includes(ultimo.estado) && ultimo.id !== ultimoIdVisto) {
     ultimoIdVisto = ultimo.id;
     avisaLista(ultimo);
+    pintaValoracion();
   }
 }
 
@@ -144,6 +146,33 @@ function avisaLista(h) {
   const b = botonUI({ texto: t("pop.abrirBiblio"), icono: "libro", clase: "btn-peq", alPulsar: () => abrirBiblioteca(h.id) });
   caja.querySelector(".cuerpo").appendChild(document.createElement("div")).appendChild(b);
   estado("");
+}
+
+// 3.10: la valoración en la tienda. Sale cuando toca (comun.js: tocaValoracion),
+// nunca mientras se graba. «Valorar» abre las reseñas y no vuelve a preguntar;
+// «Ahora no» la aplaza (aplazaValoracion).
+async function pintaValoracion() {
+  const caja = $("pideValoracion");
+  const [{ historial }, { valoracion }, { grabando }] = await Promise.all([
+    chrome.storage.local.get({ historial: [] }),
+    chrome.storage.sync.get({ valoracion: {} }),
+    chrome.storage.session.get({ grabando: false }),
+  ]);
+  if (grabando || !tocaValoracion(historial, valoracion, Date.now())) { caja.hidden = true; return; }
+  ponAviso(caja, "", `<b>${escapa(t("pop.valoraTitulo"))}</b> ${escapa(t("pop.valoraTexto"))}`, "estrella");
+  const botones = caja.querySelector(".cuerpo").appendChild(document.createElement("div"));
+  botones.className = "botones";
+  botones.append(
+    botonUI({ texto: t("pop.valoraSi"), icono: "estrella", clase: "btn-peq btn-primario", alPulsar: async () => {
+      caja.hidden = true;
+      await chrome.storage.sync.set({ valoracion: { ...valoracion, cerrada: true, valorada: Date.now() } });
+      chrome.tabs.create({ url: URL_RESENAS });
+    } }),
+    botonUI({ texto: t("pop.valoraNo"), clase: "btn-peq btn-fantasma", alPulsar: async () => {
+      caja.hidden = true;
+      await chrome.storage.sync.set({ valoracion: aplazaValoracion(valoracion, Date.now()) });
+    } }),
+  );
 }
 
 init();
@@ -168,10 +197,12 @@ async function init() {
     $("panelConfig").hidden = false;
     $("panelGrabar").hidden = true;
     pintaHistorial();
+    pintaValoracion();
     return;
   }
   await muestraGrabar();
   pintaHistorial();
+  pintaValoracion();
 }
 
 // El panel de grabar, al día: el aviso de que no habrá texto si falta la clave,

@@ -38,7 +38,7 @@ const CFG_SYNC = {
   conservarAudio: true,        // guardar el audio para escucharlo en la biblioteca y poder volver a transcribirla (3.9: encendido de fábrica)
   precios: {},                 // € por millón de tokens, los que ponga el usuario (comun.js: costeReunion)
   avisoReunion: false,         // avisar al entrar en una reunión (pide permiso para ORIGENES_REUNION)
-  idiomaUI: "auto",            // idioma de la interfaz: "auto" (el de Chrome), "es" o "en" (i18n.js)
+  idiomaUI: "auto",            // idioma de la interfaz: "auto" (el de Chrome), "es", "en" o "pt" (i18n.js)
   modoGrabar: "tab_mic",       // forma de grabar que sale elegida en el popup: "orig_mic", "tab_mic" o "mic"
   rapidoConBateria: false,     // 3.9.2: «Rápido» elegido a mano con el aviso de la batería a la vista; si no, con batería se graba con «Pestaña + micro» (comun.js: formaConBateria)
   modoAltavoz: "auto",         // solo en "tab_mic": cómo vuelve la pestaña a los altavoces: "auto", "colchon", "audio" o "contexto" (offscreen.js)

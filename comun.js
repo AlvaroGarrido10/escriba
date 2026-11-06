@@ -248,11 +248,11 @@ function aplicarHablantes(texto, mapa) {
   }).join("\n");
 }
 
-// Etiquetas genéricas en el idioma de la interfaz: «Hablante 2» ↔ «Speaker 2».
+// Etiquetas genéricas en el idioma de la interfaz: «Hablante 2» ↔ «Speaker 2» ↔ «Falante 2».
 // Las pone el modelo según el idioma que había al transcribir, así que una
 // reunión vieja puede traer las del otro idioma. Van DEBAJO de los nombres que
 // haya puesto el usuario, y solo al mostrar y exportar: el texto no se toca.
-const RE_GENERICA = /^(?:Hablante|Speaker)\s+(\d+)$/i;
+const RE_GENERICA = /^(?:Hablante|Speaker|Falante)\s+(\d+)$/i;
 function etiquetaGenerica(n) { return t("com.hablanteN", n); }
 function mapaVisible(texto, mapa) {
   const out = {};
@@ -528,6 +528,25 @@ function formaConBateria(modo, cfg, bateria) {
   return modo === "tab_mic" && bateria === true && !(cfg && cfg.rapidoConBateria) ? "orig_mic" : modo;
 }
 
+// 3.10: pedir una valoración en la tienda, sin agobiar. Sale con tres reuniones
+// transcritas bien y la última también bien (nunca justo después de un fallo).
+// «Ahora no» la aplaza 14 días una vez; la segunda vez, ya no se pide más.
+// «Valorar» tampoco vuelve a preguntar. `val` se guarda en sync («valoracion»).
+const VALORACION_TRAS = 3;
+const VALORACION_APLAZA_MS = 14 * 24 * 3600 * 1000;
+const URL_RESENAS = "https://chromewebstore.google.com/detail/giaeeknnkmmjkkbgdoabjibehnjohgbc/reviews";
+function tocaValoracion(historial, val, ahora) {
+  const v = val || {};
+  if (v.cerrada || (v.hasta && ahora < v.hasta)) return false;
+  const lista = Array.isArray(historial) ? historial : [];
+  if (!lista[0] || lista[0].estado !== "ok") return false;
+  return lista.filter((h) => h && h.estado === "ok").length >= VALORACION_TRAS;
+}
+function aplazaValoracion(val, ahora) {
+  const v = val || {};
+  return v.hasta ? { ...v, cerrada: true } : { ...v, hasta: ahora + VALORACION_APLAZA_MS };
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     DURACION_TRAMO_S, PICO_SILENCIO, UMBRAL_VOZ, abrirAudios, MENSAJES_ERROR, CODIGOS_CLAVE, textoError, resumenTramos, estadoFinal,
@@ -535,6 +554,6 @@ if (typeof module !== "undefined" && module.exports) {
     etiquetaTramo, construirMarkdown, medirMuestras, trocear, planificarTramos, codificarWav, cabeceraWav, pcm16, fechaBonita,
     formatoTiempo, ajustarTiempos, inicioTramo, lineasTranscripcion, hablantesDe, aplicarHablantes, SIN_HABLANTE, sinEtiqueta, sinMarcaInvisible,
     precioValido, costeReunion, costeMes, formatoEuros, plataformaReunion, fechaVisible, mapaVisible, etiquetaGenerica,
-    bateriaDe, conBateria, formaConBateria,
+    bateriaDe, conBateria, formaConBateria, tocaValoracion, aplazaValoracion, URL_RESENAS, VALORACION_TRAS,
   };
 }

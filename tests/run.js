@@ -2090,9 +2090,9 @@ test("t() sustituye {1}, {2}…, y una clave que no existe se ve tal cual (nunca
   i18n._ponIdioma("es");
 });
 
-test("idioma del navegador: español también para catalán, gallego y euskera; inglés para el resto", () => {
+test("idioma del navegador: español también para catalán, gallego y euskera; portugués para el portugués; inglés para el resto", () => {
   const prueba = (l) => { global.chrome = { i18n: { getUILanguage: () => l } }; return i18n.idiomaNavegador(); };
-  assert.deepStrictEqual(["es-ES", "es-419", "ca", "gl", "eu", "en-US", "fr", "de", "pt-BR"].map(prueba), ["es", "es", "es", "es", "es", "en", "en", "en", "en"]);
+  assert.deepStrictEqual(["es-ES", "es-419", "ca", "gl", "eu", "en-US", "fr", "de", "pt-BR"].map(prueba), ["es", "es", "es", "es", "es", "en", "en", "en", "pt"]);
   delete global.chrome;
 });
 
@@ -2247,7 +2247,7 @@ test("ningún texto de la interfaz empieza por un emoji: el icono lo pone el HTM
   // Las líneas del diagnóstico son un informe para copiar y pegar: ahí sí.
   const permitidos = new Set(["pop.diag0kb", "pop.diagSilencio"]);
   const malos = [];
-  for (const idioma of ["es", "en"]) {
+  for (const idioma of ["es", "en", "pt"]) {
     for (const [k, v] of Object.entries(i18n.TEXTOS[idioma])) {
       if (/^(pop|bib|viv|opc|imp|ui)\./.test(k) && !permitidos.has(k) && emoji.test(v)) malos.push(`${idioma} ${k}: ${v.slice(0, 30)}`);
     }
@@ -2497,7 +2497,7 @@ test("cada proveedor tiene sus textos en los dos idiomas, y su ayuda enlaza a do
     assert.ok(p.nombre && p.etiqueta, p.id);
     // El aviso general, el de cuando transcribe y el de cuando redacta.
     const avisos = [p.aviso, p.voz && p.voz.aviso, p.chat.aviso].filter((a) => a !== null && a !== undefined && a !== false);
-    for (const idioma of ["es", "en"]) {
+    for (const idioma of ["es", "en", "pt"]) {
       const ayuda = i18n.TEXTOS[idioma][p.ayuda];
       assert.ok(ayuda, `${p.id}: falta la ayuda «${p.ayuda}» en ${idioma}`);
       assert.ok(ayuda.includes(`href="${p.urlClave}"`), `${p.id}: la ayuda en ${idioma} no enlaza a ${p.urlClave}`);
@@ -4460,7 +4460,7 @@ test("los textos generales de Opciones no nombran a ninguna IA: valen con cualqu
   // De Gemini (y de Google) solo hablan los suyos: su paso, su modelo, su capa gratuita y Google Meet.
   const deGemini = ["opc.costeTexto", "opc.modeloGemini", "opc.modeloGeminiAyuda", "opc.p1Texto", "opc.p1Titulo", "opc.preciosCargados", "opc.avisoTexto"];
   const malos = [];
-  for (const idioma of ["es", "en"]) {
+  for (const idioma of ["es", "en", "pt"]) {
     for (const [k, v] of Object.entries(i18n.TEXTOS[idioma])) {
       if (!k.startsWith("opc.") || /^opc\.prov(Ayuda|Aviso)/.test(k)) continue;
       for (const n of nombres) if (new RegExp(`\\b${n}\\b`).test(v)) malos.push(`${idioma} ${k}: nombra a ${n}`);
@@ -4469,7 +4469,7 @@ test("los textos generales de Opciones no nombran a ninguna IA: valen con cualqu
   }
   assert.deepStrictEqual(malos, []);
   // Las frases que la 3.8 ha dejado de poder decir.
-  for (const idioma of ["es", "en"]) {
+  for (const idioma of ["es", "en", "pt"]) {
     const todo = Object.entries(i18n.TEXTOS[idioma]).filter(([k]) => k.startsWith("opc.")).map(([, v]) => v).join("\n");
     assert.doesNotMatch(todo, /siempre Gemini|always done by Gemini|Google, OpenAI o Anthropic|Google, OpenAI or Anthropic/);
   }
@@ -4670,7 +4670,7 @@ test("ningún texto de fuera de Opciones nombra a Gemini, a Google ni a otra IA,
   const deGemini = ["ia.cambioModelo", "off.noProcesado", "off.sinConexion", "off.sinConexionSubida", "off.subidaFallo", "off.textoVacio", "off.textoVacioRazon"];
   const otras = [...new Set(Object.values(prov.PROVEEDORES).filter((p) => p.id !== "gemini").flatMap((p) => [p.nombre, p.etiqueta]))];
   const malos = [], conGemini = new Set();
-  for (const idioma of ["es", "en"]) {
+  for (const idioma of ["es", "en", "pt"]) {
     for (const [k, v] of Object.entries(i18n.TEXTOS[idioma])) {
       if (k.startsWith("opc.")) continue;
       if (/Gemini|Google/.test(v)) { conGemini.add(k); if (!deGemini.includes(k)) malos.push(`${idioma} ${k}: nombra a Gemini o a Google`); }
@@ -4686,7 +4686,7 @@ test("ningún texto de fuera de Opciones nombra a Gemini, a Google ni a otra IA,
   }
   // Los errores de un tramo valen para cualquiera que transcriba: se guardan escritos en el historial.
   for (const codigo of ["sin_clave", "clave_invalida", "sin_saldo", "saturado", "red", "interno", "otro", "perdido"]) {
-    for (const idioma of ["es", "en"]) {
+    for (const idioma of ["es", "en", "pt"]) {
       i18n._ponIdioma(idioma);
       assert.doesNotMatch(comun.textoError(codigo), /Gemini|Google/, `${idioma} ${codigo}`);
     }
@@ -4698,15 +4698,15 @@ test("los textos de «grabada sin clave», en los dos idiomas: dicen que está g
   const neutros = ["com.errSinClave", "com.mdPendSinClave", "pop.sinClave", "pop.luegoSinClave", "pop.listaSinClave", "pop.notaSinClave", "pop.badgeSinTranscribir", "pop.pararSinClave",
     "pop.guardandoEspera", "pop.diagSinClave", "pop.diagNoProbadaSinClave", "bib.estado_sin_transcribir", "bib.aviso_sin_clave_html", "bib.tramo_sin_clave",
     "imp.avisoClaveHtml", "imp.pendienteSinClave", "viv.sinClave", "viv.textoVacioSinClave", "viv.guardada", "viv.pararSinClave"];
-  for (const idioma of ["es", "en"]) {
+  for (const idioma of ["es", "en", "pt"]) {
     for (const k of neutros) {
       const v = i18n.TEXTOS[idioma][k];
       assert.ok(v, `${idioma} ${k}`);
-      assert.doesNotMatch(v, /\bfalta|\bfall[oóa]|\berror|reintent|\bfail|\bmissing|\bretr|couldn't|⚠/i, `${idioma} ${k}: suena a fallo`);
+      assert.doesNotMatch(v, /\bfalta|\bfall[oóa]|\berror|reintent|\bfail|\bmissing|\bretr|couldn't|\bfalh|\berro\b|tent(ar|e|a) de novo|⚠/i, `${idioma} ${k}: suena a fallo`);
     }
     // Los que dicen qué hacer mandan a Opciones.
     for (const k of ["com.errSinClave", "com.mdPendSinClave", "pop.luegoSinClave", "pop.notaSinClave", "bib.aviso_sin_clave_html", "imp.avisoClaveHtml", "imp.pendienteSinClave", "viv.textoVacioSinClave"]) {
-      assert.match(i18n.TEXTOS[idioma][k], /Opciones|Options/, `${idioma} ${k}`);
+      assert.match(i18n.TEXTOS[idioma][k], /Opciones|Options|Opções/, `${idioma} ${k}`);
     }
   }
   // La línea fija del popup, como la pide el plan: se graba y se guarda, no se transcribe.
@@ -4936,7 +4936,7 @@ test("3.8.1: sin clave, mientras se guarda el audio no se dice «Transcribiendo�
   assert.match(imp, /await miraVoz\(\);\s+pintaProgreso\(sinVoz \? t\("imp\.guardando"\) : t\("imp\.transcribiendo"\), 0\);/, "al empezar a importar");
   assert.match(imp, /if \(sinVoz\) pintaProgreso\(t\("imp\.guardando"\), 0\);/, "y mientras dura");
   assert.match(imp, /if \(!cambios\.historial\) \{ miraVoz\(\); return; \}/, "y se vuelve a mirar si cambian las claves");
-  for (const idioma of ["es", "en"]) for (const k of ["bib.estado_guardando", "bib.aviso_guardando", "imp.guardando"]) assert.ok(i18n.TEXTOS[idioma][k], idioma + ": " + k);
+  for (const idioma of ["es", "en", "pt"]) for (const k of ["bib.estado_guardando", "bib.aviso_guardando", "imp.guardando"]) assert.ok(i18n.TEXTOS[idioma][k], idioma + ": " + k);
 });
 
 // ============================================================================
@@ -5077,7 +5077,7 @@ test("biblioteca: «Volver a transcribir» está en «Más acciones», solo con 
   assert.match(js, /const puedeRetranscribir = \(\) => !!actual && actual\.estado === "ok" && audioConservado;/);
   assert.match(js, /\$\("btnRetranscribir"\)\.onclick = async \(\) => \{[\s\S]*?await confirmar\(/);
   assert.match(js, /aBgMsg\("retranscribir", \{ id: h\.id \}\)/);
-  for (const idioma of ["es", "en"]) {
+  for (const idioma of ["es", "en", "pt"]) {
     for (const k of ["bib.retranscribir", "bib.retranscribir_pregunta_html", "bib.si_retranscribir", "bib.retranscribiendo",
       "bib.aviso_rehacer_1", "bib.aviso_rehacer_n", "bib.rehacer_clave", "bib.rehacer_luego", "bib.rehacer_sin_audio", "bib.rehacer_sin_voz",
       "bg.sinAudioConservado", "bg.retranscribirOcupada"]) assert.ok(i18n.TEXTOS[idioma][k], idioma + ": " + k);
@@ -5088,9 +5088,9 @@ test("biblioteca: el aviso de un intento fallido dice cuántos tramos y qué hac
   const js = leeExt("reuniones.js");
   assert.match(js, /else if \(fallosRehacer\(h\)\.length\) \{/);
   // Los motivos no prometen que Escriba lo reintente sola: aquí no lo hace.
-  for (const idioma of ["es", "en"]) {
+  for (const idioma of ["es", "en", "pt"]) {
     for (const k of ["bib.aviso_rehacer_1", "bib.aviso_rehacer_n", "bib.rehacer_clave", "bib.rehacer_luego", "bib.rehacer_sin_audio", "bib.rehacer_sin_voz"]) {
-      assert.doesNotMatch(i18n.TEXTOS[idioma][k], /reintentar[áa] sola|retry on its own/i, idioma + ": " + k);
+      assert.doesNotMatch(i18n.TEXTOS[idioma][k], /reintentar[áa] sola|retry on its own|automaticamente|sozinh/i, idioma + ": " + k);
     }
   }
 });
@@ -5228,6 +5228,98 @@ test("el grabador contesta si va con batería: true, false o null", async () => 
     const s = sistemaGrabando({ bateria });
     const r = await s.chrome.runtime.sendMessage({ target: "offscreen", cmd: "bateria" });
     assert.deepStrictEqual({ ...r }, { ok: true, conBateria: esperado });
+  }
+});
+
+grupo("3.10 · portugués de Brasil y la valoración en la tienda");
+
+test("idioma del navegador: portugués (de Brasil o de Portugal) sale en portugués", () => {
+  const prueba = (l) => { global.chrome = { i18n: { getUILanguage: () => l } }; return i18n.idiomaNavegador(); };
+  assert.deepStrictEqual(["pt-BR", "pt", "pt-PT", "PT-br"].map(prueba), ["pt", "pt", "pt", "pt"]);
+  delete global.chrome;
+  assert.strictEqual(i18n.ponIdiomaUI("pt"), "pt");
+  assert.strictEqual(i18n.LOCALE_UI(), "pt-BR");
+  i18n._ponIdioma("es");
+});
+
+test("el portugués tiene las mismas claves que el español, con los mismos huecos {n} y las mismas etiquetas HTML", () => {
+  const es = i18n.TEXTOS.es, pt = i18n.TEXTOS.pt;
+  assert.ok(pt, "falta la tabla pt");
+  assert.deepStrictEqual(Object.keys(es).filter((k) => !(k in pt)), [], "faltan en portugués");
+  assert.deepStrictEqual(Object.keys(pt).filter((k) => !(k in es)), [], "sobran en portugués");
+  const etiquetas = (s) => (String(s).match(/<\/?[a-z]+/gi) || []).map((x) => x.toLowerCase()).sort().join(" ");
+  const enlaces = (s) => (String(s).match(/href="[^"]*"/g) || []).sort().join(" ");
+  const malos = [];
+  for (const k of Object.keys(es)) {
+    if (placeholders(es[k]) !== placeholders(pt[k])) malos.push(k + ": huecos");
+    if (etiquetas(es[k]) !== etiquetas(pt[k])) malos.push(k + ": etiquetas");
+    if (enlaces(es[k]) !== enlaces(pt[k])) malos.push(k + ": enlaces");
+    if (!String(pt[k]).trim()) malos.push(k + ": vacío");
+  }
+  assert.deepStrictEqual(malos, []);
+  // Los textos de la interfaz no se quedan en español por descuido (estos se dicen igual).
+  const igualEnLosDos = new Set(["bib.momentos_titulo", "com.mdMarcas", "ui.estaSemana"]);
+  const iguales = Object.keys(es).filter((k) => !igualEnLosDos.has(k) && es[k] === pt[k] && es[k] !== i18n.TEXTOS.en[k] && /[a-záéíóúñ]{4,}\s[a-záéíóúñ]{3,}/i.test(es[k]));
+  assert.deepStrictEqual(iguales, [], "iguales que en español");
+});
+
+test("en portugués: «Falante N», coma decimal y la etiqueta genérica se reconoce", () => {
+  i18n._ponIdioma("pt");
+  assert.strictEqual(comun.etiquetaGenerica(2), "Falante 2");
+  assert.strictEqual(comun.formatoEuros(1.5).includes("1,50"), true);
+  // Una reunión transcrita en español se ve con «Falante», y la de portugués con «Hablante» al volver al español.
+  assert.deepStrictEqual(comun.mapaVisible("[00:01] Hablante 1: Oi", {}), { "Hablante 1": "Falante 1" });
+  i18n._ponIdioma("es");
+  assert.deepStrictEqual(comun.mapaVisible("[00:01] Falante 1: Oi", {}), { "Falante 1": "Hablante 1" });
+});
+
+test("Opciones ofrece el portugués y Chrome tiene la descripción en portugués de Brasil", () => {
+  assert.match(leeExt("options.html"), /<option value="pt">Português \(Brasil\)<\/option>/);
+  const m = JSON.parse(leeExt("_locales/pt_BR/messages.json"));
+  const en = JSON.parse(leeExt("_locales/en/messages.json"));
+  assert.deepStrictEqual(Object.keys(m).sort(), Object.keys(en).sort());
+  assert.match(m.descripcion.message, /Grave suas reuniões/);
+  assert.ok(m.descripcion.message.length <= 132, "Chrome corta la descripción a 132 caracteres");
+});
+
+test("valoración: tras 3 reuniones bien y con la última bien; nunca tras un fallo", () => {
+  const ok = { estado: "ok" }, mal = { estado: "error" }, pend = { estado: "pendiente" };
+  const ahora = Date.UTC(2026, 10, 6);
+  assert.strictEqual(comun.VALORACION_TRAS, 3);
+  assert.strictEqual(comun.tocaValoracion([ok, ok], {}, ahora), false);
+  assert.strictEqual(comun.tocaValoracion([ok, ok, ok], {}, ahora), true);
+  assert.strictEqual(comun.tocaValoracion([ok, mal, ok, ok], undefined, ahora), true);
+  assert.strictEqual(comun.tocaValoracion([mal, ok, ok, ok], {}, ahora), false, "la última falló");
+  assert.strictEqual(comun.tocaValoracion([pend, ok, ok, ok], {}, ahora), false, "la última espera");
+  assert.strictEqual(comun.tocaValoracion([], {}, ahora), false);
+  assert.strictEqual(comun.tocaValoracion(null, null, ahora), false);
+});
+
+test("valoración: «Ahora no» aplaza 14 días la primera vez y la segunda ya no se pide; «Valorar» la cierra", () => {
+  const tres = [{ estado: "ok" }, { estado: "ok" }, { estado: "ok" }];
+  const dia = 24 * 3600 * 1000, ahora = Date.UTC(2026, 10, 6);
+  const v1 = comun.aplazaValoracion({}, ahora);
+  assert.strictEqual(v1.hasta, ahora + 14 * dia);
+  assert.ok(!v1.cerrada);
+  assert.strictEqual(comun.tocaValoracion(tres, v1, ahora + 13 * dia), false);
+  assert.strictEqual(comun.tocaValoracion(tres, v1, ahora + 14 * dia), true);
+  const v2 = comun.aplazaValoracion(v1, ahora + 15 * dia);
+  assert.strictEqual(v2.cerrada, true);
+  assert.strictEqual(comun.tocaValoracion(tres, v2, ahora + 400 * dia), false);
+  assert.strictEqual(comun.tocaValoracion(tres, { cerrada: true, valorada: ahora }, ahora + 400 * dia), false);
+});
+
+test("valoración: el enlace va a las reseñas de Escriba en la tienda y el popup tiene su hueco y sus textos", () => {
+  assert.strictEqual(comun.URL_RESENAS, "https://chromewebstore.google.com/detail/giaeeknnkmmjkkbgdoabjibehnjohgbc/reviews");
+  assert.match(leeExt("popup.html"), /<div id="pideValoracion" hidden><\/div>/);
+  const js = leeExt("popup.js");
+  assert.match(js, /if \(grabando \|\| !tocaValoracion\(historial, valoracion, Date\.now\(\)\)\) \{ caja\.hidden = true; return; \}/);
+  assert.match(js, /chrome\.tabs\.create\(\{ url: URL_RESENAS \}\)/);
+  assert.match(js, /valoracion: aplazaValoracion\(valoracion, Date\.now\(\)\)/);
+  for (const idioma of ["es", "en", "pt"]) {
+    for (const k of ["pop.valoraTitulo", "pop.valoraTexto", "pop.valoraSi", "pop.valoraNo"]) assert.ok(i18n.TEXTOS[idioma][k], idioma + ": " + k);
+    // Nada de pedir cinco estrellas ni de dar algo a cambio (normas de la tienda).
+    assert.doesNotMatch(i18n.TEXTOS[idioma]["pop.valoraTexto"], /5|cinco|five|estrellas|stars|estrelas|regalo|gift|presente/i, idioma);
   }
 });
 

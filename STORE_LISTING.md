@@ -1,4 +1,4 @@
-# Ficha de Chrome Web Store (3.9.2)
+# Ficha de Chrome Web Store (3.10.0)
 
 Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marcado con **(tú)** solo puede hacerlo el titular de la cuenta.
 
@@ -12,15 +12,15 @@ Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marca
 
 ## 1. Paquete
 
-- Fichero: `tienda/Escriba_3.9.2_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
+- Fichero: `tienda/Escriba_3.10.0_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
 - No uses `Escriba_*_para_instalar.zip`: lleva una carpeta dentro y la tienda lo rechaza.
 - Panel: la primera vez, **Nuevo elemento** → subir el zip. Para una versión nueva: el elemento → **Paquete** → **Subir nuevo paquete**, y después **Enviar a revisión**.
 
 ## 2. Ficha de la tienda («Store listing»)
 
-El idioma por defecto del manifest es **inglés** (`default_locale: en`), así que la ficha principal va en inglés. El español se añade como traducción. El nombre («Escriba») y la descripción corta salen del manifest (`_locales/*/messages.json`).
+El idioma por defecto del manifest es **inglés** (`default_locale: en`), así que la ficha principal va en inglés. El español y el portugués de Brasil (3.10) se añaden como traducciones. El nombre («Escriba») y la descripción corta salen del manifest (`_locales/*/messages.json`).
 
-**Categoría:** Productivity → Tools (Productividad → Herramientas). **Idioma:** English, con traducción a Español.
+**Categoría:** Productivity → Tools (Productividad → Herramientas). **Idioma:** English, con traducciones a Español y a Português (Brasil).
 
 ### Descripción en inglés (por defecto)
 
@@ -56,7 +56,7 @@ Full minutes, short summary, tasks with owner and deadline, a ready-to-send foll
 REAL PRIVACY
 No telemetry, no analytics, no accounts. The developer does not and cannot see your data. Unobfuscated, open-source code.
 
-Interface in English and Spanish, with light and dark mode.
+Interface in English, Spanish and Brazilian Portuguese, with light and dark mode.
 ```
 
 ### Descripción en español (traducción)
@@ -93,7 +93,46 @@ Acta completa, resumen breve, tareas con responsable y plazo, correo de seguimie
 PRIVACIDAD DE VERDAD
 Sin telemetría, sin analítica, sin cuentas. El desarrollador no ve ni puede ver tus datos. Código abierto y sin ofuscar.
 
-Interfaz en español e inglés, con modo claro y oscuro.
+Interfaz en español, inglés y portugués de Brasil, con modo claro y oscuro.
+```
+
+### Descripción en portugués de Brasil (traducción, 3.10)
+
+La mitad de los usuarios tiene Chrome en portugués de Brasil (panel, 29/10/2026). Usa las capturas globales (`en_*`).
+
+```
+O Escriba grava suas reuniões no Chrome e entrega a transcrição completa — e, com um clique, a ata: resumo, decisões, tarefas e pontos em aberto.
+
+SEM ASSINATURA, SEM CONTA
+Não há planos pagos nem cadastro. Você usa sua própria chave gratuita da API do Google Gemini (e, se quiser, OpenAI ou Anthropic para atas e perguntas). Seu áudio vai direto do navegador para a IA que você escolher, sem servidores no meio do caminho.
+
+SOBRE A CHAVE GRATUITA DO GOOGLE
+A chave gratuita do Gemini tem limites de uso definidos pelo Google, que você pode consultar no Google AI Studio; se eles acabarem, o Escriba guarda o áudio e tenta de novo mais tarde. No nível gratuito, o Google pode usar o que você envia para melhorar os produtos dele, e revisores humanos podem ler esse conteúdo — exceto na UE (e no restante do Espaço Econômico Europeu), no Reino Unido e na Suíça. Se isso importa para você, use uma chave de um projeto do Google com faturamento ativado.
+
+TAMBÉM UM GRAVADOR DE VOZ SIMPLES
+Não precisa da transcrição? Use o Escriba como gravador, sem nenhuma chave de API: grave o microfone (ou uma aba junto com o microfone), ouça na biblioteca e baixe a gravação em um único arquivo .wav. Sem instalar programas e sem conta: nada sai do seu computador. Coloque sua chave gratuita do Gemini quando quiser e a gravação é transcrita sozinha.
+
+QUALQUER TIPO DE REUNIÃO
+• On-line (Google Meet, Teams na web, Zoom na web…): grava o áudio da aba e o seu microfone ao mesmo tempo.
+• Presencial: grava com o microfone do notebook.
+• Arquivos: arraste um mp3, m4a, wav ou mp4 que você já tenha.
+
+ENQUANTO VOCÊ GRAVA
+Veja o nível de cada fonte em tempo real, pause, marque os momentos importantes, faça anotações no painel lateral e acompanhe o texto chegando sem esperar o fim. Se nenhuma voz entrar por dois minutos, o Escriba avisa. Atalho de teclado para iniciar e parar.
+
+NADA SE PERDE
+Se o Google estiver sobrecarregado, a internet cair ou a chave falhar, a reunião não se perde: o áudio fica no seu navegador e o Escriba tenta de novo sozinho. Se o Chrome fechar no meio da reunião, ele recupera o que foi gravado.
+
+SUA BIBLIOTECA DE REUNIÕES
+Pesquise em todas as suas reuniões, leia cada uma agrupada por quem fala e com marcações de tempo, dê nome a cada voz com um clique e exporte para Word, PDF, texto ou legendas. E ouça de novo: clique em uma frase e aquele momento toca. Se uma transcrição sair errada, transcreva de novo a partir do áudio salvo.
+
+ATAS E PERGUNTAS COM 3 IAs
+Ata completa, resumo curto, tarefas com responsável e prazo, um e-mail de acompanhamento pronto para enviar ou o seu próprio modelo — com Gemini, GPT ou Claude. Pergunte o que quiser à reunião: ela responde citando o minuto. A ata pode ser gerada automaticamente quando a transcrição fica pronta.
+
+PRIVACIDADE DE VERDADE
+Sem telemetria, sem análises, sem contas. O desenvolvedor não vê e não pode ver seus dados. Código aberto e sem ofuscação.
+
+Interface em português do Brasil, inglês e espanhol, com modo claro e escuro.
 ```
 
 ### Imágenes

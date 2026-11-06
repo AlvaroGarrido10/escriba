@@ -213,7 +213,7 @@ function actualizaNiveles(cont, fuentes) {
 // Inicial de un nombre para el círculo de cada voz («Hablante 2» → «2»).
 function inicialDe(nombre) {
   const s = String(nombre || "").trim();
-  const n = s.match(/^(?:Hablante|Speaker)\s+(\d+)$/i);
+  const n = s.match(/^(?:Hablante|Speaker|Falante)\s+(\d+)$/i);
   if (n) return n[1];
   return (s[0] || "?").toUpperCase();
 }

@@ -83,7 +83,8 @@ main { padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 14px;
 .titulo-seccion .enlace { font-size: 12.5px; }
 .titulo-seccion .enlace .i { width: 14px; height: 14px; }
 #historial { display: flex; flex-direction: column; gap: 6px; }
-#listo, #confirmaTodo { margin-bottom: 8px; }
+#listo, #confirmaTodo, #pideValoracion { margin-bottom: 8px; }
+#pideValoracion .botones { display: flex; gap: 6px; margin-top: 6px; }
 #listo .aviso .btn { margin-top: 6px; }
 
 .reu { background: var(--superficie); border: 1px solid var(--borde); border-radius: var(--r-3); transition: border-color var(--t-rapida), box-shadow var(--t-rapida); }

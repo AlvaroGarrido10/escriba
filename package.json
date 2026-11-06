@@ -1,6 +1,6 @@
 {
   "name": "escriba",
-  "version": "3.9.2",
+  "version": "3.10.0",
   "private": true,
   "description": "Extensión de Chrome que graba reuniones y las transcribe con IA, sin servidor y con las claves del propio usuario.",
   "scripts": {

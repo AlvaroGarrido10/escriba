@@ -1,0 +1,14 @@
+{
+  "descripcion": {
+    "message": "Grave suas reuniões (Meet, Teams ou presenciais), transcreva com IA e gere atas com Gemini, GPT ou Claude."
+  },
+  "tituloAccion": {
+    "message": "Escriba"
+  },
+  "comandoGrabar": {
+    "message": "Iniciar ou parar a gravação"
+  },
+  "comandoMarcar": {
+    "message": "Marcar este momento da reunião"
+  }
+}

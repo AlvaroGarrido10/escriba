@@ -1543,7 +1543,9 @@ function relojFalso(reloj) {
 // Service worker + documento offscreen GRABANDO de verdad (con los stubs de
 // medios), hablándose como en Chrome. Con `reloj`, Date.now lo decide el test;
 // con `retenerTimeouts`, los setTimeout se guardan en vez de ejecutarse.
-function sistemaGrabando({ fetch: fetchStub = nuevoFetch([]), local = {}, sync = {}, reloj = null, retenerTimeouts = false, compartir = "pestana" } = {}) {
+// `bateria` (3.9.2): lo que devuelve navigator.getBattery() en el documento
+// offscreen (un objeto con `charging`, o una función); sin él, no hay getBattery.
+function sistemaGrabando({ fetch: fetchStub = nuevoFetch([]), local = {}, sync = {}, reloj = null, retenerTimeouts = false, compartir = "pestana", bateria } = {}) {
   const chrome = nuevoChrome({ local: { geminiKey: "K", geminiModel: "gemini-flash-latest", ...local }, sync });
   const aud = nuevosAudios();
   const bgCtx = cargar("background.js", { chrome, fetch: async () => { throw new Error("bg no debe llamar a la red"); } });
@@ -1555,7 +1557,10 @@ function sistemaGrabando({ fetch: fetchStub = nuevoFetch([]), local = {}, sync =
   const timeouts = [];
   const entorno = {
     ...entornoOffscreen(offChrome, fetchStub),
-    navigator: { mediaDevices: medios.mediaDevices },
+    navigator: {
+      mediaDevices: medios.mediaDevices,
+      ...(bateria !== undefined ? { getBattery: typeof bateria === "function" ? bateria : async () => bateria } : {}),
+    },
     MediaRecorder: medios.MediaRecorder,
     Audio: nuevoAudioElemento(),
   };
@@ -5112,6 +5117,118 @@ test("3.9: sin tocar Opciones, una reunión transcrita guarda su audio para escu
   const s = sistema({ local: { historial: [reunion(140, 1)] }, audios: audioDe(140, 1), fetch: f });
   await s.off.transcribirReunion(140);
   assert.strictEqual(s.audios._escucha.size, 1);
+});
+
+grupo("3.9.2 · con batería, «Pestaña + micro» en vez de «Rápido» (comun.js, background.js, popup.js)");
+
+test("formaConBateria: solo cambia «Rápido», solo con batería, y no si se eligió «Rápido» a mano con el aviso", () => {
+  const f = comun.formaConBateria;
+  assert.strictEqual(f("tab_mic", {}, true), "orig_mic");
+  assert.strictEqual(f("tab_mic", {}, false), "tab_mic", "enchufado, como siempre");
+  assert.strictEqual(f("tab_mic", {}, null), "tab_mic", "sin saber si hay batería no se cambia nada");
+  assert.strictEqual(f("tab_mic", { rapidoConBateria: true }, true), "tab_mic");
+  assert.strictEqual(f("orig_mic", {}, true), "orig_mic");
+  assert.strictEqual(f("mic", {}, true), "mic", "«Solo micro» no pasa por la pestaña: no se toca");
+});
+
+test("conBateria y bateriaDe: con batería, enchufado y desconocido son tres cosas distintas", async () => {
+  assert.strictEqual(comun.conBateria({ charging: false }), true);
+  assert.strictEqual(comun.conBateria({ charging: true }), false);
+  assert.strictEqual(comun.conBateria(null), null);
+  assert.strictEqual(comun.conBateria({}), null, "sin el dato no es «enchufado»");
+  assert.strictEqual(await comun.bateriaDe({}), null, "Chrome sin getBattery");
+  assert.strictEqual(await comun.bateriaDe(null), null);
+  assert.strictEqual(await comun.bateriaDe({ getBattery: async () => { throw new Error("no"); } }), null);
+  const b = { charging: false };
+  assert.strictEqual(await comun.bateriaDe({ getBattery: async () => b }), b);
+});
+
+const conPestanaQueSuena = (s) => { s.chrome.tabs.query = async () => [{ id: 3, url: "https://meet.google.com/abc", title: "Meet", audible: true }]; return s; };
+async function atajo(s) {
+  const antes = s.chrome.storage.session._volcado().grabando === true;
+  s.chrome._oyentes.comando.forEach((f) => f("grabar"));
+  await hasta(() => (s.chrome.storage.session._volcado().grabando === true) !== antes, antes ? "que parara" : "que empezara a grabar");
+}
+
+test("el atajo con batería y «Rápido» de fábrica graba con «Pestaña + micro», y la reunión lo apunta", async () => {
+  const s = conPestanaQueSuena(sistemaGrabando({ bateria: { charging: false } }));
+  await atajo(s);
+  const ses = s.chrome.storage.session._volcado();
+  assert.strictEqual(ses.ultimoModo, "orig_mic");
+  assert.strictEqual(ses.ultimoPorBateria, true);
+  assert.strictEqual(s.medios.mediaDevices._compartidos.length, 1, "con la ventana de compartir de Chrome");
+  await atajo(s);
+  await hasta(() => s.historial()[0] && s.historial()[0].estado !== "grabando", "que se cerrara la reunión");
+  assert.strictEqual(s.historial()[0].meta.porBateria, true);
+  assert.strictEqual(s.chrome.storage.sync._volcado().modoGrabar, undefined, "la forma guardada no se toca");
+});
+
+test("el atajo enchufado, sin getBattery o con un fallo al leerla sigue grabando con «Rápido»", async () => {
+  for (const bateria of [{ charging: true }, undefined, async () => { throw new Error("sin servicio"); }]) {
+    const s = conPestanaQueSuena(sistemaGrabando({ bateria }));
+    await atajo(s);
+    assert.strictEqual(s.chrome.storage.session._volcado().ultimoModo, "tab_mic");
+    assert.strictEqual(s.chrome.storage.session._volcado().ultimoPorBateria, false);
+    assert.strictEqual(s.medios.mediaDevices._compartidos.length, 0);
+    await atajo(s);
+    await hasta(() => s.historial()[0] && s.historial()[0].estado !== "grabando", "que se cerrara la reunión");
+    assert.ok(!("porBateria" in s.historial()[0].meta));
+  }
+});
+
+test("el atajo con batería respeta «Rápido» elegido a mano con el aviso, y no toca «Solo micro» ni «Pestaña + micro» elegidas", async () => {
+  const r = conPestanaQueSuena(sistemaGrabando({ bateria: { charging: false }, sync: { rapidoConBateria: true } }));
+  await atajo(r);
+  assert.strictEqual(r.chrome.storage.session._volcado().ultimoModo, "tab_mic");
+  const m = sistemaGrabando({ bateria: { charging: false }, sync: { modoGrabar: "mic" } });
+  await atajo(m);
+  assert.strictEqual(m.chrome.storage.session._volcado().ultimoModo, "mic");
+  const o = sistemaGrabando({ bateria: { charging: false }, sync: { modoGrabar: "orig_mic" } });
+  await atajo(o);
+  assert.strictEqual(o.chrome.storage.session._volcado().ultimoModo, "orig_mic");
+  assert.strictEqual(o.chrome.storage.session._volcado().ultimoPorBateria, false, "la eligió el usuario, no la batería");
+});
+
+test("tras grabar con batería, al enchufar el atajo vuelve a «Rápido»; «Pestaña + micro» elegida en el popup se mantiene", async () => {
+  const pila = { charging: false };
+  const s = conPestanaQueSuena(sistemaGrabando({ bateria: pila }));
+  await atajo(s);
+  assert.strictEqual(s.chrome.storage.session._volcado().ultimoModo, "orig_mic");
+  await atajo(s);
+  await hasta(() => s.historial()[0] && s.historial()[0].estado !== "grabando", "que se cerrara la reunión");
+  pila.charging = true;
+  await atajo(s);
+  assert.strictEqual(s.chrome.storage.session._volcado().ultimoModo, "tab_mic");
+  // La última forma de la sesión, si la eligió el usuario, manda sobre la guardada.
+  const o = conPestanaQueSuena(sistemaGrabando({ bateria: { charging: true } }));
+  await o.chrome.storage.session.set({ ultimoModo: "orig_mic", ultimoPorBateria: false });
+  await atajo(o);
+  assert.strictEqual(o.chrome.storage.session._volcado().ultimoModo, "orig_mic");
+});
+
+test("popup: «Rápido» guardado y batería salen como «Pestaña + micro» con aviso; elegir «Rápido» a mano lo recuerda", () => {
+  const js = leeExt("popup.js");
+  assert.match(js, /formaConBateria\(cfg\.modoGrabar, cfg, conBateria\(bateria\)\)/, "la forma marcada sale de formaConBateria");
+  assert.match(js, /\$\("avisoBateria"\)\.hidden = !porBateria/);
+  assert.match(js, /campos\.modoGrabar === "tab_mic" && porBateria\) campos\.rapidoConBateria = true/);
+  assert.match(js, /campos\.modoGrabar !== "tab_mic"\) campos\.rapidoConBateria = false/);
+  assert.match(js, /cmd: "start", modo: modoElegido\(\), porBateria: porBateria && modoElegido\(\) === "orig_mic"/);
+  assert.match(js, /addEventListener\("chargingchange"/, "enchufar o desenchufar con el popup abierto lo rehace");
+  // Muestra el aviso sin pisar la forma guardada: el radio se marca, no se guarda.
+  const aplica = js.match(/function aplicaBateria\(\) \{[\s\S]*?\n\}/);
+  assert.ok(aplica && !/guardarConfig/.test(aplica[0]), "aplicaBateria no guarda nada");
+  const cfg = require("../config.js");
+  assert.strictEqual(cfg.CFG_SYNC.rapidoConBateria, false);
+  assert.ok(!("rapidoConBateria" in cfg.CFG_LOCAL));
+  assert.match(leeExt("popup.html"), /<div id="avisoBateria" class="aviso" hidden>/);
+});
+
+test("el grabador contesta si va con batería: true, false o null", async () => {
+  for (const [bateria, esperado] of [[{ charging: false }, true], [{ charging: true }, false], [undefined, null]]) {
+    const s = sistemaGrabando({ bateria });
+    const r = await s.chrome.runtime.sendMessage({ target: "offscreen", cmd: "bateria" });
+    assert.deepStrictEqual({ ...r }, { ok: true, conBateria: esperado });
+  }
 });
 
 // ============================================================================

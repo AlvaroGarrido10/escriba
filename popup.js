@@ -182,13 +182,41 @@ async function muestraGrabar() {
   $("panelConfig").hidden = true;
   $("panelGrabar").hidden = false;
   $("avisoSinClave").hidden = !sinVoz();
-  // La forma de grabar que se usó la última vez sale ya elegida.
-  const elegida = document.querySelector(`.modo input[value="${cfg.modoGrabar}"]`);
-  if (elegida) elegida.checked = true;
+  // La forma de grabar que se usó la última vez sale ya elegida; con batería,
+  // «Pestaña + micro» en vez de «Rápido».
+  await revisaBateria();
   await revisaMicro();
   const { participantesBorrador } = await chrome.storage.session.get({ participantesBorrador: "" });
   $("participantes").value = participantesBorrador;
   await refrescaGrabacion();
+}
+
+// Con el portátil sin enchufar, «Rápido» se oye con cortes (comun.js:
+// formaConBateria): mientras vaya con batería sale marcada «Pestaña + micro», con
+// un aviso, y la forma guardada no cambia. Si se enchufa o desenchufa con el popup
+// abierto, se rehace, salvo que ya se haya elegido a mano.
+let bateria = null, porBateria = false, tocadoAMano = false;
+async function revisaBateria() {
+  if (!bateria) {
+    bateria = await bateriaDe(navigator);
+    if (bateria && bateria.addEventListener) {
+      bateria.addEventListener("chargingchange", async () => {
+        if (tocadoAMano || (sesion && sesion.grabando)) return;
+        aplicaBateria();
+        pintaAvisoMic();
+        const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
+        if (!s.grabando) pintaObjetivo(s.objetivo);
+      });
+    }
+  }
+  aplicaBateria();
+}
+function aplicaBateria() {
+  const forma = formaConBateria(cfg.modoGrabar, cfg, conBateria(bateria));
+  porBateria = forma !== cfg.modoGrabar;
+  const radio = document.querySelector(`.modo input[value="${forma}"]`);
+  if (radio) radio.checked = true;
+  $("avisoBateria").hidden = !porBateria;
 }
 
 // Qué se va a grabar. En la forma rápida, qué pestaña y si está sonando.
@@ -216,7 +244,16 @@ function pintaObjetivo(obj) {
 }
 document.querySelectorAll(".modo input").forEach((r) => r.addEventListener("change", async () => {
   pintaAvisoMic();
-  guardarConfig({ modoGrabar: modoElegido() }).catch(() => {});
+  // Elegir «Rápido» con el aviso de la batería a la vista es quererlo así, y se
+  // recuerda; elegir otra forma lo olvida.
+  const campos = { modoGrabar: modoElegido() };
+  if (campos.modoGrabar === "tab_mic" && porBateria) campos.rapidoConBateria = true;
+  else if (campos.modoGrabar !== "tab_mic") campos.rapidoConBateria = false;
+  Object.assign(cfg, campos);
+  tocadoAMano = true;
+  porBateria = false;
+  $("avisoBateria").hidden = true;
+  guardarConfig(campos).catch(() => {});
   const s = await chrome.runtime.sendMessage({ target: "bg", cmd: "estado" });
   if (!s.grabando) pintaObjetivo(s.objetivo);
 }));
@@ -230,7 +267,7 @@ $("btnRec").onclick = async () => {
       // En «Pestaña + micro» Chrome abre su ventana de elegir qué compartir, que le
       // quita el foco a este panel y lo cierra: la grabación arranca igual.
       estado(t(modoElegido() === "orig_mic" ? "pop.eligeEnChrome" : "pop.arrancando"), null, { ic: "reloj" });
-      const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "start", modo: modoElegido(), participantes: $("participantes").value.trim() });
+      const r = await chrome.runtime.sendMessage({ target: "bg", cmd: "start", modo: modoElegido(), porBateria: porBateria && modoElegido() === "orig_mic", participantes: $("participantes").value.trim() });
       if (r && r.ok) { estado(""); await refrescaGrabacion(); }
       else if (r && r.cancelado) estado("");
       else estado((r && r.error) || t("pop.noSePudoIniciar"), "error");

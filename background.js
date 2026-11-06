@@ -198,7 +198,11 @@ async function finRonda(id) {
 const CAMPOS_EDITABLES = ["titulo", "participantes", "hablantes", "notas", "marcas"];
 
 // --- grabar: lo usan el popup y el atajo de teclado -----------------------------
-async function empezar({ modo, participantes }) {
+// `porBateria`: la forma es "orig_mic" porque el portátil va sin enchufar y la
+// elegida era «Rápido» (comun.js: formaConBateria). Se apunta para que el atajo
+// vuelva a «Rápido» al enchufar y para el diagnóstico de la reunión.
+async function empezar({ modo, participantes, porBateria = false }) {
+  porBateria = !!porBateria && modo === "orig_mic";
   let streamId = "", tabTitle = "";
   if (modo === "tab_mic") {
     const tab = await pestanaObjetivo();
@@ -218,11 +222,11 @@ async function empezar({ modo, participantes }) {
   await ensureOffscreen();
   // En "orig_mic" esto tarda lo que el usuario tarde en elegir (el popup ya se ha
   // cerrado para entonces: la ventana de Chrome le quita el foco).
-  const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "start", modo, streamId, tabTitle, participantes: participantes || "" });
+  const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "start", modo, streamId, tabTitle, participantes: participantes || "", porBateria });
   if (r && r.ok) {
     await chrome.storage.session.set({
       grabando: true, t0: Date.now(), tabTitle: r.titulo !== undefined ? r.titulo : tabTitle, pausado: false, pausadoDesde: 0, pausaMs: 0,
-      ultimoModo: modo, participantesBorrador: "", reunionId: r.id,
+      ultimoModo: modo, ultimoPorBateria: porBateria, participantesBorrador: "", reunionId: r.id,
     });
     chrome.action.setBadgeText({ text: "REC" });
     chrome.action.setBadgeBackgroundColor({ color: "#c0392b" });
@@ -242,11 +246,26 @@ async function parar() {
 }
 
 async function alternarGrabacion() {
-  const s = await chrome.storage.session.get({ grabando: false, ultimoModo: "", participantesBorrador: "" });
+  const s = await chrome.storage.session.get({ grabando: false, ultimoModo: "", ultimoPorBateria: false, participantesBorrador: "" });
   if (s.grabando) return parar();
-  // La última forma usada en esta sesión de Chrome; si no, la elegida en el popup.
-  const modo = s.ultimoModo || (await leerConfig()).modoGrabar || "tab_mic";
-  return empezar({ modo, participantes: s.participantesBorrador });
+  const cfg = await leerConfig();
+  // La última forma usada en esta sesión de Chrome, salvo que la pusiera la
+  // batería; si no, la elegida en el popup. Y con batería, «Rápido» no.
+  const elegida = (!s.ultimoPorBateria && s.ultimoModo) || cfg.modoGrabar || "tab_mic";
+  const modo = elegida === "tab_mic" ? formaConBateria(elegida, cfg, await bateriaDelGrabador()) : elegida;
+  return empezar({ modo, porBateria: modo !== elegida, participantes: s.participantesBorrador });
+}
+
+// El service worker no tiene navigator.getBattery: se lo pregunta al documento
+// offscreen. Si no contesta, no se sabe (null) y la forma no cambia.
+async function bateriaDelGrabador() {
+  try {
+    await ensureOffscreen();
+    const r = await chrome.runtime.sendMessage({ target: "offscreen", cmd: "bateria" });
+    return r && r.ok ? r.conBateria : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 async function pausa(pausar) {

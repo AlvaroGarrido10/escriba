@@ -506,6 +506,28 @@ function formatoEuros(n) {
   return t("com.euros", LOCALE_UI() === "en-US" ? cifra : cifra.replace(".", ","));
 }
 
+// --- con batería, «Pestaña + micro» en vez de «Rápido» (3.9.2) ---
+// Con el portátil sin enchufar, la captura de un clic («Rápido», "tab_mic")
+// pierde trocitos de 9 ms, y como Chrome silencia la pestaña y su sonido lo
+// devuelve Escriba, la reunión se oye a trompicones (medido el 03/10; tapar los
+// huecos no bastó). «Pestaña + micro» ("orig_mic") no pasa por Escriba: suena tal
+// cual. Así que, con batería, se graba de esa forma salvo que el usuario haya
+// elegido «Rápido» a mano viendo el aviso (`rapidoConBateria`).
+// El estado de la batería tiene tres valores: true (va con batería), false
+// (enchufado; también un equipo sin batería, que Chrome da como «cargando») y
+// null (no se sabe: sin getBattery o con un fallo). Lo desconocido no cambia nada.
+async function bateriaDe(nav) {
+  try {
+    return nav && typeof nav.getBattery === "function" ? (await nav.getBattery()) || null : null;
+  } catch (_) {
+    return null;
+  }
+}
+const conBateria = (b) => (b && typeof b.charging === "boolean" ? !b.charging : null);
+function formaConBateria(modo, cfg, bateria) {
+  return modo === "tab_mic" && bateria === true && !(cfg && cfg.rapidoConBateria) ? "orig_mic" : modo;
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     DURACION_TRAMO_S, PICO_SILENCIO, UMBRAL_VOZ, abrirAudios, MENSAJES_ERROR, CODIGOS_CLAVE, textoError, resumenTramos, estadoFinal,
@@ -513,5 +535,6 @@ if (typeof module !== "undefined" && module.exports) {
     etiquetaTramo, construirMarkdown, medirMuestras, trocear, planificarTramos, codificarWav, cabeceraWav, pcm16, fechaBonita,
     formatoTiempo, ajustarTiempos, inicioTramo, lineasTranscripcion, hablantesDe, aplicarHablantes, SIN_HABLANTE, sinEtiqueta, sinMarcaInvisible,
     precioValido, costeReunion, costeMes, formatoEuros, plataformaReunion, fechaVisible, mapaVisible, etiquetaGenerica,
+    bateriaDe, conBateria, formaConBateria,
   };
 }

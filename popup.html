@@ -48,6 +48,11 @@
         <label id="lblTab" title="Un clic, sin preguntar: graba la pestaña que suena. Su sonido te lo devuelve Escriba, y con el portátil sin enchufar puede oírse con cortes" data-i18n-title="pop.modoRapidoTitle"><input type="radio" name="modo" value="tab_mic" checked><svg class="i" aria-hidden="true"><use href="iconos.svg#cohete"></use></svg><span data-i18n="pop.modoRapido">Rápido</span></label>
         <label><input type="radio" name="modo" value="mic"><svg class="i" aria-hidden="true"><use href="iconos.svg#micro"></use></svg><span data-i18n="pop.modoMic">Solo micro</span></label>
       </div>
+      <!-- 3.9.2: con el portátil sin enchufar, «Rápido» se oye con cortes. -->
+      <div id="avisoBateria" class="aviso" hidden>
+        <svg class="i" aria-hidden="true"><use href="iconos.svg#info"></use></svg>
+        <div class="cuerpo" data-i18n="pop.porBateria">Vas con batería: con «Rápido» la reunión se oiría con cortes, así que va marcada «Pestaña + micro». Al enchufar vuelve «Rápido».</div>
+      </div>
       <div id="objetivo" class="objetivo"></div>
       <label class="campo-icono">
         <svg class="i" aria-hidden="true"><use href="iconos.svg#personas"></use></svg>

@@ -86,6 +86,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         });
       }
       else if (msg.cmd === "selftest") { sendResponse(await selftest(msg)); }
+      // Para el atajo de teclado: el service worker no tiene navigator.getBattery.
+      else if (msg.cmd === "bateria") { sendResponse({ ok: true, conBateria: conBateria(await bateriaDe(navigator)) }); }
       // «¿No oyes la reunión?» del popup: cambia en vivo la forma de devolver el sonido.
       else if (msg.cmd === "altavoz") {
         const a = altavozActual();
@@ -160,7 +162,9 @@ async function leerConfig() {
 //    preguntar y sin barra. A
 //    cambio Chrome la silencia y hay que devolver su sonido (abreAltavoz), y esa
 //    captura pierde trozos cuando el equipo ahorra energía: con batería se oye
-//    con cortes y no hay forma de evitarlo desde una extensión.
+//    con cortes y no hay forma de evitarlo desde una extensión. Por eso, con
+//    batería, el popup y el atajo graban con "orig_mic" (3.9.2, comun.js:
+//    formaConBateria) y la reunión lo apunta en `meta.porBateria`.
 //  "mic": solo el micrófono.
 
 // Pide a Chrome lo que el usuario quiera compartir. Este documento no se ve, pero
@@ -201,7 +205,9 @@ async function pideCompartir() {
   return { stream: s, superficie };
 }
 
-async function start({ modo, streamId, tabTitle: tt, participantes: pp }) {
+let grabaPorBateria = false;
+async function start({ modo, streamId, tabTitle: tt, participantes: pp, porBateria }) {
+  grabaPorBateria = !!porBateria && modo === "orig_mic";
   // Una sola petición, sin reintentos: no puede retrasar la grabación.
   const cfgInicio = await aBg("cfg").catch(() => null);
   await ponIdioma(cfgInicio);
@@ -823,7 +829,7 @@ async function cierraGrabacion() {
   if (!existe) await histCrear(entradaNueva());
   // Lo que ya se transcribió (o se dio por mudo) en vivo se queda como está.
   const hechos = ((existe && existe.tramos) || []).map((t) => (t && ["ok", "mudo"].includes(t.estado) ? t : null));
-  const meta = { ...((existe && existe.meta) || {}), fichero: fechaBonita(id).fichero, minutos, audioLinea: audio.linea, audioAlerta: audio.alerta, ...(infoAltavoz ? { altavoz: infoAltavoz } : {}) };
+  const meta = { ...((existe && existe.meta) || {}), fichero: fechaBonita(id).fichero, minutos, audioLinea: audio.linea, audioAlerta: audio.alerta, ...(infoAltavoz ? { altavoz: infoAltavoz } : {}), ...(grabaPorBateria ? { porBateria: true } : {}) };
 
   // Silencio: NO se manda a Gemini. Ante un audio mudo el modelo no dice "no oigo
   // nada", se inventa una reunión entera con hablantes y acuerdos que no existen.

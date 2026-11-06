@@ -22,7 +22,8 @@ YA ESTÁ. Para grabar una reunión, elige cómo:
    - "Rápido" (la que sale elegida): un clic, sin preguntar y sin la barra de
      "Compartiendo"; graba la pestaña que suena (Meet/Teams/YouTube) con tu micro.
      Chrome la silencia y Escriba te devuelve su sonido: con el portátil sin
-     enchufar puede oírse con cortes.
+     enchufar puede oírse con cortes, así que con batería Escriba te marca
+     "Pestaña + micro" (al enchufar vuelve "Rápido").
    - "Pestaña + micro": Chrome te pregunta qué compartir. Elige la pestaña de la
      reunión (sale la primera de la lista) y pulsa "Compartir con audio". El
      sonido se sigue oyendo tal cual, pero Chrome enseña su barra de

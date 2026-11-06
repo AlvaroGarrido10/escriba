@@ -1,4 +1,4 @@
-# Ficha de Chrome Web Store (3.10.0)
+# Ficha de Chrome Web Store (3.10.1)
 
 Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marcado con **(tú)** solo puede hacerlo el titular de la cuenta.
 
@@ -12,13 +12,13 @@ Todo lo que pide el panel de desarrollador, en el orden en que lo pide. Lo marca
 
 ## 1. Paquete
 
-- Fichero: `tienda/Escriba_3.10.0_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
+- Fichero: `tienda/Escriba_3.10.1_chrome_web_store.zip`. Tiene `manifest.json` en la raíz, que es lo que exige la tienda.
 - No uses `Escriba_*_para_instalar.zip`: lleva una carpeta dentro y la tienda lo rechaza.
 - Panel: la primera vez, **Nuevo elemento** → subir el zip. Para una versión nueva: el elemento → **Paquete** → **Subir nuevo paquete**, y después **Enviar a revisión**.
 
 ## 2. Ficha de la tienda («Store listing»)
 
-El idioma por defecto del manifest es **inglés** (`default_locale: en`), así que la ficha principal va en inglés. El español y el portugués de Brasil (3.10) se añaden como traducciones. El nombre («Escriba») y la descripción corta salen del manifest (`_locales/*/messages.json`).
+El idioma por defecto del manifest es **inglés** (`default_locale: en`), así que la ficha principal va en inglés. El español y el portugués de Brasil (3.10) se añaden como traducciones. El nombre y la descripción corta salen del manifest (`_locales/*/messages.json`). Desde la 3.10.1 el nombre lleva lo que se busca en la tienda: «Escriba: AI Voice Recorder & Transcription», «Escriba: grabadora de voz y transcripción con IA» y «Escriba: gravador de voz e transcrição com IA» (catalán, euskera y gallego, el castellano). En Chrome, el botón y la cabecera siguen diciendo «Escriba» (`short_name`).
 
 **Categoría:** Productivity → Tools (Productividad → Herramientas). **Idioma:** English, con traducciones a Español y a Português (Brasil).
 

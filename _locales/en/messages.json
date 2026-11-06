@@ -1,4 +1,7 @@
 {
+  "nombre": {
+    "message": "Escriba: AI Voice Recorder & Transcription"
+  },
   "descripcion": {
     "message": "Record your meetings (Meet, Teams or in person), transcribe them with AI and generate minutes with Gemini, GPT or Claude."
   },

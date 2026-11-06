@@ -5323,6 +5323,21 @@ test("valoración: el enlace va a las reseñas de Escriba en la tienda y el popu
   }
 });
 
+test("3.10.1: el nombre sale de _locales («Escriba: …»), en todos los idiomas y dentro del límite de Chrome", () => {
+  const m = JSON.parse(leeExt("manifest.json"));
+  assert.strictEqual(m.name, "__MSG_nombre__");
+  assert.strictEqual(m.short_name, "Escriba");
+  const locs = fsT.readdirSync(pathT.join(RAIZ_EXT, "_locales"));
+  assert.ok(locs.includes(m.default_locale));
+  for (const l of locs) {
+    const n = JSON.parse(leeExt(`_locales/${l}/messages.json`)).nombre;
+    assert.ok(n && /^Escriba: \S/.test(n.message), l);
+    assert.ok(n.message.length <= 75, `${l}: Chrome no admite más de 75 caracteres`);
+  }
+  assert.match(JSON.parse(leeExt("_locales/en/messages.json")).nombre.message, /Voice Recorder/);
+  assert.match(JSON.parse(leeExt("_locales/pt_BR/messages.json")).nombre.message, /gravador de voz/);
+});
+
 // ============================================================================
 (async function main() {
   let ok = 0, fallos = 0;

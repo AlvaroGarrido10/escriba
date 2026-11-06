@@ -1,4 +1,7 @@
 {
+  "nombre": {
+    "message": "Escriba: gravador de voz e transcrição com IA"
+  },
   "descripcion": {
     "message": "Grave suas reuniões (Meet, Teams ou presenciais), transcreva com IA e gere atas com Gemini, GPT ou Claude."
   },
